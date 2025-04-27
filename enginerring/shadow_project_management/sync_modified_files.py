@@ -3,6 +3,7 @@ import json
 import subprocess
 import shutil
 from pathlib import Path
+from datetime import datetime
 from .run_instrumentation_flow import run_instrumentation_flow
 
 
@@ -14,6 +15,46 @@ def run_cmd(cmd, check=True):
         print(f"Command failed: {result.stderr}")
         result.check_returncode()
     return result.stdout.strip()
+
+
+def _finalize_incremental_run(proj_path):
+    """
+    After incremental instrumentation succeeds, append the content of
+    target-folders.txt to incremental-instrument-history.log, then restore
+    target-folders.txt from the 'target-folders' field in config.json.
+    """
+    target_file = os.path.join(proj_path, "target-folders.txt")
+    history_file = os.path.join(proj_path, "incremental-instrument-history.log")
+    config_file = os.path.join(proj_path, "config.json")
+
+    # Step 1: Append current target list to history log
+    if os.path.isfile(target_file):
+        with open(target_file, 'r', encoding='utf-8') as f:
+            current_content = f.read().strip()
+        if current_content:
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            with open(history_file, 'a', encoding='utf-8') as f:
+                f.write(f"\n{'='*40}\n")
+                f.write(f"{timestamp} Incremental instrumentation target files:\n")
+                f.write(current_content + '\n')
+            print(f"[Post-process] Appended target file list to {history_file}")
+    else:
+        print("[Post-process] target-folders.txt not found, skip history append.")
+
+    # Step 2: Restore target-folders.txt from config.json
+    if os.path.isfile(config_file):
+        with open(config_file, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        original_targets = config.get('original-target-folders', [])
+        if isinstance(original_targets, list):
+            with open(target_file, 'w', encoding='utf-8') as f:
+                for folder in original_targets:
+                    f.write(folder + '\n')
+            print(f"[Post-process] Restored target-folders.txt from config.json")
+        else:
+            print("[Post-process] Warning: 'original-target-folders' in config.json is not a list, skip restore.")
+    else:
+        print("[Post-process] Warning: config.json not found, cannot restore target-folders.txt.")
 
 
 def sync_files(project_file_path, original_cwd, proj_path=None):
@@ -153,6 +194,10 @@ def sync_files(project_file_path, original_cwd, proj_path=None):
         run_cmd(['git', 'reset', '--soft', source_branch])
         run_cmd(['git', 'commit', '-m', 'Auto-commit: Code instrumentation'])
         
+        # NEW: Post-processing after successful incremental instrumentation
+        if proj_path:
+            _finalize_incremental_run(proj_path)
+
         print("\n" + "*" * 70)
         print("\033[1;32m" + "[ SUCCESS ]".center(64) + "\033[0m")
         print(f"\033[1;32mShadow branch is now exactly 1 commit ahead of '{source_branch}'.\033[0m")
