@@ -98,9 +98,9 @@ def _create_new_project(work_dir, projects_dir):
         if not name:
             print_color("Project name cannot be empty.", Colors.RED)
             continue
-        # Check for Chinese characters (Unicode range) - now rejected with English message
+        # Check for Unicode range - rejected with English message
         if re.search(r'[\u4e00-\u9fff]', name):
-            print_color("Chinese characters are not allowed. Please use English.", Colors.RED)
+            print_color("Non-English characters are not allowed. Please use English.", Colors.RED)
             continue
         if not re.match(r'^[a-zA-Z0-9_\-\.]+$', name):
             print_color(
@@ -145,6 +145,24 @@ def _create_new_project(work_dir, projects_dir):
 # Target folder management
 # ---------------------------------------------------------------------------
 
+def _sync_config_original_targets(proj_path, paths):
+    """
+    Synchronize the target paths to the config.json file under 'original-target-folders'.
+    """
+    config_path = os.path.join(proj_path, "config.json")
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config_data = json.load(f)
+            
+            config_data["original-target-folders"] = paths
+            
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(config_data, f, indent=4)
+        except Exception as e:
+            print_color(f"Failed to update config.json with original-target-folders: {e}", Colors.RED)
+
+
 def _manage_target_folders(proj_path):
     """
     Prompt the user to specify target folders/files for the project.
@@ -168,17 +186,20 @@ def _manage_target_folders(proj_path):
         choice = input("Choose an action [k]: ").strip().lower() or "k"
         if choice == "k":
             print_color("Keeping existing target paths.", Colors.GREEN)
+            _sync_config_original_targets(proj_path, existing_paths)
             return
         elif choice == "a":
             new_paths = _prompt_target_input(target_file)
             if new_paths:
                 combined = existing_paths + new_paths
                 _write_target_folders(target_file, combined)
+                _sync_config_original_targets(proj_path, combined)
                 print_color(
                     f"Saved {len(combined)} target path(s) to: {target_file}", Colors.GREEN
                 )
             else:
                 print_color("No new paths added. Keeping existing targets.", Colors.YELLOW)
+                _sync_config_original_targets(proj_path, existing_paths)
             return
         # choice == "r" falls through to fresh input below
 
@@ -186,6 +207,7 @@ def _manage_target_folders(proj_path):
     paths = _prompt_target_input(target_file)
     if paths:
         _write_target_folders(target_file, paths)
+        _sync_config_original_targets(proj_path, paths)
         print_color(f"Saved {len(paths)} target path(s) to: {target_file}", Colors.GREEN)
     else:
         print_color("No target paths specified. You can edit the file later:", Colors.YELLOW)
