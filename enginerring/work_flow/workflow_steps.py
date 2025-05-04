@@ -17,7 +17,7 @@ from enginerring.dependency_handler.prompt_organizer import generate_prompt
 from enginerring.dependency_handler.dependency_injector import run_injection
 
 
-def instrument_code(work_dir, proj_path=None, git_root=None):
+def instrument_code(work_dir, proj_path=None, git_root=None, is_new_project=False):
     print_color(
         "\n>>> Setting up shadow branch and instrumenting code...", Colors.CYAN)
 
@@ -52,20 +52,17 @@ def instrument_code(work_dir, proj_path=None, git_root=None):
     print_color("========================================", Colors.CYAN)
     print_color("       Select Instrumentation Mode      ", Colors.CYAN)
     print_color("========================================", Colors.CYAN)
-    print("  1. Full Instrumentation\n  2. Incremental Instrumentation\n  3. Skip (if project is already instrumented)")
+    print("  1. Full Instrumentation\n  2. Incremental Instrumentation")
     print_color("========================================", Colors.CYAN)
 
     inst_mode_choice = ""
-    while not re.match(r"^[1-3]$", inst_mode_choice):
-        inst_mode_choice = input(
-            "Enter a number (1-3) for the instrumentation mode: ").strip()
-        if not re.match(r"^[1-3]$", inst_mode_choice):
-            print_color(
-                "[!] Invalid input. Please enter 1, 2, or 3.", Colors.RED)
-
-    if inst_mode_choice == "3":
-        print_color("[Mode Selection] Skipping instrumentation.", Colors.GREEN)
-        return "skip"
+    
+    if is_new_project:
+        print_color("[Auto Selection] New project detected, automatically selecting Full Instrumentation (Mode 1).", Colors.GREEN)
+        inst_mode_choice = "1"
+    else:
+        print_color("[Auto Selection] Existing project detected, automatically selecting Incremental Instrumentation (Mode 2).", Colors.GREEN)
+        inst_mode_choice = "2"
 
     mode_arg = "full" if inst_mode_choice == "1" else "incremental"
     print_color(f"[Mode Selection] Selected mode: {mode_arg}", Colors.GREEN)
@@ -82,9 +79,12 @@ def instrument_code(work_dir, proj_path=None, git_root=None):
             "Error: Failed to setup shadow branch and instrument code. Exiting.", Colors.RED)
         sys.exit(1)
 
-    # Move instrumentation output files to project directory after success
-    if proj_path:
+    # ✨ [修改] 增加对 "NO_MODIFIED_FILES" 状态的判断，跳过移动文件的操作
+    if proj_path and success != "NO_MODIFIED_FILES":
         _move_instrumentation_outputs_to_project(work_dir, proj_path)
+    elif success == "NO_MODIFIED_FILES":
+        # ✨ [新增] 打印跳过提示
+        print_color("[Skip] No modified files found, skipped moving instrumentation outputs.", Colors.YELLOW)
 
     return mode_arg
 

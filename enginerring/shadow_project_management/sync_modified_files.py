@@ -130,7 +130,8 @@ def sync_files(original_cwd, proj_path=None):
 
     if not modified_files:
         print("No modified files found compared to the base commit.")
-        return True
+        # ✨ [修改] 这里不再返回 True，而是返回特定标识以供上层识别
+        return "NO_MODIFIED_FILES"
 
     print(f"Found {len(modified_files)} modified file(s).")
 

@@ -152,13 +152,13 @@ def main():
     auto_select_llm_provider(env_file)
 
     # Step: Create or select a project
-    proj_path, root_path = create_or_select_project(work_dir)
+    proj_path, root_path, is_new_project = create_or_select_project(work_dir)
 
     pause_for_next_step("Project and Environment Setup", "Setup Shadow Branch")
 
     # Workflow Execution: Instrumentation
     instrument_mode = instrument_code(
-        work_dir, proj_path=proj_path, git_root=root_path)
+        work_dir, proj_path=proj_path, git_root=root_path, is_new_project=is_new_project)
 
     # Handle dependency injection and commit for full mode
     if instrument_mode == "incremental":
@@ -180,13 +180,6 @@ def main():
             "  Instrumentation and Dependency Injection have been completed!", Colors.YELLOW)
         print_color(
             "  Please recompile (if necessary) and execute the target project.", Colors.YELLOW)
-        print_color(
-            "=======================================================\n", Colors.YELLOW)
-    else:  # "skip" or any other value
-        print_color(
-            "\n=======================================================", Colors.YELLOW)
-        print_color("  Instrumentation skipped.", Colors.YELLOW)
-        print_color("  Dependency injection step also skipped.", Colors.YELLOW)
         print_color(
             "=======================================================\n", Colors.YELLOW)
 

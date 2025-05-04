@@ -13,7 +13,8 @@ def create_or_select_project(work_dir):
     """
     Step: Create or select an existing project.
     After selection/creation, prompt the user to specify target folders/files.
-    Returns the project directory (proj_path) and git repository root directory (root_path).
+    Returns the project directory (proj_path), git repository root directory (root_path),
+    and a boolean indicating if it is a new project.
     """
     projects_dir = os.path.join(work_dir, "projects")
     os.makedirs(projects_dir, exist_ok=True)
@@ -40,21 +41,22 @@ def create_or_select_project(work_dir):
         print_color(
             "No existing projects found. Let's create a new one.", Colors.CYAN)
         proj_path, root_path = _create_new_project(work_dir, projects_dir)
+        is_new_project = True
     else:
-        proj_path, root_path = _select_or_create_project(
+        proj_path, root_path, is_new_project = _select_or_create_project(
             work_dir, projects_dir, existing_projects
         )
 
     # Manage target folders for the selected/created project
     _manage_target_folders(proj_path)
 
-    return proj_path, root_path
+    return proj_path, root_path, is_new_project
 
 
 def _select_or_create_project(work_dir, projects_dir, existing_projects):
     """
     Display existing projects and let the user pick one or create a new project.
-    Returns (proj_path, root_path).
+    Returns (proj_path, root_path, is_new_project).
     """
     print_color("\n=== Existing Projects ===", Colors.CYAN)
     for idx, (name, root, _) in enumerate(existing_projects, start=1):
@@ -73,9 +75,10 @@ def _select_or_create_project(work_dir, projects_dir, existing_projects):
                         f"Selected project: {selected_name} (root: {selected_root})",
                         Colors.GREEN,
                     )
-                    return selected_proj_path, selected_root
+                    return selected_proj_path, selected_root, False
                 elif num == len(existing_projects) + 1:
-                    return _create_new_project(work_dir, projects_dir)
+                    proj_path, git_root = _create_new_project(work_dir, projects_dir)
+                    return proj_path, git_root, True
                 else:
                     print_color("Invalid choice. Try again.", Colors.RED)
             else:
