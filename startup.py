@@ -134,8 +134,6 @@ def switch_to_source_branch(proj_path):
 
 def main():
     work_dir = os.path.abspath(os.getcwd())
-    instrumentor_test_path = os.path.join(
-        work_dir, "core", "instrumentor-test")
     ask_llm_dir = os.path.join(work_dir, "enginerring", "ask_llm")
 
     print_color(
@@ -144,7 +142,6 @@ def main():
     print_color(
         "=======================================================", Colors.CYAN)
     print(f"Current working directory: {work_dir}")
-    print(f"Source and runtime path: {instrumentor_test_path}")
     print_color(
         "=======================================================\n", Colors.CYAN)
 
@@ -205,7 +202,7 @@ def main():
     # --- Switch back to the source branch before log analysis ---
     switch_to_source_branch(proj_path)
 
-    analyze_logs(work_dir, instrumentor_test_path, proj_path=proj_path)
+    analyze_logs(work_dir, proj_path=proj_path)
 
     # ---------------------------------------------------------------
     # Scenario description generation (with automatic output move)

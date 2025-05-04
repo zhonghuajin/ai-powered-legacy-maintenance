@@ -190,24 +190,6 @@ def handle_instrumentation_dependencies(work_dir, proj_path, git_root, ask_llm_d
     run_injection(llm_response_file, snippets_json_path)
 
 
-def compile_and_run(instrumentor_test_path):
-    print_color("\n>>> Compiling and running instrumentor test...", Colors.CYAN)
-    os.chdir(instrumentor_test_path)
-
-    mvn_cmd = "mvn.cmd" if platform.system() == "Windows" else "mvn"
-    print_color(
-        f"Executing: {mvn_cmd} clean package -DskipTests", Colors.RESET)
-    subprocess.run([mvn_cmd, "clean", "package", "-DskipTests"])
-
-    jar_path = os.path.join("target", "instrumentor-test-1.0-SNAPSHOT.jar")
-    print_color(f"Executing: java -jar {jar_path}", Colors.RESET)
-    subprocess.run(["java", "-jar", jar_path])
-
-    print_color(
-        f"Program execution finished. Please verify that instrumentor-events-*.txt and instrumentor-log-*.txt have been generated in {instrumentor_test_path}",
-        Colors.GREEN
-    )
-
 
 def startup_log_manager_server(work_dir, proj_path=None):
     print_color("\n>>> Starting Log Manager Server...", Colors.CYAN)
@@ -247,7 +229,7 @@ def startup_log_manager_server(work_dir, proj_path=None):
         print_color(f"Failed to import log_manager module from {server_dir}: {e}", Colors.RED)
 
 
-def analyze_logs(work_dir, instrumentor_test_path, proj_path=None):
+def analyze_logs(work_dir, proj_path=None):
     print_color(
         "\n>>> Analyzing logs and extracting denoised data...", Colors.CYAN)
         
@@ -279,22 +261,19 @@ def analyze_logs(work_dir, instrumentor_test_path, proj_path=None):
     os.makedirs(pruned_dir, exist_ok=True)
     print_color(f"[CLEAN] Ensured fresh pruned directory: {pruned_dir}", Colors.GREEN)
 
-    # Determine the scenario_data directory based on project context
+    # Determine the search directory based on project context
     if proj_path and os.path.isdir(proj_path):
-        scenario_dir = os.path.join(proj_path, 'scenario_data')
+        search_dir = os.path.join(proj_path, 'scenario_data')
     else:
-        scenario_dir = os.path.join(work_dir, 'scenario_data')
+        search_dir = os.path.join(work_dir, 'scenario_data')
         print_color(
             "[WARNING] proj_path not provided, falling back to global scenario_data directory.",
             Colors.YELLOW
         )
 
-    if os.path.isdir(scenario_dir):
-        search_dir = scenario_dir
-    else:
-        search_dir = instrumentor_test_path
+    if not os.path.isdir(search_dir):
         print_color(
-            f"[WARNING] scenario_data not found at {scenario_dir}, trying instrumentor test path.",
+            f"[WARNING] scenario_data directory not found at {search_dir}.",
             Colors.YELLOW
         )
 
