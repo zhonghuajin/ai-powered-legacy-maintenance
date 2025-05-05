@@ -85,7 +85,7 @@ Please strictly follow the template below to output your code audit report:
 # ==========================================
 # 2. Interactive Guidance Logic
 # ==========================================
-def main():
+def generate_prompt(cli_file_path=None):
     print("="*50)
     print("🛡️  AI Zero-Noise Code Audit Prompt Generator")
     print("="*50)
@@ -109,9 +109,14 @@ def main():
     # 4. Read trace data file
     trace_data = ""
     while True:
-        file_path = input("\n📁 4. Please enter the path to the [Execution Trace Data File] (e.g., final-output-combined.md):\n> ").strip()
-        # Remove possible quotes (common when dragging files from terminal)
-        file_path = file_path.strip('\'"')
+        if cli_file_path:
+            file_path = cli_file_path
+            print(f"\n📁 4. Using Execution Trace Data File from arguments: {file_path}")
+            cli_file_path = None  # Reset in case of failure
+        else:
+            file_path = input("\n📁 4. Please enter the path to the [Execution Trace Data File] (e.g., final-output-combined.md):\n> ").strip()
+            # Remove possible quotes (common when dragging files from terminal)
+            file_path = file_path.strip('\'"')
         
         if not file_path:
             print("❌ File path cannot be empty, please re-enter!")
@@ -139,7 +144,7 @@ def main():
     )
 
     # 6. Write to file
-    output_filename = "AI_Code_Audit_Prompt.md"
+    output_filename = "AI_General_Prompt.md"
     try:
         with open(output_filename, 'w', encoding='utf-8') as f:
             f.write(final_prompt)
@@ -149,6 +154,10 @@ def main():
         print("="*50)
     except Exception as e:
         print(f"\n❌ Failed to save file: {e}")
+
+def main():
+    cli_file_path = sys.argv[1] if len(sys.argv) > 1 else None
+    generate_prompt(cli_file_path)
 
 if __name__ == "__main__":
     try:

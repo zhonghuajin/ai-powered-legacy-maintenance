@@ -215,44 +215,79 @@ def main():
     # ---------------------------------------------------------------
     # Scenario description generation (with automatic output move)
     # ---------------------------------------------------------------
-    # [MODIFIED] Temporarily disabled generate_scenario_description as supporting code is not implemented.
     print_color('\n[Scenario Schema] Temporarily skipped (Supporting code not implemented).', Colors.YELLOW)
-    
-    # print_color('\n[Scenario Schema] Choose action:', Colors.CYAN)
-    # print('  1. Skip generate_scenario_description (Default)')
-    # print('  2. Execute generate_scenario_description')
-    # choice = input('Enter your choice [1]: ').strip() or '1'
-    # if choice == '2':
-    #     generate_scenario_description(work_dir, proj_path)
-    # else:
-    #     print_color('[Scenario Schema] Skipped by user.', Colors.YELLOW)
 
     maybe_pause("Log Analysis", "Generate AI Prompt")
 
-    generate_ai_prompt(work_dir)
-    maybe_pause("Generate AI Prompt", "Ask LLM for Bug Localization")
+    # Capture the selected script to determine the next workflow steps
+    selected_script = generate_ai_prompt(work_dir)
 
-    ask_llm_for_localization(ask_llm_dir)
-    maybe_pause("Ask LLM for Bug Localization", "Generate Fix Prompt")
-
-    # Pass proj_path to generate_fix_prompt to automatically load target folders
-    generate_fix_prompt(work_dir, proj_path)
-    maybe_pause("Generate Fix Prompt", "Ask LLM for Code Fix")
-
-    ask_llm_for_code_fix(ask_llm_dir)
-    maybe_pause("Ask LLM for Code Fix", "Apply Fix to Source Code")
-
-    # MODIFIED: Pass proj_path to apply_fix to enable automatic configuration loading
-    apply_fix(work_dir, proj_path)
-
-    print_color(
-        "\n=======================================================", Colors.MAGENTA)
-    print_color(
-        "  Workflow execution completed successfully. The bug has been fixed.", Colors.GREEN)
-    print_color(
-        "  You can now re-run the tests to verify the fix.", Colors.GREEN)
-    print_color(
-        "=======================================================", Colors.MAGENTA)
+    if selected_script == "generate_bug_localization_prompt.py":
+        # Execute the original Bug Fix Workflow
+        maybe_pause("Generate AI Prompt", "Ask LLM for Bug Localization")
+        ask_llm_for_localization(ask_llm_dir)
+        
+        maybe_pause("Ask LLM for Bug Localization", "Generate Fix Prompt")
+        generate_fix_prompt(work_dir, proj_path)
+        
+        maybe_pause("Generate Fix Prompt", "Ask LLM for Code Fix")
+        ask_llm_for_code_fix(ask_llm_dir)
+        
+        maybe_pause("Ask LLM for Code Fix", "Apply Fix to Source Code")
+        apply_fix(work_dir, proj_path)
+        
+        print_color(
+            "\n=======================================================", Colors.MAGENTA)
+        print_color(
+            "  Workflow execution completed successfully. The bug has been fixed.", Colors.GREEN)
+        print_color(
+            "  You can now re-run the tests to verify the fix.", Colors.GREEN)
+        print_color(
+            "=======================================================", Colors.MAGENTA)
+            
+    elif selected_script:
+        # Execute the General LLM Task Workflow
+        maybe_pause("Generate AI Prompt", "Execute General LLM Task")
+        print_color(f"\n>>> Executing general LLM task for {selected_script}...", Colors.CYAN)
+        
+        if ask_llm_dir not in sys.path:
+            sys.path.insert(0, ask_llm_dir)
+            
+        try:
+            import run as ask_llm_run
+            
+            original_cwd = os.getcwd()
+            os.chdir(ask_llm_dir)
+            
+            # Assuming the generic prompt is saved as AI_General_Prompt.md
+            # You may need to adjust this filename based on your actual script output
+            prompt_file_path = os.path.join(original_cwd, "AI_General_Prompt.md") 
+            output_file_path = os.path.join(original_cwd, "output.md")
+            
+            if not os.path.exists(prompt_file_path):
+                print_color(f"[WARN] Expected prompt file not found: {prompt_file_path}", Colors.YELLOW)
+                print_color("[WARN] Please ensure your script generates this file, or update the filename in startup.py.", Colors.YELLOW)
+            else:
+                ask_llm_run.run_api(file_path=prompt_file_path, output_path=output_file_path)
+                print_color(f"[+] LLM response saved to {output_file_path}", Colors.GREEN)
+                
+            os.chdir(original_cwd)
+            
+            print_color(
+                "\n=======================================================", Colors.MAGENTA)
+            print_color(
+                "  General LLM task execution completed successfully.", Colors.GREEN)
+            print_color(
+                "=======================================================", Colors.MAGENTA)
+                
+        except ImportError as e:
+            print_color(f"[!] Failed to import run.py from {ask_llm_dir}: {e}", Colors.RED)
+        except Exception as e:
+            print_color(f"[!] Error during LLM API call: {e}", Colors.RED)
+            if 'original_cwd' in locals():
+                os.chdir(original_cwd)
+    else:
+        print_color("\n[!] Prompt generation was skipped or failed. No further actions taken.", Colors.YELLOW)
 
     os.chdir(work_dir)
 

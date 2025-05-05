@@ -67,7 +67,6 @@ def instrument_code(work_dir, proj_path=None, git_root=None, is_new_project=Fals
     mode_arg = "full" if inst_mode_choice == "1" else "incremental"
     print_color(f"[Mode Selection] Selected mode: {mode_arg}", Colors.GREEN)
 
-    # [NEW] Switch back to the source branch before instrumentation
     if proj_path:
         config_file = os.path.join(proj_path, 'config.json')
         if os.path.exists(config_file):
@@ -106,11 +105,9 @@ def instrument_code(work_dir, proj_path=None, git_root=None, is_new_project=Fals
             "Error: Failed to setup shadow branch and instrument code. Exiting.", Colors.RED)
         sys.exit(1)
 
-    # [MODIFIED] Added check for "NO_MODIFIED_FILES" state to skip moving files
     if proj_path and success != "NO_MODIFIED_FILES":
         _move_instrumentation_outputs_to_project(work_dir, proj_path)
     elif success == "NO_MODIFIED_FILES":
-        # [NEW] Print skip message and force branch switch
         print_color("[Skip] No modified files found, skipped moving instrumentation outputs.", Colors.YELLOW)
         print_color("[Info] Forcing git switch to shadow-project-for-instrumention branch...", Colors.CYAN)
         try:
@@ -260,9 +257,6 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
     print_color(
         "\n>>> Analyzing logs and extracting denoised data...", Colors.CYAN)
         
-    # ============================================================
-    # NEW: Interactive prompt to skip log analysis
-    # ============================================================
     if auto_analyze:
         print_color("[Auto] Flush command detected. Automatically executing Log Analysis...", Colors.GREEN)
         choice = "2"
@@ -282,9 +276,6 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
         
     os.chdir(work_dir)
 
-    # ============================================================
-    # NEW: Clear the 'pruned' folder under work_dir before analysis
-    # ============================================================
     pruned_dir = os.path.join(work_dir, 'pruned')
     if os.path.exists(pruned_dir):
         shutil.rmtree(pruned_dir)
@@ -350,7 +341,6 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
         print_color(
             f"[WARN] event_dictionary.txt not found at {event_dict_file}", Colors.YELLOW)
 
-    # --- Replace subprocess call with direct function invocation ---
     # Add work_dir to path so that we can import process_logs from enginerring
     if work_dir not in sys.path:
         sys.path.insert(0, work_dir)
@@ -376,41 +366,73 @@ def generate_ai_prompt(work_dir):
     print_color("\n>>> Generating AI Prompt...", Colors.CYAN)
     os.chdir(work_dir)
 
-    ai_app_path = os.path.join(work_dir, "core", "scenario_data_ai_app")
-    python_script_path = os.path.join(
-        ai_app_path, "generate_bug_localization_prompt.py")
+    ai_app_path = os.path.join(work_dir, "enginerring", "scenario_data_ai_app")
+    
+    if not os.path.exists(ai_app_path):
+        print_color(f"[Error] AI app directory not found at: {ai_app_path}", Colors.RED)
+        return None
 
-    if not os.path.exists(python_script_path):
-        print_color(
-            f"AI prompt generation script not found at: {python_script_path}", Colors.RED)
-        return
+    # Scan for available python scripts
+    scripts = []
+    for file in os.listdir(ai_app_path):
+        if file.endswith(".py") and file != "__init__.py":
+            scripts.append(file)
+            
+    if not scripts:
+        print_color(f"[Error] No Python scripts found in {ai_app_path}", Colors.RED)
+        return None
+        
+    scripts.sort()
 
-    # [MODIFIED] Directly look for final-output-calltree.md in work_dir
+    print_color("\n========================================", Colors.CYAN)
+    print_color("       Select Prompt Generator Script   ", Colors.CYAN)
+    print_color("========================================", Colors.CYAN)
+    for i, script in enumerate(scripts, 1):
+        print(f"  {i}. {script}")
+    print_color("========================================", Colors.CYAN)
+    
+    choice = ""
+    while True:
+        choice = input(f"Enter your choice (1-{len(scripts)}): ").strip()
+        if choice.isdigit() and 1 <= int(choice) <= len(scripts):
+            break
+        print_color("[!] Invalid choice, please try again.", Colors.RED)
+        
+    selected_script = scripts[int(choice) - 1]
+    module_name = selected_script[:-3]  # Remove .py
+    
+    print_color(f"\n[Info] Selected script: {selected_script}", Colors.GREEN)
+
     selected_calltree_path = os.path.join(work_dir, "final-output-calltree.md")
 
-    if not os.path.exists(selected_calltree_path):
-        print_color(f"[Error] final-output-calltree.md not found in working directory: {work_dir}", Colors.RED)
-        return
-    
-    print_color(f"[Info] Found final-output-calltree.md in working directory. Using path: {selected_calltree_path}", Colors.GREEN)
+    if os.path.exists(selected_calltree_path):
+        print_color(f"[Info] Found final-output-calltree.md in working directory. Using path: {selected_calltree_path}", Colors.GREEN)
+    else:
+        print_color(f"[Warning] final-output-calltree.md not found in working directory: {work_dir}", Colors.YELLOW)
 
-    print_color(
-        f"Running Python script from {work_dir} to generate the prompt...", Colors.GREEN)
+    print_color(f"Running Python script from {work_dir} to generate the prompt...", Colors.GREEN)
     
-    # Dynamically import generate_bug_localization_prompt and call exposed interface
     if ai_app_path not in sys.path:
         sys.path.insert(0, ai_app_path)
         
     try:
-        import generate_bug_localization_prompt as prompt_gen
+        module = importlib.import_module(module_name)
+        importlib.reload(module)
         
-        importlib.reload(prompt_gen)
-        
-        prompt_gen.generate_prompt(selected_calltree_path)
+        # Directly call the common interface generate_prompt with selected_calltree_path
+        if hasattr(module, 'generate_prompt'):
+            module.generate_prompt(selected_calltree_path)
+            return selected_script
+        else:
+            print_color(f"[!] 'generate_prompt' function not found in {selected_script}. Please ensure the script exposes this interface.", Colors.RED)
+            return None
+            
     except ImportError as e:
-        print_color(f"[!] Failed to import generate_bug_localization_prompt: {e}", Colors.RED)
+        print_color(f"[!] Failed to import {module_name}: {e}", Colors.RED)
+        return None
     except Exception as e:
         print_color(f"[!] Error generating prompt: {e}", Colors.RED)
+        return None
 
 
 def ask_llm_for_localization(ask_llm_dir):
@@ -451,23 +473,19 @@ def generate_fix_prompt(work_dir, proj_path=None):
 
     fix_bug_dir = os.path.join(work_dir, "enginerring", "fix_bug")
     
-    # Dynamically import generate_fix_prompt and call the exposed interface
     if fix_bug_dir not in sys.path:
         sys.path.insert(0, fix_bug_dir)
         
     try:
         import generate_fix_prompt as fix_prompt_gen
         
-        # Reload to ensure we have the latest version if modified
         importlib.reload(fix_prompt_gen)
         
         original_cwd = os.getcwd()
         os.chdir(work_dir)
         
-        # Automatically determine the report path based on localization output
         report_path = os.path.join(work_dir, "output.md")
         
-        # Call the exposed interface with proj_path and report_path
         fix_prompt_gen.generate_prompt(proj_path=proj_path, report_path=report_path)
         
         os.chdir(original_cwd)
@@ -490,11 +508,9 @@ def ask_llm_for_code_fix(ask_llm_dir):
         
         original_cwd = os.getcwd()
         
-        # Automatically set paths based on the current working directory
         file_path = os.path.join(original_cwd, "AI_Apply_Fix_Prompt.md")
         output_path = os.path.join(original_cwd, "output.md")
         
-        # Change directory to ensure environment variables and context are correct for LLM module
         os.chdir(ask_llm_dir)
         
         print_color(f"[+] Using prompt file: {file_path}", Colors.GREEN)
@@ -504,7 +520,6 @@ def ask_llm_for_code_fix(ask_llm_dir):
             output_path=output_path
         )
         
-        # Restore the original working directory
         os.chdir(original_cwd)
         print_color(f"[+] LLM response saved to {output_path}", Colors.GREEN)
         
@@ -516,7 +531,6 @@ def ask_llm_for_code_fix(ask_llm_dir):
             os.chdir(original_cwd)
 
 
-# MODIFIED: Added proj_path parameter to allow automatic configuration loading
 def apply_fix(work_dir, proj_path=None):
     print_color("\n>>> Applying Fix to Source Code...", Colors.CYAN)
 
@@ -528,13 +542,11 @@ def apply_fix(work_dir, proj_path=None):
     try:
         import apply_fix as fix_applier
         
-        # Reload to ensure we have the latest version if modified
         importlib.reload(fix_applier)
         
         original_cwd = os.getcwd()
         os.chdir(work_dir)
         
-        # MODIFIED: Automatically determine fixed code path and base directories
         fixed_code_path = os.path.join(work_dir, "output.md")
         
         base_dirs = []
@@ -549,8 +561,6 @@ def apply_fix(work_dir, proj_path=None):
             base_dirs = ["."]
             print_color("[Warning] No original-target-folders found in config.json, using current directory.", Colors.YELLOW)
         
-        # Call the exposed interface with the new parameters
-        # Note: Ensure that run_apply_fix in apply_fix.py is updated to accept these parameters
         fix_applier.run_apply_fix(fixed_code_path=fixed_code_path, base_dirs=base_dirs)
         
         os.chdir(original_cwd)

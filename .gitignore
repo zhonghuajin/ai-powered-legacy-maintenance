@@ -29,3 +29,5 @@ scenario_schema_output.json
 instrumented.txt
 AI_Apply_Fix_Prompt.md
 output.md
+AI_Code_Audit_Prompt.md
+AI_General_Prompt.md
