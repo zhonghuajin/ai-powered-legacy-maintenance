@@ -105,9 +105,11 @@ def instrument_code(work_dir, proj_path=None, git_root=None, is_new_project=Fals
             "Error: Failed to setup shadow branch and instrument code. Exiting.", Colors.RED)
         sys.exit(1)
 
-    if proj_path and success != "NO_MODIFIED_FILES":
+    is_skipped = (success == "NO_MODIFIED_FILES")
+
+    if proj_path and not is_skipped:
         _move_instrumentation_outputs_to_project(work_dir, proj_path)
-    elif success == "NO_MODIFIED_FILES":
+    elif is_skipped:
         print_color("[Skip] No modified files found, skipped moving instrumentation outputs.", Colors.YELLOW)
         print_color("[Info] Forcing git switch to shadow-project-for-instrumention branch...", Colors.CYAN)
         try:
@@ -122,7 +124,8 @@ def instrument_code(work_dir, proj_path=None, git_root=None, is_new_project=Fals
         except subprocess.CalledProcessError as e:
             print_color(f"[WARN] Failed to switch to shadow branch: {e.stderr.strip()}", Colors.YELLOW)
 
-    return mode_arg
+    # Return mode and whether skipped
+    return mode_arg, is_skipped
 
 
 def _move_instrumentation_outputs_to_project(work_dir, proj_path):
@@ -362,10 +365,8 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
         print_color(f"Log processing failed: {e}", Colors.RED)
 
 
-def generate_ai_prompt(work_dir):
-    print_color("\n>>> Generating AI Prompt...", Colors.CYAN)
-    os.chdir(work_dir)
-
+def select_ai_prompt_script(work_dir):
+    print_color("\n>>> Pre-selecting AI Prompt Generator...", Colors.CYAN)
     ai_app_path = os.path.join(work_dir, "enginerring", "scenario_data_ai_app")
     
     if not os.path.exists(ai_app_path):
@@ -399,10 +400,20 @@ def generate_ai_prompt(work_dir):
         print_color("[!] Invalid choice, please try again.", Colors.RED)
         
     selected_script = scripts[int(choice) - 1]
+    print_color(f"\n[Info] Selected script: {selected_script}", Colors.GREEN)
+    return selected_script
+
+
+def execute_ai_prompt(work_dir, selected_script):
+    if not selected_script:
+        return None
+
+    print_color("\n>>> Generating AI Prompt...", Colors.CYAN)
+    os.chdir(work_dir)
+
+    ai_app_path = os.path.join(work_dir, "enginerring", "scenario_data_ai_app")
     module_name = selected_script[:-3]  # Remove .py
     
-    print_color(f"\n[Info] Selected script: {selected_script}", Colors.GREEN)
-
     selected_calltree_path = os.path.join(work_dir, "final-output-calltree.md")
 
     if os.path.exists(selected_calltree_path):
