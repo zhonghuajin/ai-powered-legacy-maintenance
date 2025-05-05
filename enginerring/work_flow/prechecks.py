@@ -14,10 +14,8 @@ def print_disclaimer():
     print_color("   2. Execution & Log Generation", Colors.YELLOW)
     print_color("   3. Log Denoising", Colors.YELLOW)
     print_color("   4. AI Prompt Generation", Colors.YELLOW)
-    print_color("   5. Ask LLM for Bug Localization", Colors.YELLOW)
-    print_color("   6. Generate Fix Prompt", Colors.YELLOW)
-    print_color("   7. Ask LLM for Code Fix", Colors.YELLOW)
-    print_color("   8. Apply Fix to Source Code", Colors.YELLOW)
+    print_color("   5. Ask LLM", Colors.YELLOW)
+    print_color("   6. Apply The Solution Provided by AI", Colors.YELLOW)
     print_color("-------------------------------------------------------\n", Colors.YELLOW)
 
 

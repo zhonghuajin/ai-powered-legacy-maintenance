@@ -212,11 +212,6 @@ def main():
     # Pass the flush state to automatically trigger log analysis if applicable
     analyze_logs(work_dir, proj_path=proj_path, auto_analyze=is_flushed)
 
-    # ---------------------------------------------------------------
-    # Scenario description generation (with automatic output move)
-    # ---------------------------------------------------------------
-    print_color('\n[Scenario Schema] Temporarily skipped (Supporting code not implemented).', Colors.YELLOW)
-
     maybe_pause("Log Analysis", "Generate AI Prompt")
 
     # Capture the selected script to determine the next workflow steps
@@ -288,6 +283,20 @@ def main():
                 os.chdir(original_cwd)
     else:
         print_color("\n[!] Prompt generation was skipped or failed. No further actions taken.", Colors.YELLOW)
+
+    # ---------------------------------------------------------------
+    # Scenario description generation (with automatic output move)
+    # ---------------------------------------------------------------
+    print_color('\n[Scenario Schema] Choose action:', Colors.CYAN)
+    print('  1. Skip generate_scenario_description (Default)')
+    print('  2. Execute generate_scenario_description')
+    
+    choice = input('Enter your choice [1]: ').strip() or '1'
+        
+    if choice == '2':
+        generate_scenario_description(work_dir, proj_path)
+    else:
+        print_color('[Scenario Schema] Skipped by user.', Colors.YELLOW)
 
     os.chdir(work_dir)
 
