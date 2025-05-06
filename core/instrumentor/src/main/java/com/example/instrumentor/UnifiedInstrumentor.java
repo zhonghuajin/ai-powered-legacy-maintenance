@@ -1,8 +1,8 @@
 package com.example.instrumentor;
 
-import com.example.instrumentor.happens.before.AstKit;
-import com.example.instrumentor.happens.before.HbVisitor;
-import com.example.instrumentor.happens.before.ProbeContext;
+// import com.example.instrumentor.happens.before.AstKit;
+// import com.example.instrumentor.happens.before.HbVisitor;
+// import com.example.instrumentor.happens.before.ProbeContext;
 import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
@@ -12,7 +12,7 @@ import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
+// import java.util.Map;
 
 
 public class UnifiedInstrumentor {
@@ -51,9 +51,9 @@ public class UnifiedInstrumentor {
         
         Path dictPath = Path.of("event_dictionary.txt");
         List<String> dictLines = new ArrayList<>();
-        for (Map.Entry<String, Integer> entry : AstKit.EVENT_DICT.entrySet()) {
-            dictLines.add(entry.getValue() + "=" + entry.getKey());
-        }
+        // for (Map.Entry<String, Integer> entry : AstKit.EVENT_DICT.entrySet()) {
+        //     dictLines.add(entry.getValue() + "=" + entry.getKey());
+        // }
         Files.write(dictPath, dictLines);
         System.out.println("Dictionary saved → " + dictPath.toAbsolutePath());
     }
@@ -100,11 +100,11 @@ public class UnifiedInstrumentor {
         CodeBlockInstrumentor.instrumentCU(cu, absolutePath);
 
         
-        ProbeContext ctx = new ProbeContext();
-        new HbVisitor(ctx).visit(cu, null);
+        // ProbeContext ctx = new ProbeContext();
+        // new HbVisitor(ctx).visit(cu, null);
 
         
-        ctx.executePostActions();
+        // ctx.executePostActions();
 
         
         Files.writeString(outputFile, cu.toString());
