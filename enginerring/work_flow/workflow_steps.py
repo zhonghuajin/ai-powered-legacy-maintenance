@@ -296,6 +296,18 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
             Colors.YELLOW
         )
 
+    # Extract project language from config.json if available
+    project_lang = "java"
+    if proj_path:
+        config_path = os.path.join(proj_path, 'config.json')
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config_data = json.load(f)
+                    project_lang = config_data.get('language', 'java').lower()
+            except Exception as e:
+                print_color(f"[WARN] Failed to read language from config.json: {e}", Colors.YELLOW)
+
     if not os.path.isdir(search_dir):
         print_color(
             f"[WARNING] scenario_data directory not found at {search_dir}.",
@@ -313,9 +325,21 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
         reverse=True
     )
 
-    if not log_files or not events_files:
+    # Automatically create a fake empty event file if not found
+    if not events_files:
         print_color(
-            f"Could not find generated log or events file in: {search_dir}. "
+            f"[Auto-Fix] Could not find events file in: {search_dir}. Automatically creating a fake empty event file.",
+            Colors.YELLOW
+        )
+        os.makedirs(search_dir, exist_ok=True)
+        fake_events_file = os.path.join(search_dir, "instrumentor-events-fake.txt")
+        with open(fake_events_file, "w", encoding="utf-8") as f:
+            pass  # Create empty file
+        events_files = [fake_events_file]
+
+    if not log_files:
+        print_color(
+            f"Could not find generated log file in: {search_dir}. "
             "Please check whether Step 2 executed successfully and generated the logs.",
             Colors.RED
         )
@@ -355,6 +379,7 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
 
     try:
         process_logs.process_logs(
+            language=project_lang,
             target_folders_file=target_folders_file,
             log_file=log_file,
             comment_mapping_file=comment_mapping_file,

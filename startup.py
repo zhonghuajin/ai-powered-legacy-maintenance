@@ -137,14 +137,14 @@ def switch_to_source_branch(proj_path):
 def main():
     parser = argparse.ArgumentParser(description="Instrumentor Test Bug Fix Workflow Quickstart Script")
     parser.add_argument(
-        '--no-pause', 
+        '--pause', 
         action='store_true', 
-        help="Skip pausing between workflow steps."
+        help="Pause between workflow steps."
     )
     args = parser.parse_args()
 
     def maybe_pause(completed_step, next_step):
-        if not args.no_pause:
+        if args.pause:
             pause_for_next_step(completed_step, next_step)
 
     work_dir = os.path.abspath(os.getcwd())
