@@ -83,6 +83,7 @@ def sync_files(original_cwd, proj_path=None):
 
     original_git_root = config.get("original_git_root")
     source_branch = config.get("source_branch")
+    language = config.get("language", "java")  # Retrieve language
 
     if not original_git_root or not source_branch:
         print("Error: Missing original_git_root or source_branch in config.json")
@@ -130,7 +131,6 @@ def sync_files(original_cwd, proj_path=None):
 
     if not modified_files:
         print("No modified files found compared to the base commit.")
-        # ✨ [修改] 这里不再返回 True，而是返回特定标识以供上层识别
         return "NO_MODIFIED_FILES"
 
     print(f"Found {len(modified_files)} modified file(s).")
@@ -183,21 +183,18 @@ def sync_files(original_cwd, proj_path=None):
     # 8. Execute incremental instrumentation
     print("Running instrumentation flow for synchronized files...")
     
-    # --- Modification for passing incremental mode and mapping file ---
-    # Determine the mapping file path based on the project directory.
-    # comment-mapping.txt is expected to be placed under proj_path by a prior
-    # instrumentation step. If it doesn't exist yet, None is passed safely.
     mapping_file = os.path.join(proj_path, "comment-mapping.txt") if proj_path else None
     if mapping_file and not os.path.isfile(mapping_file):
         print(f"Warning: Mapping file not found at {mapping_file}, continuing without it.")
         mapping_file = None
 
+    # Pass the language parameter to the instrumentation flow
     success = run_instrumentation_flow(
         target_folders_file=target_folders_file,
-        incremental=True,            # Mark as incremental mode
-        mapping_file=mapping_file   # Pass mapping file path
+        incremental=True,
+        mapping_file=mapping_file,
+        language=language
     )
-    # -----------------------------------------------------------------
 
     if success:
         print("\nCommitting incremental instrumentation changes to the shadow branch...")

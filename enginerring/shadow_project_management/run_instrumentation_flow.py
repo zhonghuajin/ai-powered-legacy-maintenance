@@ -7,7 +7,7 @@ from print_utils.utils import print_color, Colors
 
 
 def _run_java_instrumentation(target_folders, incremental, mapping_file):
-    """单 JAR 调用，替代原来的三次 subprocess"""
+    """Single JAR call, replaces previous multiple subprocesses"""
     java_home = os.environ.get("JAVA_HOME")
     if not java_home:
         print_color("Error: JAVA_HOME not configured.", Colors.RED)
@@ -31,6 +31,35 @@ def _run_java_instrumentation(target_folders, incremental, mapping_file):
 
     if result.returncode != 0:
         print_color("Warning: Instrumentation pipeline returned non-zero exit code.", Colors.YELLOW)
+        return False
+
+    return True
+
+
+def _run_php_instrumentation(target_folders, incremental, mapping_file, work_dir):
+    """Executes the PHP-specific instrumentation logic."""
+    php_exe = shutil.which("php")
+    if not php_exe:
+        print_color("Error: php not found in PATH.", Colors.RED)
+        return False
+
+    pipeline_script = os.path.join(work_dir, "multilingual", "php", "InstrumentationPipeline.php")
+
+    if not os.path.exists(pipeline_script):
+        print_color(f"Error: PHP instrumentation script not found at {pipeline_script}", Colors.RED)
+        return False
+
+    php_cmd = [php_exe, pipeline_script]
+    if incremental:
+        php_cmd += ["--incremental", "--mapping", mapping_file]
+    
+    php_cmd += target_folders
+
+    print(f"Running: {' '.join(php_cmd)}")
+    result = subprocess.run(php_cmd)
+
+    if result.returncode != 0:
+        print_color("Warning: PHP Instrumentation pipeline returned non-zero exit code.", Colors.YELLOW)
         return False
 
     return True
@@ -125,6 +154,9 @@ def run_instrumentation_flow(target_folders_file=None, target_folders_list=None,
     
     if lang_lower == 'java':
         success = _run_java_instrumentation(target_folders, incremental, mapping_file)
+    elif lang_lower == 'php':
+        work_dir = os.path.abspath(os.getcwd())
+        success = _run_php_instrumentation(target_folders, incremental, mapping_file, work_dir)
     elif lang_lower == 'python':
         success = _run_python_instrumentation(target_folders, incremental, mapping_file)
     else:

@@ -17,6 +17,41 @@ from enginerring.dependency_handler.prompt_organizer import generate_prompt
 from enginerring.dependency_handler.dependency_injector import run_injection
 
 
+def ensure_language_selected(proj_path):
+    """
+    Ensure the target programming language is selected and saved in config.json.
+    Returns the selected language.
+    """
+    target_language = 'java'
+    if proj_path:
+        config_file = os.path.join(proj_path, 'config.json')
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                
+                target_language = config.get('language')
+                if not target_language:
+                    print_color("\n========================================", Colors.CYAN)
+                    print_color("       Select Programming Language      ", Colors.CYAN)
+                    print_color("========================================", Colors.CYAN)
+                    print("  1. Java\n  2. PHP\n  3. Python")
+                    print_color("========================================", Colors.CYAN)
+                    lang_choice = input("Enter your choice [1]: ").strip() or "1"
+                    lang_map = {'1': 'java', '2': 'php', '3': 'python'}
+                    target_language = lang_map.get(lang_choice, 'java')
+
+                    config['language'] = target_language
+                    with open(config_file, 'w', encoding='utf-8') as f:
+                        json.dump(config, f, indent=4)
+                    print_color(f"[Info] Language set to {target_language.upper()} and saved to config.", Colors.GREEN)
+                else:
+                    print_color(f"[Info] Using configured language: {target_language.upper()}", Colors.GREEN)
+            except Exception as e:
+                print_color(f"[WARN] Could not read config for language selection: {e}", Colors.YELLOW)
+    return target_language
+
+
 def instrument_code(work_dir, proj_path=None, git_root=None, is_new_project=False):
     print_color(
         "\n>>> Setting up shadow branch and instrumenting code...", Colors.CYAN)
@@ -93,6 +128,7 @@ def instrument_code(work_dir, proj_path=None, git_root=None, is_new_project=Fals
             except Exception as e:
                 print_color(f"[WARN] Could not read config or switch branch: {e}", Colors.YELLOW)
 
+    # Removed the 'language' keyword argument to match the original function signature
     success = run_instrumentation_mode(
         git_root=git_root_dir,
         mode=mode_arg,
@@ -390,7 +426,7 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
         print_color(f"Log processing failed: {e}", Colors.RED)
 
 
-def select_ai_prompt_script(work_dir):
+def select_ai_prompt_script(work_dir, target_language=None):
     print_color("\n>>> Pre-selecting AI Prompt Generator...", Colors.CYAN)
     ai_app_path = os.path.join(work_dir, "enginerring", "scenario_data_ai_app")
     
@@ -402,6 +438,7 @@ def select_ai_prompt_script(work_dir):
     scripts = []
     for file in os.listdir(ai_app_path):
         if file.endswith(".py") and file != "__init__.py":
+            # Future enhancement: filter scripts based on target_language if needed
             scripts.append(file)
             
     if not scripts:

@@ -65,8 +65,9 @@ def run_full_instrumentation(git_root_dir, original_cwd, proj_path=None):
     # At this point we are inside the shadow branch. Remove .gitignore if present.
     _remove_gitignore_if_exists(git_root_dir)
 
-    # Record project info into config.json
+    # Record project info into config.json and retrieve language
     os.chdir(original_cwd)
+    language = 'java'  # Default fallback
     if proj_path:
         config_path = os.path.join(proj_path, "config.json")
         config = {}
@@ -74,6 +75,7 @@ def run_full_instrumentation(git_root_dir, original_cwd, proj_path=None):
             with open(config_path, "r", encoding="utf-8") as f:
                 try:
                     config = json.load(f)
+                    language = config.get("language", "java")  # Retrieve language
                 except json.JSONDecodeError:
                     print(f"Warning: failed to parse {config_path}, overwriting.")
         config["original_git_root"] = git_root_dir
@@ -91,7 +93,11 @@ def run_full_instrumentation(git_root_dir, original_cwd, proj_path=None):
     else:
         target_folders_file = os.path.join(original_cwd, "target-folders.txt")
 
-    success = run_instrumentation_flow(target_folders_file=target_folders_file)
+    # Pass the language parameter to the instrumentation flow
+    success = run_instrumentation_flow(
+        target_folders_file=target_folders_file, 
+        language=language
+    )
 
     if success:
         # Commit is delayed until dependencies are injected.
@@ -100,8 +106,6 @@ def run_full_instrumentation(git_root_dir, original_cwd, proj_path=None):
         print("\033[1;31m" + "[ IMPORTANT NOTICE ]".center(64) + "\033[0m")
         print(f"\033[1;33mFor the Git project at: {git_root_dir}\033[0m")
         print(f"\033[1;33mYou are currently on branch: {branch_name}\033[0m")
-        print(f"\033[1;32mInstrumentation changes are staged but NOT yet committed.\033[0m")
-        print(f"\033[1;32mDependencies will be handled next, then a unified commit will be made.\033[0m")
         print("*" * 70 + "\n")
 
     return success

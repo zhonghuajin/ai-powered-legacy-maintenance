@@ -19,6 +19,7 @@ from enginerring.work_flow.prechecks import (
     auto_select_llm_provider
 )
 from enginerring.work_flow.workflow_steps import (
+    ensure_language_selected,
     instrument_code,
     handle_instrumentation_dependencies,
     startup_log_manager_server,
@@ -174,8 +175,11 @@ def main():
         # Step: Create or select a project
         proj_path, root_path, is_new_project = create_or_select_project(work_dir)
 
+        # NEW: Ensure language is selected before prompting for scripts
+        target_language = ensure_language_selected(proj_path)
+
         # NEW: Pre-select the AI Prompt Generator script early to avoid workflow interruption later
-        selected_script = select_ai_prompt_script(work_dir)
+        selected_script = select_ai_prompt_script(work_dir, target_language)
 
         maybe_pause("Project and Environment Setup", "Setup Shadow Branch")
 

@@ -4,10 +4,11 @@ import org.junit.platform.launcher.TestExecutionListener;
 import org.junit.platform.launcher.TestPlan;
 
 /**
- * JUnit Platform Listener：当所有测试执行完毕后自动刷盘。
- * 
- * 这个方案不依赖 JVM shutdown hook，因此无论 Surefire 用 halt() 还是 exit()，
- * 都能保证在测试结束后把日志写到磁盘。
+ * JUnit Platform Listener: automatically flushes logs after all tests finish.
+ *
+ * This approach does not rely on JVM shutdown hooks, so it works regardless of
+ * whether Surefire uses halt() or exit(), ensuring logs are written to disk
+ * after test execution completes.
  */
 public class LogFlushTestListener implements TestExecutionListener {
 
