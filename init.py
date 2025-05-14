@@ -2,6 +2,7 @@ import os
 import sys
 import argparse
 import subprocess
+import urllib.request
 
 
 def main():
@@ -12,6 +13,23 @@ def main():
         help="Skip executing 'composer install' in the PHP directory"
     )
     args = parser.parse_args()
+
+    # =====================================================
+    # Prominent user notice and pause for confirmation
+    # =====================================================
+    print("\n" + "="*60)
+    print("\033[1;31m⚠️  IMPORTANT NOTICE ⚠️\033[0m")
+    print("\033[1;33mPlease DO NOT leave during the initialization process!\033[0m")
+    print("\033[1;33mYou will need to manually configure the .env file at the end.\033[0m")
+    print("\033[1;33mIf you leave early, the configuration may be incomplete or the script may hang.\033[0m")
+    print("-" * 60)
+    print("\033[1;36mPlease DO NOT leave during the initialization process!\033[0m")
+    print("\033[1;36mYou will need to manually configure the .env file at the end.\033[0m")
+    print("="*60 + "\n")
+    
+    input("\033[1;32mI understand, press Enter to continue... \033[0m")
+    print("\nStarting initialization...\n")
+    # =====================================================
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -45,6 +63,53 @@ def main():
         sys.exit(1)
     # =====================================================
 
+    # ========== Install LLM Python Dependencies ==========
+    print("\nStep 1: Installing required Python packages for LLM...")
+    
+    # Check if proxy environment variables are already set
+    proxy_set = os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY")
+    
+    if not proxy_set:
+        # Attempt to detect if the user is in Mainland China
+        is_china = False
+        try:
+            req = urllib.request.Request("https://ipinfo.io/country")
+            with urllib.request.urlopen(req, timeout=3) as response:
+                country = response.read().decode('utf-8').strip()
+                if country == "CN":
+                    is_china = True
+        except Exception:
+            # Ignore network errors during detection and proceed
+            pass
+
+        if is_china:
+            print("\033[33m[!] Mainland China network detected.\033[0m")
+            print("\033[33mYou may need to configure a proxy to install dependencies and access LLM APIs.\n\033[0m")
+            print("\033[36mPlease configure your proxy manually. Example (run these in your terminal):\033[0m")
+            
+            if os.name == 'nt':
+                print("set HTTP_PROXY=http://127.0.0.1:7890")
+                print("set HTTPS_PROXY=http://127.0.0.1:7890\n")
+            else:
+                print("export HTTP_PROXY=\"http://127.0.0.1:7890\"")
+                print("export HTTPS_PROXY=\"http://127.0.0.1:7890\"\n")
+            
+            print("\033[33mAfter configuring the proxy, run this script again.\033[0m")
+            print("\033[31mExiting...\033[0m")
+            sys.exit(1)
+
+    try:
+        # Changed "openai" to "openai<2.0.0" to resolve langchain-openai conflict
+        # Added "flask" to the list of dependencies to install
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "openai<2.0.0", "anthropic", "python-dotenv", "aiohttp", "flask"])
+        print("Python dependencies (openai<2.0.0, anthropic, python-dotenv, aiohttp, flask) installed successfully.")
+    except subprocess.CalledProcessError:
+        print("\033[31m[Error] Failed to install Python dependencies. Please check your Python/pip environment.\033[0m", file=sys.stderr)
+        print("\033[33mNote: If you encounter a 'check_hostname requires server_hostname' error due to your proxy, please upgrade pip first by running:\033[0m", file=sys.stderr)
+        print(f"{sys.executable} -m pip install --upgrade pip", file=sys.stderr)
+        sys.exit(1)
+    # =====================================================
+
     print("\nChecking Java environment variables...")
     java_home = os.environ.get("JAVA_HOME")
     if not java_home:
@@ -57,7 +122,7 @@ def main():
     mvn_cmd = "mvn.cmd" if os.name == "nt" else "mvn"
 
     # ========== Build Core Instrumentor ==========
-    print("\nStep 1: Executing mvn clean install to build the core instrumentor...")
+    print("\nStep 2: Executing mvn clean install to build the core instrumentor...")
     core_pom_path = os.path.join("core", "pom.xml")
 
     try:
@@ -74,7 +139,7 @@ def main():
         sys.exit(1)
 
     # ========== Build PHP Redis Log Monitor (Java Version) ==========
-    print("\nStep 2: Executing mvn clean package to build the PHP Redis Log Monitor...")
+    print("\nStep 3: Executing mvn clean package to build the PHP Redis Log Monitor...")
     php_monitor_pom_path = os.path.join("multilingual", "php", "instrumentor-log-monitor", "pom.xml")
     
     if not os.path.isfile(php_monitor_pom_path):
@@ -95,7 +160,7 @@ def main():
         sys.exit(1)
 
     # ========== Run Composer Install for PHP ==========
-    print("\nStep 3: Executing composer install for PHP environment...")
+    print("\nStep 4: Executing composer install for PHP environment...")
     php_dir = os.path.join(script_dir, "multilingual", "php")
     
     if args.skip_composer:
@@ -125,7 +190,7 @@ def main():
             sys.exit(1)
 
     # ========== Edit .env file ==========
-    print("\nStep 4: Opening .env file for configuration...")
+    print("\nStep 5: Opening .env file for configuration...")
     env_dir = os.path.join(script_dir, "enginerring", "ask_llm")
     env_file_path = os.path.join(env_dir, ".env")
 

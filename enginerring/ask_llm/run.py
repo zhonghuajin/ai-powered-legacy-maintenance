@@ -2,7 +2,6 @@
 import os
 import sys
 import subprocess
-import urllib.request
 
 def check_env():
     env_file = ".env"
@@ -30,51 +29,9 @@ def check_dependencies():
         import dotenv
         import aiohttp
     except ImportError:
-        print("\033[36m[*] Missing dependencies detected. Preparing to install...\033[0m")
-        
-        # Check if proxy environment variables are already set
-        proxy_set = os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY")
-        
-        if not proxy_set:
-            # Attempt to detect if the user is in Mainland China
-            is_china = False
-            try:
-                req = urllib.request.Request("https://ipinfo.io/country")
-                with urllib.request.urlopen(req, timeout=3) as response:
-                    country = response.read().decode('utf-8').strip()
-                    if country == "CN":
-                        is_china = True
-            except Exception:
-                # Ignore network errors during detection and proceed
-                pass
-
-            if is_china:
-                print("\033[33m[!] Mainland China network detected.\033[0m")
-                print("\033[33mYou may need to configure a proxy to install dependencies and access LLM APIs.\n\033[0m")
-                print("\033[36mPlease configure your proxy manually. Example (run these in your terminal):\033[0m")
-                
-                if os.name == 'nt':
-                    print("set HTTP_PROXY=http://127.0.0.1:7890")
-                    print("set HTTPS_PROXY=http://127.0.0.1:7890\n")
-                else:
-                    print("export HTTP_PROXY=\"http://127.0.0.1:7890\"")
-                    print("export HTTPS_PROXY=\"http://127.0.0.1:7890\"\n")
-                
-                print("\033[33mAfter configuring the proxy, run this script again.\033[0m")
-                print("\033[31mExiting...\033[0m")
-                sys.exit(1)
-
-        print("\033[36m[*] Installing required Python packages...\033[0m")
-        
-        try:
-            # Install dependencies, including aiohttp to resolve the langchain conflict
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "openai", "anthropic", "python-dotenv", "aiohttp"])
-            print("\033[32m[*] Dependencies installed successfully!\033[0m")
-        except subprocess.CalledProcessError:
-            print("\033[31m[Error] Failed to install dependencies. Please check your Python/pip environment.\033[0m")
-            print("\033[33mNote: If you encounter a 'check_hostname requires server_hostname' error due to your proxy, please upgrade pip first by running:\033[0m")
-            print(f"{sys.executable} -m pip install --upgrade pip")
-            sys.exit(1)
+        print("\033[31m[Error] Missing dependencies detected.\033[0m")
+        print("\033[33mPlease run 'python init.py' in the project root directory first to install required packages.\033[0m")
+        sys.exit(1)
 
 
 def run_api(file_path: str, output_path: str, provider: str = None, reasoning: str = "off", stream: bool = True):
