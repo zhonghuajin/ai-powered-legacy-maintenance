@@ -5,11 +5,18 @@ import subprocess
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Project Build Script")
+    parser.add_argument(
+        "--skip-composer", 
+        action="store_true", 
+        help="Skip executing 'composer install' in the PHP directory"
+    )
+    args = parser.parse_args()
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
 
     # ========== Install shared utilities package (shared_utils) ==========
     print("\nStep 0: Installing shared utilities package (shared_utils)...")
-    # Get the directory of the current script (project root directory)
-    script_dir = os.path.dirname(os.path.abspath(__file__))
     shared_utils_dir = os.path.join(script_dir, "enginerring", "shared_utils")
 
     if not os.path.isdir(shared_utils_dir):
@@ -86,6 +93,69 @@ def main():
         print(
             f"Error: Maven command ('{mvn_cmd}') not found. Please ensure Maven is installed and in your PATH.", file=sys.stderr)
         sys.exit(1)
+
+    # ========== Run Composer Install for PHP ==========
+    print("\nStep 3: Executing composer install for PHP environment...")
+    php_dir = os.path.join(script_dir, "multilingual", "php")
+    
+    if args.skip_composer:
+        print("Skipped 'composer install' as requested.")
+        print(f"Note: If you need PHP support later, please navigate to the directory and run it manually:")
+        print(f"      cd {php_dir}")
+        print(f"      composer install")
+    else:
+        if not os.path.isdir(php_dir):
+            print(f"Error: PHP directory not found at {php_dir}", file=sys.stderr)
+            sys.exit(1)
+            
+        composer_cmd = "composer.bat" if os.name == "nt" else "composer"
+        try:
+            result = subprocess.run(
+                [composer_cmd, "install"], 
+                cwd=php_dir
+            )
+            if result.returncode != 0:
+                print("Composer install failed.", file=sys.stderr)
+                sys.exit(1)
+            else:
+                print("Composer install completed successfully.")
+        except FileNotFoundError:
+            print(
+                f"Error: Composer command ('{composer_cmd}') not found. Please ensure Composer is installed and in your PATH.", file=sys.stderr)
+            sys.exit(1)
+
+    # ========== Edit .env file ==========
+    print("\nStep 4: Opening .env file for configuration...")
+    env_dir = os.path.join(script_dir, "enginerring", "ask_llm")
+    env_file_path = os.path.join(env_dir, ".env")
+
+    if not os.path.exists(env_dir):
+        os.makedirs(env_dir, exist_ok=True)
+    if not os.path.exists(env_file_path):
+        with open(env_file_path, "w", encoding="utf-8") as f:
+            f.write("# Please configure your environment variables here\n")
+
+    print(f"Waiting for you to edit and close the file: {env_file_path}")
+    
+    try:
+        if os.name == 'nt':
+            editor = os.environ.get('EDITOR', 'notepad')
+            subprocess.run([editor, env_file_path])
+        elif sys.platform == 'darwin':
+            editor = os.environ.get('EDITOR')
+            if editor:
+                subprocess.run([editor, env_file_path])
+            else:
+                subprocess.run(['open', '-W', '-t', env_file_path])
+        else:
+            editor = os.environ.get('EDITOR', 'nano')
+            subprocess.run([editor, env_file_path])
+        
+        print(".env file configuration completed.")
+    except Exception as e:
+        print(f"Warning: Could not open editor automatically: {e}", file=sys.stderr)
+        print(f"Please manually edit the file at: {env_file_path}")
+        input("Press Enter when you are done editing...")
 
     print("\nAll build steps completed successfully.")
 
