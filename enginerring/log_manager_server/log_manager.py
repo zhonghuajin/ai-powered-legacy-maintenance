@@ -5,6 +5,7 @@ import sys
 import socket
 import requests
 import concurrent.futures
+import re
 from flask import Flask, request, jsonify
 from print_utils.utils import Colors, print_color
 
@@ -225,6 +226,22 @@ def scan_and_manage():
 
                     if cmd_id in cmd_map:
                         action = cmd_map[cmd_id]
+                        
+                        # [NEW FEATURE] Pre-check for flush command
+                        if action == "flush":
+                            status_url = f"http://{target_ip}:{target_port}/status"
+                            try:
+                                status_res = requests.get(status_url, timeout=5)
+                                match = re.search(r'Total Basic Log Entries:\s*(\d+)', status_res.text)
+                                if match and match.group(1) == '0':
+                                    print_color("\n[!] Warning: Total Basic Log Entries is currently empty (0).", Colors.YELLOW)
+                                    print_color("[!] Please perform operations on the target system first to trigger logs, otherwise no data will be generated for analysis.", Colors.YELLOW)
+                                    print_color("[!] Flush operation cancelled.\n", Colors.YELLOW)
+                                    continue
+                            except Exception as e:
+                                print_color(f"[!] Failed to get status for pre-flush check: {e}", Colors.RED)
+                                continue
+
                         url = f"http://{target_ip}:{target_port}/{action}"
                         print_color(
                             f"Sending request to {url}...", Colors.CYAN)
@@ -233,7 +250,7 @@ def scan_and_manage():
                             res = requests.get(url, timeout=5)
                             print_color(f"Response:\n{res.text}", Colors.GREEN)
                             
-                            # [NEW FEATURE] Auto-exit after executing flush command
+                            # Auto-exit after executing flush command
                             if cmd_id == 3:
                                 print_color("Flush command executed successfully. Auto-exiting log manager...", Colors.YELLOW)
                                 return True
