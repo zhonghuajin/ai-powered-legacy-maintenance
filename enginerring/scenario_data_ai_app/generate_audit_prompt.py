@@ -102,9 +102,8 @@ def prepare_prompt():
 
     # 2. Collect additional notes via Editor
     additional_info = get_multiline_input_via_editor(
-        step_title="[Step 2] Please enter [Additional Notes] (optional)",
-        prompt_hint="e.g., Only JDK native libraries can be used for fixes, original method signatures cannot be changed.",
-        default_value="No special additional restrictions. Please follow best practices for Java concurrency programming (e.g., prioritize using tools from the java.util.concurrent package)."
+        step_title="Please enter [Additional Notes] (optional)",
+        prompt_hint="Please provide additional file and data descriptions. For data-sensitive scenarios, it is recommended to provide I/O data examples."
     )
 
     return {

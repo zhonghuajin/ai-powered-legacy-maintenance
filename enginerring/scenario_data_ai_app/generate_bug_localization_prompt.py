@@ -226,9 +226,8 @@ def prepare_prompt():
 
     # 2. Collect additional notes via Editor
     additional_info = get_multiline_input_via_editor(
-        step_title="2. Please enter [Additional Notes] (optional)",
-        prompt_hint="e.g., suspect SyncTest.sharedData is missing volatile.",
-        default_value="No special additional notes. Please follow the factual trace."
+        step_title="Please enter [Additional Notes] (optional)",
+        prompt_hint="Please provide additional file and data descriptions. For data-sensitive scenarios, it is recommended to provide I/O data examples."
     )
 
     return {

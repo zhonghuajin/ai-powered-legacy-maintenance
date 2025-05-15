@@ -21,14 +21,13 @@ def _detect_editor():
         return candidate
     return 'vi'
 
-def get_multiline_input_via_editor(step_title, prompt_hint, default_value):
+def get_multiline_input_via_editor(step_title, prompt_hint):
     """
     Get multiline input via system default editor
     
     :param step_title: Step title prompt
     :param prompt_hint: Input hint for user (example, etc.)
-    :param default_value: Default value if no input is given
-    :return: User input string or default value
+    :return: User input string or empty string
     """
     editor = _detect_editor()
     
@@ -58,7 +57,7 @@ def get_multiline_input_via_editor(step_title, prompt_hint, default_value):
     
     result = "".join(content_lines).strip()
     if not result:
-        print(f"⚠️ No valid input detected, using default value: {default_value}")
-        return default_value
+        print("⚠️ No valid input detected, returning empty string.")
+        return ""
         
     return result
