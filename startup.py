@@ -136,6 +136,32 @@ def switch_to_source_branch(proj_path):
         )
 
 
+def check_if_ai_will_modify(work_dir, script_name):
+    """
+    Check if the selected script contains the magic comment '#AI will modify codes'.
+    Reads only the first 50 lines to optimize performance.
+    """
+    if not script_name:
+        return False
+    
+    script_path = os.path.join(work_dir, 'enginerring', 'scenario_data_ai_app', script_name)
+    if not os.path.exists(script_path):
+        return False
+    
+    try:
+        with open(script_path, 'r', encoding='utf-8') as f:
+            for _ in range(50):
+                line = f.readline()
+                if not line:
+                    break
+                if "#AI will modify codes" in line:
+                    return True
+    except Exception as e:
+        print_color(f'[WARN] Failed to read script {script_name}: {e}', Colors.YELLOW)
+        
+    return False
+
+
 def main():
     parser = argparse.ArgumentParser(description="Instrumentor Test Bug Fix Workflow Quickstart Script")
     parser.add_argument(
@@ -182,7 +208,7 @@ def main():
         # Pre-select the AI Prompt Generator script early to avoid workflow interruption later
         selected_script = select_ai_prompt_script(work_dir, target_language)
 
-        # [NEW] Prepare AI Prompt (Interactive Phase) before long-running tasks
+        # Prepare AI Prompt (Interactive Phase) before long-running tasks
         prompt_context = prepare_ai_prompt_interactive(work_dir, selected_script)
 
         maybe_pause("Project and Environment Setup", "Setup Shadow Branch")
@@ -239,8 +265,11 @@ def main():
         # Execute the pre-selected script without interrupting the flow, passing the context
         execute_ai_prompt(work_dir, selected_script, prompt_context)
 
-        # [Modified] Allow both bug localization and feature dev to use the automated modification flow
-        if selected_script not in ["generate_audit_prompt.py", "generate_audit_prompt_cn.py"]:
+        # Dynamically check if the selected script contains the magic marker
+        has_ai_marker = check_if_ai_will_modify(work_dir, selected_script)
+
+        # Allow scripts with the specific marker to use the automated modification flow
+        if has_ai_marker:
             # Execute the Unified Task Workflow
             maybe_pause("Generate AI Prompt", "Ask LLM for Task Analysis")
             ask_llm_for_localization(ask_llm_dir)
@@ -275,7 +304,7 @@ def main():
                 original_cwd = os.getcwd()
                 os.chdir(ask_llm_dir)
                 
-                # [Modified] Use the unified AI_Task_Prompt.md
+                # Use the unified AI_Task_Prompt.md
                 prompt_file_path = os.path.join(original_cwd, "AI_Task_Prompt.md") 
                 output_file_path = os.path.join(original_cwd, "output.md")
                 
