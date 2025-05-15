@@ -202,10 +202,10 @@ path/to/second/file.ext
 # 2. Interactive Guidance Logic
 # ==========================================
 
-
-def generate_prompt(cli_file_path=None):
+def prepare_prompt():
     """
-    Exposed interface to generate the bug localization prompt.
+    Phase 1: Interactive prompt preparation.
+    Collects user inputs before long-running tasks.
     """
     print("="*50)
     print("🕵️  AI Bug Localization Prompt Auto Generator")
@@ -213,7 +213,6 @@ def generate_prompt(cli_file_path=None):
     print("Please enter the required information as prompted (press Enter directly to skip optional items)\n")
 
     # [Modified] 0. Select analysis mode (Hardcoded to Call-Tree First)
-    selected_template = SIMPLE_PROMPT_TEMPLATE
     mode = "1"
     print("✅ [Auto-Config] Analysis Mode automatically set to: [1] Call-Tree First (concurrency sections omitted).\n")
 
@@ -230,6 +229,26 @@ def generate_prompt(cli_file_path=None):
         default_value="No special additional notes. Please follow the factual trace."
     )
 
+    return {
+        "bug_symptom": bug_symptom,
+        "additional_info": additional_info,
+        "mode": mode
+    }
+
+
+def generate_prompt_with_context(cli_file_path, context):
+    """
+    Phase 2: Generate the final prompt using the collected context and trace data.
+    """
+    if not context:
+        context = prepare_prompt()
+        
+    bug_symptom = context.get("bug_symptom", "")
+    additional_info = context.get("additional_info", "")
+    mode = context.get("mode", "1")
+
+    selected_template = SIMPLE_PROMPT_TEMPLATE if mode == "1" else FULL_PROMPT_TEMPLATE
+
     # 3. Read trace data file
     trace_data = ""
 
@@ -240,7 +259,7 @@ def generate_prompt(cli_file_path=None):
             # Reset the variable so if it fails, it will fall back to manual input
             cli_file_path = None
         else:
-            # Mode-specific file hint (Since mode is always "1", it will always use the Call Tree File hint)
+            # Mode-specific file hint
             if mode == "2":
                 file_hint = "Call Tree File With Concurrency (e.g., ../../final-output-combined.md)"
             else:
@@ -288,6 +307,15 @@ def generate_prompt(cli_file_path=None):
         print("="*50)
     except Exception as e:
         print(f"\n❌ Failed to save file: {e}")
+
+
+def generate_prompt(cli_file_path=None):
+    """
+    Legacy wrapper for backward compatibility.
+    Executes both phases sequentially.
+    """
+    context = prepare_prompt()
+    generate_prompt_with_context(cli_file_path, context)
 
 
 def main():

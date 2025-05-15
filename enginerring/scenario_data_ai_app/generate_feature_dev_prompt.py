@@ -102,7 +102,12 @@ path/to/second/file.ext
 # ==========================================
 # 2. Interactive Guidance Logic
 # ==========================================
-def generate_prompt(cli_file_path=None):
+
+def prepare_prompt():
+    """
+    Phase 1: Interactive prompt preparation.
+    Collects user inputs before long-running tasks.
+    """
     print("="*50)
     print("🚀 AI Secondary Development Prompt Auto Generator")
     print("="*50)
@@ -119,6 +124,22 @@ def generate_prompt(cli_file_path=None):
         prompt_hint="e.g., must use JDK 8, no external dependencies allowed.",
         default_value="No special additional notes. Please follow general best practices."
     )
+
+    return {
+        "target_feature": target_feature,
+        "additional_info": additional_info
+    }
+
+
+def generate_prompt_with_context(cli_file_path, context):
+    """
+    Phase 2: Generate the final prompt using the collected context and trace data.
+    """
+    if not context:
+        context = prepare_prompt()
+        
+    target_feature = context.get("target_feature", "")
+    additional_info = context.get("additional_info", "")
 
     # 3. Read trace data file
     trace_data = ""
@@ -157,7 +178,6 @@ def generate_prompt(cli_file_path=None):
     )
 
     # 5. Write to file
-    # [Modified] Unified output filename for downstream processing
     output_filename = "AI_Task_Prompt.md"
     try:
         with open(output_filename, 'w', encoding='utf-8') as f:
@@ -169,9 +189,20 @@ def generate_prompt(cli_file_path=None):
     except Exception as e:
         print(f"\n❌ Failed to save file: {e}")
 
+
+def generate_prompt(cli_file_path=None):
+    """
+    Legacy wrapper for backward compatibility.
+    Executes both phases sequentially.
+    """
+    context = prepare_prompt()
+    generate_prompt_with_context(cli_file_path, context)
+
+
 def main():
     cli_file_path = sys.argv[1] if len(sys.argv) > 1 else None
     generate_prompt(cli_file_path)
+
 
 if __name__ == "__main__":
     try:

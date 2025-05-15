@@ -14,17 +14,17 @@ You are a senior software security audit expert and Java concurrency programming
 
 ---
 
-## 📋 Audit Task Definition
+## 1. Audit Task Definition
 
-**🎯 Key Audit Focus**: 
+**Key Audit Focus**: 
 {audit_focus}
 
-**💬 Additional Notes (Optional)**: 
+**Additional Notes (Optional)**: 
 {additional_info}
 
 ---
 
-## 🔍 Scenario Call Chain and Runtime State Data
+## 2. Scenario Call Chain and Runtime State Data
 
 The following data comes from real system runtime trace logs, containing the **absolutely authentic and noise-free** execution context for this scenario:
 1. **Trace Sequence**: Linear sequence of basic code blocks (Basic Block) executed by threads.
@@ -33,16 +33,16 @@ The following data comes from real system runtime trace logs, containing the **a
 4. **Data Races**: Unsynchronized concurrent shared variable access conflicts (read-write or write-write conflicts).
 5. **Taint Flows**: Data/taint propagation paths across or within threads.
 
-**⚠️ Important Premise**: The data only contains **actually executed** code. If a piece of code does not appear, it means it was absolutely not executed in this scenario. Please reason entirely based on these factual data, **never fabricate** non-existent code logic.
+**Important Premise**: The data only contains **actually executed** code. If a piece of code does not appear, it means it was absolutely not executed in this scenario. Please reason entirely based on these factual data, **never fabricate** non-existent code logic.
 
-### ✅ [Audit Target Data] Complete Execution Trace and Concurrency State
+### [Audit Target Data] Complete Execution Trace and Concurrency State
 =========================================
 {trace_data}
 =========================================
 
 ---
 
-## 🎯 In-Depth Audit and Analysis Requirements
+## 3. In-Depth Audit and Analysis Requirements
 
 Please deeply analyze the complete execution chain of the above scenario, especially the `Data Races` and `Taint Flows` sections, and complete the following audit tasks:
 
@@ -58,11 +58,11 @@ Please deeply analyze the complete execution chain of the above scenario, especi
 
 ---
 
-## 📋 Audit Report Output Format Requirements
+## 4. Audit Report Output Format Requirements
 
 Please strictly follow the template below to output your code audit report:
 
-# 🛡️ Code Audit and Remediation Report
+# Code Audit and Remediation Report
 
 ## 1. Vulnerability/Defect Summary
 [Briefly describe the core issue discovered in one or two sentences, e.g., "Discovered multi-threaded unsynchronized read/write of `sharedData` in the `SyncTest` class, with severe data race and memory visibility vulnerabilities"]
@@ -74,7 +74,7 @@ Please strictly follow the template below to output your code audit report:
 - **Affected Location**: [Specific file name and function name]
 
 ## 3. Remediation Code Implementation
-[Provide the complete fixed code. **Must provide the complete class or complete method code**, never use `...` to omit existing logic, ensure the code can be directly copied and executed. Add prominent comments to modified or added parts, such as `// 🛠️ [Fixed: Added synchronization lock to resolve data race]`]
+[Provide the complete fixed code. **Must provide the complete class or complete method code**, never use `...` to omit existing logic, ensure the code can be directly copied and executed. Add prominent comments to modified or added parts, such as `// [Fixed: Added synchronization lock to resolve data race]`]
 
 ## 4. Fix Principle Analysis and Regression Recommendations
 [Explain why this fix is effective (e.g., which Happens-Before rules are introduced), and what to watch out for in regression testing]
@@ -84,57 +84,73 @@ Please strictly follow the template below to output your code audit report:
 # 2. Interactive Guidance Logic
 # ==========================================
 
-
-def generate_prompt(cli_file_path=None):
+def prepare_prompt():
+    """
+    Phase 1: Interactive prompt preparation.
+    Collects user inputs before long-running tasks.
+    """
     print("="*50)
-    print("🛡️  AI Zero-Noise Code Audit Prompt Generator")
+    print("[Security] AI Zero-Noise Code Audit Prompt Generator")
     print("="*50)
     print("Please enter audit task information as prompted (press Enter to skip optional fields and use default values)\n")
 
     # 1. Collect audit focus
     audit_focus = input(
-        "🎯 1. Please enter [Key Audit Focus] (e.g., Focus on identifying data races, deadlocks, or cross-thread taint propagation):\n> ").strip()
+        "[Step 1] Please enter [Key Audit Focus] (e.g., Focus on identifying data races, deadlocks, or cross-thread taint propagation):\n> ").strip()
     if not audit_focus:
-        # Translated "Comprehensive排查" to "Comprehensive investigation of"
         audit_focus = "Comprehensive investigation of concurrency security vulnerabilities (Data Races), memory visibility issues (missing Happens-Before), and potential business logic defects."
 
     # 2. Collect additional notes via Editor
     additional_info = get_multiline_input_via_editor(
-        step_title="2. Please enter [Additional Notes] (optional)",
+        step_title="[Step 2] Please enter [Additional Notes] (optional)",
         prompt_hint="e.g., Only JDK native libraries can be used for fixes, original method signatures cannot be changed.",
         default_value="No special additional restrictions. Please follow best practices for Java concurrency programming (e.g., prioritize using tools from the java.util.concurrent package)."
     )
+
+    return {
+        "audit_focus": audit_focus,
+        "additional_info": additional_info
+    }
+
+
+def generate_prompt_with_context(cli_file_path, context):
+    """
+    Phase 2: Generate the final prompt using the collected context and trace data.
+    """
+    if not context:
+        context = prepare_prompt()
+        
+    audit_focus = context.get("audit_focus", "")
+    additional_info = context.get("additional_info", "")
 
     # 3. Read trace data file
     trace_data = ""
     while True:
         if cli_file_path:
             file_path = cli_file_path
-            print(
-                f"\n📁 3. Using Execution Trace Data File from arguments: {file_path}")
+            print(f"\n[Step 3] Using Execution Trace Data File from arguments: {file_path}")
             cli_file_path = None  # Reset in case of failure
         else:
             file_path = input(
-                "\n📁 3. Please enter the path to the [Execution Trace Data File] (e.g., final-output-combined.md):\n> ").strip()
-            # Remove possible quotes (common when dragging files from terminal)
+                "\n[Step 3] Please enter the path to the [Execution Trace Data File] (e.g., final-output-combined.md):\n> ").strip()
+            # Remove possible quotes
             file_path = file_path.strip('\'"')
 
         if not file_path:
-            print("❌ File path cannot be empty, please re-enter!")
+            print("[Error] File path cannot be empty, please try again.")
             continue
 
         if not os.path.exists(file_path):
-            print(
-                f"❌ File not found: {file_path}. Please check if the path is correct!")
+            print(f"[Error] File not found: {file_path}. Please check if the path is correct.")
             continue
 
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 trace_data = f.read()
-            print("✅ Successfully loaded execution trace and concurrency state data!")
+            print("[Success] Successfully loaded execution trace and concurrency state data.")
             break
         except Exception as e:
-            print(f"❌ Failed to read file: {e}")
+            print(f"[Error] Failed to read file: {e}")
             continue
 
     # 4. Assemble final prompt
@@ -150,12 +166,20 @@ def generate_prompt(cli_file_path=None):
         with open(output_filename, 'w', encoding='utf-8') as f:
             f.write(final_prompt)
         print("\n" + "="*50)
-        print(
-            f"🎉 Success! The complete code audit prompt has been generated and saved in the current directory: {output_filename}")
-        print("👉 You can now open this file directly, copy all content and send it to a large language model (e.g., Claude 3.5 Sonnet / GPT-4o) for in-depth audit!")
+        print(f"[Success] The complete code audit prompt has been generated and saved: {output_filename}")
+        print("You can now open this file directly, copy all content and send it to an LLM for in-depth audit.")
         print("="*50)
     except Exception as e:
-        print(f"\n❌ Failed to save file: {e}")
+        print(f"\n[Error] Failed to save file: {e}")
+
+
+def generate_prompt(cli_file_path=None):
+    """
+    Legacy wrapper for backward compatibility.
+    Executes both phases sequentially.
+    """
+    context = prepare_prompt()
+    generate_prompt_with_context(cli_file_path, context)
 
 
 def main():
@@ -167,5 +191,5 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\n\n🛑 User cancelled the operation.")
+        print("\n\n[Warning] User cancelled the operation.")
         sys.exit(0)

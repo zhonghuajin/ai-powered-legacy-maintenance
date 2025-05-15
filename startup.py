@@ -25,6 +25,7 @@ from enginerring.work_flow.workflow_steps import (
     startup_log_manager_server,
     analyze_logs,
     select_ai_prompt_script,
+    prepare_ai_prompt_interactive,
     execute_ai_prompt,
     ask_llm_for_localization,
     generate_fix_prompt,
@@ -181,6 +182,9 @@ def main():
         # Pre-select the AI Prompt Generator script early to avoid workflow interruption later
         selected_script = select_ai_prompt_script(work_dir, target_language)
 
+        # [NEW] Prepare AI Prompt (Interactive Phase) before long-running tasks
+        prompt_context = prepare_ai_prompt_interactive(work_dir, selected_script)
+
         maybe_pause("Project and Environment Setup", "Setup Shadow Branch")
 
         # Workflow Execution: Instrumentation
@@ -232,8 +236,8 @@ def main():
 
         maybe_pause("Log Analysis", "Generate AI Prompt")
 
-        # Execute the pre-selected script without interrupting the flow
-        execute_ai_prompt(work_dir, selected_script)
+        # Execute the pre-selected script without interrupting the flow, passing the context
+        execute_ai_prompt(work_dir, selected_script, prompt_context)
 
         # [Modified] Allow both bug localization and feature dev to use the automated modification flow
         if selected_script not in ["generate_audit_prompt.py", "generate_audit_prompt_cn.py"]:

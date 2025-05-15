@@ -576,11 +576,55 @@ def select_ai_prompt_script(work_dir, target_language=None):
     print_color(f"\n[Info] Selected script: {selected_script}", Colors.GREEN)
     return selected_script
 
-def execute_ai_prompt(work_dir, selected_script):
+
+def prepare_ai_prompt_interactive(work_dir, selected_script):
+    """
+    Execute the interactive preparation phase of the selected AI prompt script
+    before the long-running instrumentation and log analysis.
+    """
     if not selected_script:
         return None
 
-    print_color("\n>>> Generating AI Prompt...", Colors.CYAN)
+    print_color("\n>>> Preparing AI Prompt (User Interaction)...", Colors.CYAN)
+    original_cwd = os.getcwd()
+    os.chdir(work_dir)
+
+    ai_app_path = os.path.join(work_dir, "enginerring", "scenario_data_ai_app")
+    module_name = selected_script[:-3]
+
+    if ai_app_path not in sys.path:
+        sys.path.insert(0, ai_app_path)
+
+    prompt_context = None
+    try:
+        module = importlib.import_module(module_name)
+        importlib.reload(module)
+
+        if hasattr(module, 'prepare_prompt'):
+            prompt_context = module.prepare_prompt()
+        else:
+            print_color(
+                f"[Info] 'prepare_prompt' function not found in {selected_script}. Skipping interactive preparation.", Colors.YELLOW)
+    except ImportError as e:
+        print_color(f"[!] Failed to import {module_name}: {e}", Colors.RED)
+    except Exception as e:
+        print_color(f"[!] Error during prompt preparation: {e}", Colors.RED)
+    finally:
+        os.chdir(original_cwd)
+
+    return prompt_context
+
+
+def execute_ai_prompt(work_dir, selected_script, prompt_context=None):
+    """
+    Execute the final prompt generation phase using the collected context
+    and the generated calltree file.
+    """
+    if not selected_script:
+        return None
+
+    print_color("\n>>> Generating AI Prompt (Auto Filling)...", Colors.CYAN)
+    original_cwd = os.getcwd()
     os.chdir(work_dir)
 
     ai_app_path = os.path.join(work_dir, "enginerring", "scenario_data_ai_app")
@@ -605,7 +649,10 @@ def execute_ai_prompt(work_dir, selected_script):
         module = importlib.import_module(module_name)
         importlib.reload(module)
 
-        if hasattr(module, 'generate_prompt'):
+        if hasattr(module, 'generate_prompt_with_context'):
+            module.generate_prompt_with_context(selected_calltree_path, prompt_context)
+            return selected_script
+        elif hasattr(module, 'generate_prompt'):
             module.generate_prompt(selected_calltree_path)
             return selected_script
         else:
@@ -619,6 +666,8 @@ def execute_ai_prompt(work_dir, selected_script):
     except Exception as e:
         print_color(f"[!] Error generating prompt: {e}", Colors.RED)
         return None
+    finally:
+        os.chdir(original_cwd)
 
 
 def ask_llm_for_localization(ask_llm_dir):
