@@ -9,15 +9,33 @@ import shutil
 from print_utils.utils import Colors, print_color
 
 
-def create_or_select_project(work_dir):
+def create_or_select_project(work_dir, preselected_proj_path=None):
     """
     Step: Create or select an existing project.
+    If preselected_proj_path is provided, bypasses the interactive selection
+    and directly initializes the existing project.
     After selection/creation, prompt the user to specify target folders/files.
     Returns the project directory (proj_path), git repository root directory (root_path),
     and a boolean indicating if it is a new project.
     """
     projects_dir = os.path.join(work_dir, "projects")
     os.makedirs(projects_dir, exist_ok=True)
+
+    # If a preselected project path is provided, bypass interactive selection
+    if preselected_proj_path and os.path.exists(preselected_proj_path):
+        config_file = os.path.join(preselected_proj_path, "config.json")
+        root_path = ""
+        if os.path.isfile(config_file):
+            try:
+                with open(config_file, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+                root_path = cfg.get("original_git_root", "")
+            except Exception:
+                pass
+        
+        # Re-run target folder management (it will automatically keep existing ones)
+        _manage_target_folders(preselected_proj_path)
+        return preselected_proj_path, root_path, False
 
     # Gather existing projects (subdirectories with valid config.json)
     existing_projects = []

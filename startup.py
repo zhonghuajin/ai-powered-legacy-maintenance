@@ -193,7 +193,7 @@ def main():
     env_file = check_llm_env(ask_llm_dir)
     auto_select_llm_provider(env_file)
 
-    # Infinite loop to return to project selection after execution
+    # Outer loop for project selection
     while True:
         print_color("\n=======================================================", Colors.CYAN)
         print_color("      Starting / Restarting Project Workflow      ", Colors.CYAN)
@@ -205,150 +205,159 @@ def main():
         # Ensure language is selected before prompting for scripts
         target_language = ensure_language_selected(proj_path)
 
-        # Pre-select the AI Prompt Generator script early to avoid workflow interruption later
-        selected_script = select_ai_prompt_script(work_dir, target_language)
+        # Inner loop to return to script selection after workflow finishes
+        while True:
+            # Pre-select the AI Prompt Generator script early to avoid workflow interruption later
+            selected_script = select_ai_prompt_script(work_dir, target_language)
 
-        # Prepare AI Prompt (Interactive Phase) before long-running tasks
-        prompt_context = prepare_ai_prompt_interactive(work_dir, selected_script)
+            # Prepare AI Prompt (Interactive Phase) before long-running tasks
+            prompt_context = prepare_ai_prompt_interactive(work_dir, selected_script)
 
-        maybe_pause("Project and Environment Setup", "Setup Shadow Branch")
+            maybe_pause("Project and Environment Setup", "Setup Shadow Branch")
 
-        # Workflow Execution: Instrumentation
-        instrument_mode, is_skipped = instrument_code(
-            work_dir, proj_path=proj_path, git_root=root_path, is_new_project=is_new_project)
+            # Workflow Execution: Instrumentation
+            instrument_mode, is_skipped = instrument_code(
+                work_dir, proj_path=proj_path, git_root=root_path, is_new_project=is_new_project)
 
-        # Handle dependency injection and commit for full mode
-        if is_skipped:
-            # If no files were modified, do not output the incremental completion prompt
-            pass
-        else:
-            if instrument_mode == "incremental":
-                print_color(
-                    "\n=======================================================", Colors.YELLOW)
-                print_color("  *** ATTENTION ***", Colors.YELLOW)
-                print_color("  Incremental instrumentation completed!", Colors.YELLOW)
-                print_color("  Please RECOMPILE (if necessary), RESTART the target project, and PERFORM operations to trigger logs.", Colors.YELLOW)
-                print_color(
-                    "=======================================================\n", Colors.YELLOW)
-            elif instrument_mode == "full":
-                handle_instrumentation_dependencies(
-                    work_dir, proj_path, root_path, ask_llm_dir, target_language)
-                commit_instrumentation(root_path)
-                print_color(
-                    "\n=======================================================", Colors.YELLOW)
-                print_color("  *** ATTENTION ***", Colors.YELLOW)
-                print_color(
-                    "  Instrumentation and Dependency Injection have been completed!", Colors.YELLOW)
-                print_color(
-                    "  Please RECOMPILE (if necessary), RESTART the target project, and PERFORM operations to trigger logs.", Colors.YELLOW)
-                print_color(
-                    "=======================================================\n", Colors.YELLOW)
+            # Handle dependency injection and commit for full mode
+            if is_skipped:
+                # If no files were modified, do not output the incremental completion prompt
+                pass
+            else:
+                if instrument_mode == "incremental":
+                    print_color(
+                        "\n=======================================================", Colors.YELLOW)
+                    print_color("  *** ATTENTION ***", Colors.YELLOW)
+                    print_color("  Incremental instrumentation completed!", Colors.YELLOW)
+                    print_color("  Please RECOMPILE (if necessary), RESTART the target project, and PERFORM operations to trigger logs.", Colors.YELLOW)
+                    print_color(
+                        "=======================================================\n", Colors.YELLOW)
+                elif instrument_mode == "full":
+                    handle_instrumentation_dependencies(
+                        work_dir, proj_path, root_path, ask_llm_dir, target_language)
+                    commit_instrumentation(root_path)
+                    print_color(
+                        "\n=======================================================", Colors.YELLOW)
+                    print_color("  *** ATTENTION ***", Colors.YELLOW)
+                    print_color(
+                        "  Instrumentation and Dependency Injection have been completed!", Colors.YELLOW)
+                    print_color(
+                        "  Please RECOMPILE (if necessary), RESTART the target project, and PERFORM operations to trigger logs.", Colors.YELLOW)
+                    print_color(
+                        "=======================================================\n", Colors.YELLOW)
 
-        maybe_pause("Setup Shadow Branch & Instrumentation",
-                    "Startup Log Manager Server")
+            maybe_pause("Setup Shadow Branch & Instrumentation",
+                        "Startup Log Manager Server")
 
-        # Pass proj_path so that uploaded files are saved under the project
-        # Capture the flush state returned by the log manager
-        is_flushed = startup_log_manager_server(work_dir, proj_path=proj_path)
+            # Pass proj_path so that uploaded files are saved under the project
+            # Capture the flush state returned by the log manager
+            is_flushed = startup_log_manager_server(work_dir, proj_path=proj_path)
 
-        maybe_pause("Startup Log Manager Server",
-                    "Analyze Logs and Extract Denoised Data")
+            maybe_pause("Startup Log Manager Server",
+                        "Analyze Logs and Extract Denoised Data")
 
-        # --- Switch back to the source branch before log analysis ---
-        switch_to_source_branch(proj_path)
+            # --- Switch back to the source branch before log analysis ---
+            switch_to_source_branch(proj_path)
 
-        # Pass the flush state to automatically trigger log analysis if applicable
-        analyze_logs(work_dir, proj_path=proj_path, auto_analyze=is_flushed)
+            # Pass the flush state to automatically trigger log analysis if applicable
+            analyze_logs(work_dir, proj_path=proj_path, auto_analyze=is_flushed)
 
-        maybe_pause("Log Analysis", "Generate AI Prompt")
+            maybe_pause("Log Analysis", "Generate AI Prompt")
 
-        # Execute the pre-selected script without interrupting the flow, passing the context
-        execute_ai_prompt(work_dir, selected_script, prompt_context)
+            # Execute the pre-selected script without interrupting the flow, passing the context
+            execute_ai_prompt(work_dir, selected_script, prompt_context)
 
-        # Dynamically check if the selected script contains the magic marker
-        has_ai_marker = check_if_ai_will_modify(work_dir, selected_script)
+            # Dynamically check if the selected script contains the magic marker
+            has_ai_marker = check_if_ai_will_modify(work_dir, selected_script)
 
-        # Allow scripts with the specific marker to use the automated modification flow
-        if has_ai_marker:
-            # Execute the Unified Task Workflow
-            maybe_pause("Generate AI Prompt", "Ask LLM for Task Analysis")
-            ask_llm_for_localization(ask_llm_dir)
-            
-            maybe_pause("Ask LLM for Task Analysis", "Generate Fix/Dev Prompt")
-            generate_fix_prompt(work_dir, proj_path)
-            
-            maybe_pause("Generate Fix/Dev Prompt", "Ask LLM for Code Modification")
-            ask_llm_for_code_fix(ask_llm_dir)
-            
-            maybe_pause("Ask LLM for Code Modification", "Apply Changes to Source Code")
-            apply_fix(work_dir, proj_path)
-            
-            print_color(
-                "\n=======================================================", Colors.MAGENTA)
-            print_color(
-                "  Workflow execution completed successfully. The code has been updated.", Colors.GREEN)
-            print_color(
-                "=======================================================", Colors.MAGENTA)
+            # Allow scripts with the specific marker to use the automated modification flow
+            if has_ai_marker:
+                # Execute the Unified Task Workflow
+                maybe_pause("Generate AI Prompt", "Ask LLM for Task Analysis")
+                ask_llm_for_localization(ask_llm_dir)
                 
-        elif selected_script:
-            # Execute the General LLM Task Workflow (Fallback for audit, etc.)
-            maybe_pause("Generate AI Prompt", "Execute General LLM Task")
-            print_color(f"\n>>> Executing general LLM task for {selected_script}...", Colors.CYAN)
-            
-            if ask_llm_dir not in sys.path:
-                sys.path.insert(0, ask_llm_dir)
+                maybe_pause("Ask LLM for Task Analysis", "Generate Fix/Dev Prompt")
+                generate_fix_prompt(work_dir, proj_path)
                 
-            try:
-                import run as ask_llm_run
+                maybe_pause("Generate Fix/Dev Prompt", "Ask LLM for Code Modification")
+                ask_llm_for_code_fix(ask_llm_dir)
                 
-                original_cwd = os.getcwd()
-                os.chdir(ask_llm_dir)
-                
-                # Use the unified AI_Task_Prompt.md
-                prompt_file_path = os.path.join(original_cwd, "AI_Task_Prompt.md") 
-                output_file_path = os.path.join(original_cwd, "output.md")
-                
-                if not os.path.exists(prompt_file_path):
-                    print_color(f"[WARN] Expected prompt file not found: {prompt_file_path}", Colors.YELLOW)
-                    print_color("[WARN] Please ensure your script generates this file, or update the filename in startup.py.", Colors.YELLOW)
-                else:
-                    ask_llm_run.run_api(file_path=prompt_file_path, output_path=output_file_path)
-                    print_color(f"[+] LLM response saved to {output_file_path}", Colors.GREEN)
-                    
-                os.chdir(original_cwd)
+                maybe_pause("Ask LLM for Code Modification", "Apply Changes to Source Code")
+                apply_fix(work_dir, proj_path)
                 
                 print_color(
                     "\n=======================================================", Colors.MAGENTA)
                 print_color(
-                    "  General LLM task execution completed successfully.", Colors.GREEN)
+                    "  Workflow execution completed successfully. The code has been updated.", Colors.GREEN)
                 print_color(
                     "=======================================================", Colors.MAGENTA)
                     
-            except ImportError as e:
-                print_color(f"[!] Failed to import run.py from {ask_llm_dir}: {e}", Colors.RED)
-            except Exception as e:
-                print_color(f"[!] Error during LLM API call: {e}", Colors.RED)
-                if 'original_cwd' in locals():
+            elif selected_script:
+                # Execute the General LLM Task Workflow (Fallback for audit, etc.)
+                maybe_pause("Generate AI Prompt", "Execute General LLM Task")
+                print_color(f"\n>>> Executing general LLM task for {selected_script}...", Colors.CYAN)
+                
+                if ask_llm_dir not in sys.path:
+                    sys.path.insert(0, ask_llm_dir)
+                    
+                try:
+                    import run as ask_llm_run
+                    
+                    original_cwd = os.getcwd()
+                    os.chdir(ask_llm_dir)
+                    
+                    # Use the unified AI_Task_Prompt.md
+                    prompt_file_path = os.path.join(original_cwd, "AI_Task_Prompt.md") 
+                    output_file_path = os.path.join(original_cwd, "output.md")
+                    
+                    if not os.path.exists(prompt_file_path):
+                        print_color(f"[WARN] Expected prompt file not found: {prompt_file_path}", Colors.YELLOW)
+                        print_color("[WARN] Please ensure your script generates this file, or update the filename in startup.py.", Colors.YELLOW)
+                    else:
+                        ask_llm_run.run_api(file_path=prompt_file_path, output_path=output_file_path)
+                        print_color(f"[+] LLM response saved to {output_file_path}", Colors.GREEN)
+                        
                     os.chdir(original_cwd)
-        else:
-            print_color("\n[!] Prompt generation was skipped or failed. No further actions taken.", Colors.YELLOW)
+                    
+                    print_color(
+                        "\n=======================================================", Colors.MAGENTA)
+                    print_color(
+                        "  General LLM task execution completed successfully.", Colors.GREEN)
+                    print_color(
+                        "=======================================================", Colors.MAGENTA)
+                        
+                except ImportError as e:
+                    print_color(f"[!] Failed to import run.py from {ask_llm_dir}: {e}", Colors.RED)
+                except Exception as e:
+                    print_color(f"[!] Error during LLM API call: {e}", Colors.RED)
+                    if 'original_cwd' in locals():
+                        os.chdir(original_cwd)
+            else:
+                print_color("\n[!] Prompt generation was skipped or failed. No further actions taken.", Colors.YELLOW)
 
-        # ---------------------------------------------------------------
-        # Scenario description generation (with automatic output move)
-        # ---------------------------------------------------------------
-        print_color('\n[Scenario Schema] Choose action:', Colors.CYAN)
-        print('  1. Skip generate_scenario_description (Default)')
-        print('  2. Execute generate_scenario_description')
-        
-        choice = input('Enter your choice [1]: ').strip() or '1'
+            # ---------------------------------------------------------------
+            # Scenario description generation (with automatic output move)
+            # ---------------------------------------------------------------
+            print_color('\n[Scenario Schema] Choose action:', Colors.CYAN)
+            print('  1. Skip generate_scenario_description (Default)')
+            print('  2. Execute generate_scenario_description')
             
-        if choice == '2':
-            generate_scenario_description(work_dir, proj_path)
-        else:
-            print_color('[Scenario Schema] Skipped by user.', Colors.YELLOW)
+            choice = input('Enter your choice [1]: ').strip() or '1'
+                
+            if choice == '2':
+                generate_scenario_description(work_dir, proj_path)
+            else:
+                print_color('[Scenario Schema] Skipped by user.', Colors.YELLOW)
 
-        os.chdir(work_dir)
-        print_color("\n[!] Workflow finished. Returning to project selection... (Press Ctrl+C to exit)\n", Colors.CYAN)
+            # Re-initialize existing project state silently for the next run
+            print_color("\n[System] Re-initializing existing project state for the next run...", Colors.CYAN)
+            proj_path, root_path, is_new_project = create_or_select_project(
+                work_dir, 
+                preselected_proj_path=proj_path
+            )
+
+            os.chdir(work_dir)
+            print_color("\n[!] Workflow finished. Returning to Select Prompt Generator Script... (Press Ctrl+C to exit)\n", Colors.CYAN)
 
 
 if __name__ == "__main__":
