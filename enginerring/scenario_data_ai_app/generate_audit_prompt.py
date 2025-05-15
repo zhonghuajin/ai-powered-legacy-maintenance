@@ -3,6 +3,7 @@
 
 import os
 import sys
+from editor_util import get_multiline_input_via_editor
 
 # ==========================================
 # 1. Define Prompt Template (for Code Audit)
@@ -97,11 +98,12 @@ def generate_prompt(cli_file_path=None):
         # Translated "Comprehensive排查" to "Comprehensive investigation of"
         audit_focus = "Comprehensive investigation of concurrency security vulnerabilities (Data Races), memory visibility issues (missing Happens-Before), and potential business logic defects."
 
-    # 2. Collect additional notes
-    additional_info = input(
-        "\n💬 2. Please enter [Additional Notes] (optional, e.g., Only JDK native libraries can be used for fixes, original method signatures cannot be changed):\n> ").strip()
-    if not additional_info:
-        additional_info = "No special additional restrictions. Please follow best practices for Java concurrency programming (e.g., prioritize using tools from the java.util.concurrent package)."
+    # 2. Collect additional notes via Editor
+    additional_info = get_multiline_input_via_editor(
+        step_title="2. Please enter [Additional Notes] (optional)",
+        prompt_hint="e.g., Only JDK native libraries can be used for fixes, original method signatures cannot be changed.",
+        default_value="No special additional restrictions. Please follow best practices for Java concurrency programming (e.g., prioritize using tools from the java.util.concurrent package)."
+    )
 
     # 3. Read trace data file
     trace_data = ""

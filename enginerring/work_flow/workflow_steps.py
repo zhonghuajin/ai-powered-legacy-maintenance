@@ -548,7 +548,7 @@ def select_ai_prompt_script(work_dir, target_language=None):
 
     scripts = []
     for file in os.listdir(ai_app_path):
-        if file.endswith(".py") and file != "__init__.py":
+        if file.endswith(".py") and file not in ["__init__.py", "editor_util.py"]:
             scripts.append(file)
 
     if not scripts:
@@ -575,7 +575,6 @@ def select_ai_prompt_script(work_dir, target_language=None):
     selected_script = scripts[int(choice) - 1]
     print_color(f"\n[Info] Selected script: {selected_script}", Colors.GREEN)
     return selected_script
-
 
 def execute_ai_prompt(work_dir, selected_script):
     if not selected_script:

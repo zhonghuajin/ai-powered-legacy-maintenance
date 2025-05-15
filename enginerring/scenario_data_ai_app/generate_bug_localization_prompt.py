@@ -3,6 +3,7 @@
 
 import os
 import sys
+from editor_util import get_multiline_input_via_editor
 
 # ==========================================
 # 1. Define Prompt Templates
@@ -222,11 +223,12 @@ def generate_prompt(cli_file_path=None):
     if not bug_symptom:
         bug_symptom = "[No specific symptom provided. Please analyze the trace data for obvious logic errors or exceptions.]"
 
-    # 2. Collect additional notes
-    additional_info = input(
-        "\n💬 2. Please enter [Additional Notes] (optional, e.g., suspect SyncTest.sharedData is missing volatile):\n> ").strip()
-    if not additional_info:
-        additional_info = "No special additional notes. Please follow the factual trace."
+    # 2. Collect additional notes via Editor
+    additional_info = get_multiline_input_via_editor(
+        step_title="2. Please enter [Additional Notes] (optional)",
+        prompt_hint="e.g., suspect SyncTest.sharedData is missing volatile.",
+        default_value="No special additional notes. Please follow the factual trace."
+    )
 
     # 3. Read trace data file
     trace_data = ""

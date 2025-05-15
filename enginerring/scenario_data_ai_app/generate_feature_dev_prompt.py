@@ -3,6 +3,7 @@
 
 import os
 import sys
+from editor_util import get_multiline_input_via_editor
 
 # ==========================================
 # 1. Define Prompt Template
@@ -112,10 +113,12 @@ def generate_prompt(cli_file_path=None):
     if not target_feature:
         target_feature = "[No specific requirement provided, please let the AI analyze possible extension points in the current scenario]"
 
-    # 2. Collect additional notes
-    additional_info = input("\n💬 2. Please enter [Additional Notes] (optional, e.g., must use JDK 8, no external dependencies allowed):\n> ").strip()
-    if not additional_info:
-        additional_info = "No special additional notes. Please follow general best practices."
+    # 2. Collect additional notes via Editor
+    additional_info = get_multiline_input_via_editor(
+        step_title="2. Please enter [Additional Notes] (optional)",
+        prompt_hint="e.g., must use JDK 8, no external dependencies allowed.",
+        default_value="No special additional notes. Please follow general best practices."
+    )
 
     # 3. Read trace data file
     trace_data = ""
