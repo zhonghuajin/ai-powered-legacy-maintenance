@@ -7,6 +7,7 @@ Usage:
     python llm_chat.py -p deepseek -r high              # Specify reasoning level
     python llm_chat.py -p deepseek-v4pro                # Use DeepSeek V4 Pro
     python llm_chat.py -p qwen -m qwen3-max --no-stream # Disable streaming
+    python llm_chat.py -p poe -m Claude-Sonnet-4.6      # Use Poe API
 """
 
 import os
@@ -33,6 +34,7 @@ load_dotenv()
 #     - "deepseek"       : deepseek-reasoner, returns reasoning_content delta in stream
 #     - "qwen"           : enable_thinking + thinking_budget (via extra_body)
 #     - "glm"            : thinking={"type":"enabled"} (via extra_body)
+#     - "poe"            : reasoning_effort (via extra_body)
 PROVIDERS = {
     "gpt": {
         "sdk": "openai",
@@ -89,6 +91,14 @@ PROVIDERS = {
         "default_model": "claude-opus-4-7",
         "reasoning_style": "anthropic",
         "max_tokens": 16384,
+    },
+    "poe": {
+        "sdk": "openai",
+        "env_key": "POE_API_KEY",
+        "base_url": "https://api.poe.com/v1",
+        "default_model": "Gemini-3.1-Pro",
+        "reasoning_style": "poe",
+        "max_tokens": 8192,
     },
 }
 
@@ -199,6 +209,9 @@ class LLMClient:
         elif style == "glm":
             kwargs.setdefault("extra_body", {})
             kwargs["extra_body"]["thinking"] = {"type": "enabled"}
+        elif style == "poe":
+            kwargs.setdefault("extra_body", {})
+            kwargs["extra_body"]["reasoning_effort"] = self.reasoning
         # deepseek-reasoner does not require extra parameters; the model handles reasoning natively
         # "none" style: no reasoning parameters added, keep as-is
         return kwargs

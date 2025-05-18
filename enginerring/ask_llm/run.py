@@ -15,6 +15,7 @@ ZHIPU_API_KEY=""
 MOONSHOT_API_KEY=""
 DASHSCOPE_API_KEY=""
 ANTHROPIC_API_KEY=""
+POE_API_KEY=""
 """
         with open(env_file, "w", encoding="utf-8") as f:
             f.write(env_template)
@@ -59,19 +60,20 @@ def run_api(file_path: str, output_path: str, provider: str = None, reasoning: s
         print("  4. GLM (Zhipu)")
         print("  5. Kimi (Moonshot)")
         print("  6. Qwen (DashScope)")
+        print("  7. Poe")
         print("========================================\033[0m")
 
         provider_map = {
             "1": "deepseek", "2": "claude", "3": "gpt",
-            "4": "glm", "5": "kimi", "6": "qwen"
+            "4": "glm", "5": "kimi", "6": "qwen", "7": "poe"
         }
 
         while not provider:
-            choice = input("Enter a number (1-6): ").strip()
+            choice = input("Enter a number (1-7): ").strip()
             if choice in provider_map:
                 provider = provider_map[choice]
             else:
-                print("\033[31m[!] Invalid input. Please enter a number between 1 and 6.\033[0m")
+                print("\033[31m[!] Invalid input. Please enter a number between 1 and 7.\033[0m")
 
     print("\n\033[36m[*] Starting request via API...\033[0m")
     llm_chat.run_chat_app(
@@ -110,6 +112,7 @@ def main():
         print("  4. GLM (Zhipu)")
         print("  5. Kimi (Moonshot)")
         print("  6. Qwen (DashScope)")
+        print("  7. Poe")
         print("========================================\033[0m")
 
         provider_map = {
@@ -118,15 +121,16 @@ def main():
             "3": "gpt",
             "4": "glm",
             "5": "kimi",
-            "6": "qwen"
+            "6": "qwen",
+            "7": "poe"
         }
 
         while not provider:
-            choice = input("Enter a number (1-6): ").strip()
+            choice = input("Enter a number (1-7): ").strip()
             if choice in provider_map:
                 provider = provider_map[choice]
             else:
-                print("\033[31m[!] Invalid input. Please enter a number between 1 and 6.\033[0m")
+                print("\033[31m[!] Invalid input. Please enter a number between 1 and 7.\033[0m")
 
     # 4. Process arguments (filter out user-provided -p if any, check for file)
     args = sys.argv[1:]

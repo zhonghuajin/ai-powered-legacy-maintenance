@@ -77,6 +77,7 @@ ZHIPU_API_KEY=""
 MOONSHOT_API_KEY=""
 DASHSCOPE_API_KEY=""
 ANTHROPIC_API_KEY=""
+POE_API_KEY=""
 """
         with open(env_file, 'w', encoding='utf-8') as f:
             f.write(env_template)
@@ -103,7 +104,8 @@ def auto_select_llm_provider(env_file):
         "OPENAI_API_KEY": ("GPT (OpenAI)", "gpt"),
         "ZHIPU_API_KEY": ("GLM (Zhipu)", "glm"),
         "MOONSHOT_API_KEY": ("Kimi (Moonshot)", "kimi"),
-        "DASHSCOPE_API_KEY": ("Qwen (DashScope)", "qwen")
+        "DASHSCOPE_API_KEY": ("Qwen (DashScope)", "qwen"),
+        "POE_API_KEY": ("Poe", "poe")
     }
 
     selected_provider_name = None
