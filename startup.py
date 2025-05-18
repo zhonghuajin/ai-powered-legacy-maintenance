@@ -154,7 +154,7 @@ def check_if_ai_will_modify(work_dir, script_name):
                 line = f.readline()
                 if not line:
                     break
-                if "#AI will modify codes" in line:
+                if "AI will modify codes" in line:
                     return True
     except Exception as e:
         print_color(f'[WARN] Failed to read script {script_name}: {e}', Colors.YELLOW)
