@@ -636,7 +636,8 @@ def select_ai_prompt_script(work_dir, target_language=None):
     return selected_script
 
 
-def prepare_ai_prompt_interactive(work_dir, selected_script, save_context=True):
+# Modified: Added proj_path parameter and updated context_file_path logic
+def prepare_ai_prompt_interactive(work_dir, selected_script, proj_path=None, save_context=True):
     """
     Execute the interactive preparation phase of the selected AI prompt script
     before the long-running instrumentation and log analysis.
@@ -663,7 +664,8 @@ def prepare_ai_prompt_interactive(work_dir, selected_script, save_context=True):
             prompt_context = module.prepare_prompt()
             
             if prompt_context and save_context:
-                context_file_path = os.path.join(work_dir, 'last_prompt_context.json')
+                target_dir = proj_path if proj_path else work_dir
+                context_file_path = os.path.join(target_dir, 'last_prompt_context.json')
                 try:
                     with open(context_file_path, 'w', encoding='utf-8') as f:
                         json.dump(prompt_context, f, ensure_ascii=False, indent=4)
@@ -731,7 +733,7 @@ def _post_process_other_trace_data(work_dir, selected_script):
                 with open(trace_file_path, 'r', encoding='utf-8') as tf:
                     trace_data = tf.read()
                 
-                other_trace_data_header = f"\n\n=========================================\n### ✅ Trace Data from Other Scenario: {os.path.basename(selected_scenario_dir)}\n=========================================\n"
+                other_trace_data_header = f"\n\n=========================================\n### Trace Data from Other Scenario: {os.path.basename(selected_scenario_dir)}\n=========================================\n"
                 reference_note = "\n\n> **Note**: This is runtime data from another scenario and may be helpful as a reference for the current implementation requirements.\n=========================================\n"
                 replacement = other_trace_data_header + trace_data + reference_note
                 
@@ -826,7 +828,6 @@ def ask_llm_for_localization(ask_llm_dir):
 
         original_cwd = os.getcwd()
 
-        # [Modified] Read unified AI_Task_Prompt.md instead of AI_Task_Prompt.md
         file_path = os.path.join(original_cwd, "AI_Task_Prompt.md")
         output_path = os.path.join(original_cwd, "output.md")
 

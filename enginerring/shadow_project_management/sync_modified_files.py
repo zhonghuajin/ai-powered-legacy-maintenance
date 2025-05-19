@@ -70,7 +70,10 @@ def get_llm_commit_message(proj_path, status_output, work_dir):
     if not proj_path:
         return default_msg
 
-    mapping_file = os.path.join(work_dir, 'last_prompt_context.json')
+    # Modified: Use proj_path instead of work_dir
+    target_dir = proj_path if proj_path else work_dir
+    mapping_file = os.path.join(target_dir, 'last_prompt_context.json')
+    
     if not os.path.exists(mapping_file):
         return default_msg
 

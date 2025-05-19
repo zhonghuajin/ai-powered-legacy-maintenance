@@ -203,7 +203,8 @@ def main():
 
             has_ai_marker = check_if_ai_will_modify(work_dir, selected_script)
 
-            prompt_context = prepare_ai_prompt_interactive(work_dir, selected_script, save_context=has_ai_marker)
+            # Modified: Pass proj_path to prepare_ai_prompt_interactive
+            prompt_context = prepare_ai_prompt_interactive(work_dir, selected_script, proj_path=proj_path, save_context=has_ai_marker)
 
             maybe_pause("Project and Environment Setup", "Setup Shadow Branch")
 

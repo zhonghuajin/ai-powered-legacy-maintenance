@@ -164,19 +164,37 @@ def run_apply_fix(fixed_code_path=None, base_dirs=None, prompt_context=None, pro
             print(f"   Failed to write file {abs_path}: {e}")
             
     # Update the prompt context with modified paths and remove additional_info
-    if prompt_context:
-        if "additional_info" in prompt_context:
-            del prompt_context["additional_info"]
-        
-        prompt_context["modified_paths"] = success_files
-        
-        context_file_path = os.path.join(os.getcwd(), 'last_prompt_context.json')
+    target_dir = proj_path if proj_path else os.getcwd()
+    context_file_path = os.path.join(target_dir, 'last_prompt_context.json')
+    
+    current_context = {}
+    
+    # Always try to load the latest context from file to ensure we have the most up-to-date version
+    if os.path.exists(context_file_path):
         try:
-            with open(context_file_path, 'w', encoding='utf-8') as f:
-                json.dump(prompt_context, f, ensure_ascii=False, indent=4)
-            print(f"   Success: Updated prompt context at -> {context_file_path}")
+            with open(context_file_path, 'r', encoding='utf-8') as f:
+                current_context = json.load(f)
         except Exception as e:
-            print(f"[WARN] Failed to update prompt context: {e}")
+            print(f"[WARN] Failed to load existing prompt context from {context_file_path}: {e}")
+            
+    # Merge with the passed prompt_context if it exists
+    if prompt_context:
+        current_context.update(prompt_context)
+        
+    # Remove 'additional_info' if it exists
+    if "additional_info" in current_context:
+        del current_context["additional_info"]
+        
+    # Inject the modified paths
+    current_context["modified_paths"] = success_files
+    
+    # Write the updated context back to the file
+    try:
+        with open(context_file_path, 'w', encoding='utf-8') as f:
+            json.dump(current_context, f, ensure_ascii=False, indent=4)
+        print(f"   Success: Updated prompt context at -> {context_file_path}")
+    except Exception as e:
+        print(f"[WARN] Failed to update prompt context: {e}")
 
     print("\n" + "="*50)
     print(f"Execution completed! Successfully updated {success_count}/{len(files_to_update)} files.")
