@@ -12,6 +12,12 @@ def main():
         action="store_true", 
         help="Skip executing 'composer install' in the PHP directory"
     )
+    # 新增：允许跳过 npm install
+    parser.add_argument(
+        "--skip-npm", 
+        action="store_true", 
+        help="Skip executing 'npm install' in the JavaScript directory"
+    )
     args = parser.parse_args()
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -205,6 +211,57 @@ def main():
         except FileNotFoundError:
             print(
                 f"Error: Composer command ('{composer_cmd}') not found. Please ensure Composer is installed and in your PATH.", file=sys.stderr)
+            sys.exit(1)
+
+    # ========== Build JavaScript Redis Log Monitor (Java Version) ==========
+    print("\nStep 7: Executing mvn clean package to build the JavaScript Redis Log Monitor...")
+    js_monitor_pom_path = os.path.join("multilingual", "javascript", "instrumentor-log-monitor", "pom.xml")
+    
+    if not os.path.isfile(js_monitor_pom_path):
+        print(f"Error: POM file not found at {js_monitor_pom_path}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        result = subprocess.run(
+            [mvn_cmd, "-f", js_monitor_pom_path, "clean", "package", "-DskipTests"])
+        if result.returncode != 0:
+            print("Maven build failed for JavaScript Redis Log Monitor", file=sys.stderr)
+            sys.exit(1)
+        else:
+            print("JavaScript Redis Log Monitor built successfully.")
+    except FileNotFoundError:
+        print(
+            f"Error: Maven command ('{mvn_cmd}') not found. Please ensure Maven is installed and in your PATH.", file=sys.stderr)
+        sys.exit(1)
+
+    # ========== Run npm install for JavaScript ==========
+    print("\nStep 8: Executing npm install for JavaScript environment...")
+    js_dir = os.path.join(script_dir, "multilingual", "javascript")
+    
+    if args.skip_npm:
+        print("Skipped 'npm install' as requested.")
+        print(f"Note: If you need JavaScript support later, please navigate to the directory and run it manually:")
+        print(f"      cd {js_dir}")
+        print(f"      npm install")
+    else:
+        if not os.path.isdir(js_dir):
+            print(f"Error: JavaScript directory not found at {js_dir}", file=sys.stderr)
+            sys.exit(1)
+            
+        npm_cmd = "npm.cmd" if os.name == "nt" else "npm"
+        try:
+            result = subprocess.run(
+                [npm_cmd, "install"], 
+                cwd=js_dir
+            )
+            if result.returncode != 0:
+                print("npm install failed.", file=sys.stderr)
+                sys.exit(1)
+            else:
+                print("npm install completed successfully.")
+        except FileNotFoundError:
+            print(
+                f"Error: npm command ('{npm_cmd}') not found. Please ensure Node.js/npm is installed and in your PATH.", file=sys.stderr)
             sys.exit(1)
 
     print("\nAll build steps completed successfully.")
