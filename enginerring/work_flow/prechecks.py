@@ -78,6 +78,12 @@ MOONSHOT_API_KEY=""
 DASHSCOPE_API_KEY=""
 ANTHROPIC_API_KEY=""
 POE_API_KEY=""
+
+# Optional: Explicitly specify which provider to use. 
+# Available options: deepseek, deepseek-v4pro, claude, gpt, glm, kimi, qwen, poe
+# If left blank, the script will auto-select based on available keys.
+STANDARD_LLM_PROVIDER=""
+ADVANCED_LLM_PROVIDER=""
 """
         with open(env_file, 'w', encoding='utf-8') as f:
             f.write(env_template)
@@ -90,6 +96,11 @@ POE_API_KEY=""
     
     return env_file
 
+#Priority Lists: I added two lists: `advanced_priority` and `standard_priority`.  
+#Automatic Sorting: Using `sort` with a `lambda` function, if `poe` is in the candidate list, its index is 0, so it gets moved to the front; `deepseek-v4pro` has an index of 3, so it gets placed further back.  
+#Final Selection: The code still takes `advanced_candidates[0][1]`, but because the list has already been sorted by priority, as long as you have `POE_API_KEY` configured, it will always prioritize selecting `poe` as the advanced model.
+#Advanced Model Priority: `poe` > `claude` > `gpt` > `deepseek-v4pro`. This way, as long as you have `POE_API_KEY` configured, the advanced model will be locked in as `poe` first.
+#Standard Model Priority: `deepseek` > `glm` > `qwen` > `kimi`.
 
 def auto_select_llm_provider(env_file):
     print()
@@ -97,19 +108,23 @@ def auto_select_llm_provider(env_file):
     print_color("      Auto-Selecting LLM Provider       ", Colors.CYAN)
     print_color("========================================", Colors.CYAN)
 
-    # Map API keys to a tuple of (Display Name, Internal Provider ID)
-    llm_providers = {
-        "DEEPSEEK_API_KEY": ("DeepSeek", "deepseek"), # "DEEPSEEK_API_KEY": ("DeepSeek V4 Pro", "deepseek-v4pro"), # 
-        "ANTHROPIC_API_KEY": ("Claude (Anthropic)", "claude"),
-        "OPENAI_API_KEY": ("GPT (OpenAI)", "gpt"),
-        "ZHIPU_API_KEY": ("GLM (Zhipu)", "glm"),
-        "MOONSHOT_API_KEY": ("Kimi (Moonshot)", "kimi"),
-        "DASHSCOPE_API_KEY": ("Qwen (DashScope)", "qwen"),
-        "POE_API_KEY": ("Poe", "poe")
+    # Map API keys to a tuple of (Display Name, Internal Provider ID, Is_Advanced)
+    llm_providers_map = {
+        "DEEPSEEK_API_KEY": [
+            ("DeepSeek", "deepseek", False), 
+            ("DeepSeek V4 Pro", "deepseek-v4pro", True)
+        ],
+        "ANTHROPIC_API_KEY": [("Claude (Anthropic)", "claude", True)],
+        "OPENAI_API_KEY": [("GPT (OpenAI)", "gpt", True)],
+        "ZHIPU_API_KEY": [("GLM (Zhipu)", "glm", False)],
+        "MOONSHOT_API_KEY": [("Kimi (Moonshot)", "kimi", False)],
+        "DASHSCOPE_API_KEY": [("Qwen (DashScope)", "qwen", False)],
+        "POE_API_KEY": [("Poe", "poe", True)]
     }
 
-    selected_provider_name = None
-    selected_provider_id = None
+    available_providers = []
+    user_standard = None
+    user_advanced = None
 
     with open(env_file, 'r', encoding='utf-8') as f:
         for line in f:
@@ -122,17 +137,51 @@ def auto_select_llm_provider(env_file):
                 key = key.strip()
                 val = val.strip().strip('"').strip("'")
 
-                if val and key in llm_providers:
-                    selected_provider_name, selected_provider_id = llm_providers[key]
-                    break 
+                if val:
+                    if key == "STANDARD_LLM_PROVIDER":
+                        user_standard = val
+                    elif key == "ADVANCED_LLM_PROVIDER":
+                        user_advanced = val
+                    elif key in llm_providers_map:
+                        available_providers.extend(llm_providers_map[key])
 
-    if selected_provider_id:
-        # Inject the selected provider ID into the environment variables for downstream usage
-        os.environ['AUTO_SELECTED_LLM_PROVIDER'] = selected_provider_id
-        print_color(f"[Environment Check] LLM Provider auto-selected: {selected_provider_name}", Colors.GREEN)
-    else:
+    if not available_providers:
         print_color("[!] No valid API keys found in .env file. Please configure at least one API key.", Colors.RED)
         sys.exit(1)
+
+    # Separate available into advanced and standard
+    advanced_candidates = [p for p in available_providers if p[2]]
+    standard_candidates = [p for p in available_providers if not p[2]]
+
+    # Define Priority for Auto-Selection (lower index = higher priority)
+    advanced_priority = ["poe", "claude", "gpt", "deepseek-v4pro"]
+    standard_priority = ["deepseek", "glm", "qwen", "kimi"]
+
+    # Sort candidates based on priority
+    advanced_candidates.sort(key=lambda x: advanced_priority.index(x[1]) if x[1] in advanced_priority else 999)
+    standard_candidates.sort(key=lambda x: standard_priority.index(x[1]) if x[1] in standard_priority else 999)
+
+    # Determine Advanced Provider
+    if user_advanced:
+        final_advanced = user_advanced
+    elif advanced_candidates:
+        final_advanced = advanced_candidates[0][1]
+    else:
+        final_advanced = available_providers[0][1] # Fallback to whatever is available
+
+    # Determine Standard Provider
+    if user_standard:
+        final_standard = user_standard
+    elif standard_candidates:
+        final_standard = standard_candidates[0][1]
+    else:
+        final_standard = available_providers[0][1] # Fallback to whatever is available
+
+    os.environ['ADVANCED_LLM_PROVIDER'] = final_advanced
+    os.environ['STANDARD_LLM_PROVIDER'] = final_standard
+
+    print_color(f"[Environment Check] Standard LLM Provider mapped to: {final_standard}", Colors.GREEN)
+    print_color(f"[Environment Check] Advanced LLM Provider mapped to: {final_advanced}", Colors.GREEN)
 
 
 def setup_windows_proxy():
