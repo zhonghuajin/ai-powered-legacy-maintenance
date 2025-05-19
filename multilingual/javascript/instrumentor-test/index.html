@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JS 插桩测试</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f9f9f9;
+        }
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #output {
+            margin-top: 15px;
+            font-weight: bold;
+            color: #28a745;
+        }
+        #staining-log {
+            background: #1e1e1e;
+            color: #4af626;
+            padding: 10px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            border-radius: 4px;
+        }
+        .log-entry {
+            margin-bottom: 4px;
+            border-bottom: 1px dashed #333;
+            padding-bottom: 2px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>JS 代码插桩测试面板</h2>
+        <p>点击下方按钮执行 <code>complex-test.js</code> 中的复杂逻辑，观察下方的插桩触发日志。</p>
+        <button id="run-btn">运行复杂逻辑</button>
+        <div id="output">等待操作...</div>
+    </div>
+
+    <div class="card">
+        <h3>📍 实时插桩日志 (window.staining 触发记录)</h3>
+        <div id="staining-log"></div>
+    </div>
+
+    <script>
+        // 【核心】在引入目标 JS 文件之前，定义 window.staining 函数
+        window.staining = function(id) {
+            // 1. 在控制台打印
+            console.log(`[Staining 触发] 命中代码块 ID: ${id}`);
+            
+            // 2. 在页面上可视化展示
+            const logContainer = document.getElementById('staining-log');
+            if (logContainer) {
+                const entry = document.createElement('div');
+                entry.className = 'log-entry';
+                
+                // 获取当前时间戳
+                const time = new Date().toISOString().split('T')[1].slice(0, -1);
+                entry.textContent = `[${time}] ⚡ 执行了代码块 -> ID: ${id}`;
+                
+                logContainer.appendChild(entry);
+                
+                // 自动滚动到最底部
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+        };
+    </script>
+
+    <!-- 引入将被插桩的 JS 文件 -->
+    <script src="complex-test.js"></script>
+
+</body>
+</html>
