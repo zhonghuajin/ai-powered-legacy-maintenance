@@ -14,27 +14,45 @@ def main():
     )
     args = parser.parse_args()
 
-    # =====================================================
-    # Prominent user notice and pause for confirmation
-    # =====================================================
-    print("\n" + "="*60)
-    print("\033[1;31m⚠️  IMPORTANT NOTICE ⚠️\033[0m")
-    print("\033[1;33mPlease DO NOT leave during the initialization process!\033[0m")
-    print("\033[1;33mYou will need to manually configure the .env file at the end.\033[0m")
-    print("\033[1;33mIf you leave early, the configuration may be incomplete or the script may hang.\033[0m")
-    print("-" * 60)
-    print("\033[1;36mPlease DO NOT leave during the initialization process!\033[0m")
-    print("\033[1;36mYou will need to manually configure the .env file at the end.\033[0m")
-    print("="*60 + "\n")
-    
-    input("\033[1;32mI understand, press Enter to continue... \033[0m")
-    print("\nStarting initialization...\n")
-    # =====================================================
-
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
+    print("\nStarting initialization...\n")
+
+    # ========== Edit .env file ==========
+    print("\nStep 1: Opening .env file for configuration...")
+    env_dir = os.path.join(script_dir, "enginerring", "ask_llm")
+    env_file_path = os.path.join(env_dir, ".env")
+
+    if not os.path.exists(env_dir):
+        os.makedirs(env_dir, exist_ok=True)
+    if not os.path.exists(env_file_path):
+        with open(env_file_path, "w", encoding="utf-8") as f:
+            f.write("# Please configure your environment variables here\n")
+
+    print(f"Waiting for you to edit and close the file: {env_file_path}")
+    
+    try:
+        if os.name == 'nt':
+            editor = os.environ.get('EDITOR', 'notepad')
+            subprocess.run([editor, env_file_path])
+        elif sys.platform == 'darwin':
+            editor = os.environ.get('EDITOR')
+            if editor:
+                subprocess.run([editor, env_file_path])
+            else:
+                subprocess.run(['open', '-W', '-t', env_file_path])
+        else:
+            editor = os.environ.get('EDITOR', 'nano')
+            subprocess.run([editor, env_file_path])
+        
+        print(".env file configuration completed. You can now leave it running.")
+    except Exception as e:
+        print(f"Warning: Could not open editor automatically: {e}", file=sys.stderr)
+        print(f"Please manually edit the file at: {env_file_path}")
+        input("Press Enter when you are done editing...")
+
     # ========== Install shared utilities package (shared_utils) ==========
-    print("\nStep 0: Installing shared utilities package (shared_utils)...")
+    print("\nStep 2: Installing shared utilities package (shared_utils)...")
     shared_utils_dir = os.path.join(script_dir, "enginerring", "shared_utils")
 
     if not os.path.isdir(shared_utils_dir):
@@ -64,7 +82,7 @@ def main():
     # =====================================================
 
     # ========== Install LLM Python Dependencies ==========
-    print("\nStep 1: Installing required Python packages for LLM...")
+    print("\nStep 3: Installing required Python packages for LLM...")
     
     # Check if proxy environment variables are already set
     proxy_set = os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY")
@@ -122,7 +140,7 @@ def main():
     mvn_cmd = "mvn.cmd" if os.name == "nt" else "mvn"
 
     # ========== Build Core Instrumentor ==========
-    print("\nStep 2: Executing mvn clean install to build the core instrumentor...")
+    print("\nStep 4: Executing mvn clean install to build the core instrumentor...")
     core_pom_path = os.path.join("core", "pom.xml")
 
     try:
@@ -139,7 +157,7 @@ def main():
         sys.exit(1)
 
     # ========== Build PHP Redis Log Monitor (Java Version) ==========
-    print("\nStep 3: Executing mvn clean package to build the PHP Redis Log Monitor...")
+    print("\nStep 5: Executing mvn clean package to build the PHP Redis Log Monitor...")
     php_monitor_pom_path = os.path.join("multilingual", "php", "instrumentor-log-monitor", "pom.xml")
     
     if not os.path.isfile(php_monitor_pom_path):
@@ -160,7 +178,7 @@ def main():
         sys.exit(1)
 
     # ========== Run Composer Install for PHP ==========
-    print("\nStep 4: Executing composer install for PHP environment...")
+    print("\nStep 6: Executing composer install for PHP environment...")
     php_dir = os.path.join(script_dir, "multilingual", "php")
     
     if args.skip_composer:
@@ -188,39 +206,6 @@ def main():
             print(
                 f"Error: Composer command ('{composer_cmd}') not found. Please ensure Composer is installed and in your PATH.", file=sys.stderr)
             sys.exit(1)
-
-    # ========== Edit .env file ==========
-    print("\nStep 5: Opening .env file for configuration...")
-    env_dir = os.path.join(script_dir, "enginerring", "ask_llm")
-    env_file_path = os.path.join(env_dir, ".env")
-
-    if not os.path.exists(env_dir):
-        os.makedirs(env_dir, exist_ok=True)
-    if not os.path.exists(env_file_path):
-        with open(env_file_path, "w", encoding="utf-8") as f:
-            f.write("# Please configure your environment variables here\n")
-
-    print(f"Waiting for you to edit and close the file: {env_file_path}")
-    
-    try:
-        if os.name == 'nt':
-            editor = os.environ.get('EDITOR', 'notepad')
-            subprocess.run([editor, env_file_path])
-        elif sys.platform == 'darwin':
-            editor = os.environ.get('EDITOR')
-            if editor:
-                subprocess.run([editor, env_file_path])
-            else:
-                subprocess.run(['open', '-W', '-t', env_file_path])
-        else:
-            editor = os.environ.get('EDITOR', 'nano')
-            subprocess.run([editor, env_file_path])
-        
-        print(".env file configuration completed.")
-    except Exception as e:
-        print(f"Warning: Could not open editor automatically: {e}", file=sys.stderr)
-        print(f"Please manually edit the file at: {env_file_path}")
-        input("Press Enter when you are done editing...")
 
     print("\nAll build steps completed successfully.")
 
