@@ -14,7 +14,6 @@ import java.nio.file.attribute.BasicFileAttributes;
 public class BlockWrapperTool {
 
     public static void main(String[] args) {
-        // 核心修改：如果命令行传入了参数，则使用传入的路径；否则使用默认路径
         String targetPath;
         if (args.length > 0) {
             targetPath = args[0];

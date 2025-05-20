@@ -1,14 +1,13 @@
 <?php
 
-require __DIR__ . '/vendor/autoload.php';
+require_once __DIR__ . '/../vendor/autoload.php';
 
 use PhpParser\Error;
-use PhpParser\Lexer;
 use PhpParser\Node;
 use PhpParser\NodeTraverser;
 use PhpParser\NodeVisitorAbstract;
 use PhpParser\NodeVisitor\CloningVisitor;
-use PhpParser\Parser\Php7;
+use PhpParser\ParserFactory;
 use PhpParser\PrettyPrinter;
 
 class AddBracesVisitor extends NodeVisitorAbstract
@@ -22,7 +21,6 @@ class AddBracesVisitor extends NodeVisitorAbstract
 
     public function enterNode(Node $node)
     {
-
         if ($node instanceof Node\Stmt\If_ ||
             $node instanceof Node\Stmt\ElseIf_ ||
             $node instanceof Node\Stmt\Else_ ||
@@ -38,11 +36,11 @@ class AddBracesVisitor extends NodeVisitorAbstract
                 return null;
             }
 
+            // 1. 判断是否已经有花括号
             $firstStmt = $stmts[0];
             $startTokenPos = $firstStmt->getStartTokenPos();
 
             $hasBrace = false;
-
             $searchStartPos = $startTokenPos - 1;
             $searchEndPos = $node->getStartTokenPos();
 
@@ -51,7 +49,12 @@ class AddBracesVisitor extends NodeVisitorAbstract
                     continue;
                 }
                 $token = $this->tokens[$i];
-                $tokenText = is_array($token) ? $token[1] : $token;
+
+                if (is_object($token)) {
+                    $tokenText = $token->text;
+                } else {
+                    $tokenText = is_array($token) ? $token[1] : $token;
+                }
 
                 if ($tokenText === '{') {
                     $hasBrace = true;
@@ -63,9 +66,17 @@ class AddBracesVisitor extends NodeVisitorAbstract
                 }
             }
 
+            // 2. 如果没有花括号，且当前不是 Block 节点，则将其包装为 Block 节点
             if (!$hasBrace) {
+                // 如果 stmts 的第一个元素已经是 Block，说明已经被处理过
+                if ($firstStmt instanceof Node\Stmt\Block) {
+                    return null;
+                }
 
                 $newNode = clone $node;
+                // 将原有的单条或多条语句包裹进 Stmt\Block 中
+                // 这样 AST 的结构发生了改变，Format-Preserving Printer 就会强制输出花括号
+                $newNode->stmts = [new Node\Stmt\Block($stmts)];
                 return $newNode;
             }
         }
@@ -79,14 +90,12 @@ function processFile(string $filePath)
     echo "Processing: $filePath\n";
     $code = file_get_contents($filePath);
 
-    $lexer = new PhpParser\Lexer\Emulative();
-
-    $parser = new Php7($lexer);
+    $parserFactory = new ParserFactory();
+    $parser = $parserFactory->createForNewestSupportedVersion();
 
     try {
-
         $oldStmts = $parser->parse($code);
-        $oldTokens = $lexer->getTokens();
+        $oldTokens = $parser->getTokens();
 
         $traverser = new NodeTraverser();
         $traverser->addVisitor(new CloningVisitor());
@@ -102,6 +111,8 @@ function processFile(string $filePath)
         if ($newCode !== $code) {
             file_put_contents($filePath, $newCode);
             echo " -> Updated!\n";
+        } else {
+            echo " -> No changes.\n";
         }
 
     } catch (Error $e) {
@@ -134,7 +145,7 @@ function processDirectoryOrFile(string $path)
 }
 
 if ($argc < 2) {
-    echo "Usage: php add_braces.php <file_or_directory_path>\n";
+    echo "Usage: php BlockWrapperTool.php <file_or_directory_path>\n";
     exit(1);
 }
 
