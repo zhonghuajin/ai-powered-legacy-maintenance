@@ -12,17 +12,11 @@ from print_utils.utils import Colors, print_color
 app = Flask(__name__)
 PORT = 5000
 
-# Global variables
 target_ips = []
-active_endpoints = []  # Stores scanned (ip, port) pairs
+active_endpoints = []
 
-# Default scenario save root; will be overwritten by the workflow step
 SCENARIO_SAVE_ROOT = os.getcwd()
 
-
-# ==========================================
-# Flask Web Service Routes
-# ==========================================
 @app.route('/upload', methods=['POST'])
 def upload_file():
     """Receive file and save to scenario_data folder under the selected project path"""
@@ -43,10 +37,6 @@ def upload_file():
 
     return jsonify({"status": "success", "message": f"File {file.filename} received"})
 
-
-# ==========================================
-# Command Line Interface (CLI) Logic
-# ==========================================
 def get_local_ip():
     """Get local LAN IP to inform LogMonitorServer"""
     try:
@@ -58,38 +48,33 @@ def get_local_ip():
     except Exception:
         return "127.0.0.1"
 
-
 def check_single_port(ip, port, local_ip, stop_event):
     """Worker function to check a single port using fast socket connection first"""
-    # If other threads have already found the service, exit directly
+
     if stop_event.is_set():
         return None
 
-    # 1. Use native Socket for fast port scanning (timeout set to 0.1 seconds)
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(0.1)
         try:
             result = s.connect_ex((ip, port))
             if result != 0:
-                return None  # Port is not open, return directly
+                return None
         except Exception:
             return None
 
-    # If other threads found it during our scan, exit
     if stop_event.is_set():
         return None
 
-    # 2. Port is open, send HTTP request to verify service
     try:
         url = f"http://{ip}:{port}/status"
         res = requests.get(url, timeout=0.5)
         if res.status_code == 200:
-            # Mark as found, notify other threads to stop
+
             stop_event.set()
 
             print_color(f"Found service: {ip}:{port}", Colors.GREEN)
 
-            # Send setManager request
             set_mgr_url = f"http://{ip}:{port}/setManager?ip={local_ip}&port={PORT}"
             mgr_res = requests.get(set_mgr_url, timeout=1)
             if mgr_res.status_code == 200:
@@ -102,7 +87,6 @@ def check_single_port(ip, port, local_ip, stop_event):
 
     return None
 
-
 def scan_ports():
     """Scan ports on target IPs concurrently and register Manager"""
     global active_endpoints
@@ -114,7 +98,6 @@ def scan_ports():
         found_any = False
         stop_event = threading.Event()
 
-        # Use 100 concurrent threads to send all port scan requests instantly
         with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
             futures = [
                 executor.submit(check_single_port, ip,
@@ -132,34 +115,62 @@ def scan_ports():
             print_color(
                 f"No available service port found on {ip}.", Colors.RED)
 
+def is_valid_ip_or_hostname(target):
+    ip_pattern = re.compile(r'^((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(25[0-5]|2[0-4]\d|[01]?\d\d?)$')
+    if ip_pattern.match(target):
+        return True
+
+    hostname_pattern = re.compile(r'^(localhost|([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9]))*)$')
+    if hostname_pattern.match(target):
+        return True
+
+    return False
 
 def input_target_ips():
-    """Handle IP input logic"""
+    """Handle IP input logic with format validation"""
     global target_ips
     prompt_msg = f"{Colors.MAGENTA}Enter IPs separated by ';' (press Enter for default: localhost): {Colors.RESET}"
 
-    try:
-        ip_str = input(prompt_msg)
-    except (KeyboardInterrupt, EOFError):
-        print_color("\nInterrupt signal detected, returning...", Colors.RED)
-        return False
+    while True:
+        try:
+            ip_str = input(prompt_msg).strip()
+        except (KeyboardInterrupt, EOFError):
+            print_color("\nInterrupt signal detected, returning...", Colors.RED)
+            return False
 
-    if ip_str.strip():
-        target_ips = [ip.strip() for ip in ip_str.split(';') if ip.strip()]
-        print_color(f"Target IPs updated to: {target_ips}", Colors.GREEN)
-    else:
-        if not target_ips:
-            target_ips = ['localhost']
-            print_color(
-                f"No IP entered, using defaults: {target_ips}", Colors.GREEN)
+        if not ip_str:
+            if not target_ips:
+                target_ips = ['localhost']
+                print_color(
+                    f"No IP entered, using defaults: {target_ips}", Colors.GREEN)
+            else:
+                print_color(
+                    f"No IP entered, keeping current settings: {target_ips}", Colors.YELLOW)
+            break
+
+        candidates = [ip.strip() for ip in ip_str.split(';') if ip.strip()]
+
+        if not candidates:
+            print_color("[!] Invalid input. Please enter valid IPs/Hostnames or press Enter.", Colors.RED)
+            continue
+
+        all_valid = True
+        invalid_entries = []
+        for item in candidates:
+            if not is_valid_ip_or_hostname(item):
+                all_valid = False
+                invalid_entries.append(item)
+
+        if all_valid:
+            target_ips = candidates
+            print_color(f"Target IPs updated to: {target_ips}", Colors.GREEN)
+            break
         else:
-            print_color(
-                f"No IP entered, keeping current settings: {target_ips}", Colors.YELLOW)
+            print_color(f"[!] Invalid IP or Hostname format detected: {invalid_entries}", Colors.RED)
+            print_color("[!] Please re-enter. Example formats: '192.168.1.100', 'localhost', '10.0.0.1; 10.0.0.2'", Colors.YELLOW)
 
-    # Scan immediately after entering IPs
     scan_ports()
     return True
-
 
 def print_endpoints_menu():
     """Print scanned endpoints and available commands"""
@@ -191,7 +202,6 @@ def print_endpoints_menu():
         "  exit                  - Exit the log manager server and go back to main flow", Colors.RED)
     print_color("=========================================\n", Colors.CYAN)
 
-
 def scan_and_manage():
     """CLI thread main loop"""
     if not target_ips:
@@ -214,7 +224,6 @@ def scan_and_manage():
             elif cmd_input == '':
                 continue
 
-            # Parse "<number> <command>"
             parts = cmd_input.split()
             if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
                 idx = int(parts[0])
@@ -226,8 +235,7 @@ def scan_and_manage():
 
                     if cmd_id in cmd_map:
                         action = cmd_map[cmd_id]
-                        
-                        # [NEW FEATURE] Pre-check for flush command
+
                         if action == "flush":
                             status_url = f"http://{target_ip}:{target_port}/status"
                             try:
@@ -246,15 +254,14 @@ def scan_and_manage():
                         print_color(
                             f"Sending request to {url}...", Colors.CYAN)
                         try:
-                            # flush may trigger file upload, give a bit more timeout
+
                             res = requests.get(url, timeout=5)
                             print_color(f"Response:\n{res.text}", Colors.GREEN)
-                            
-                            # Auto-exit after executing flush command
+
                             if cmd_id == 3:
                                 print_color("Flush command executed successfully. Auto-exiting log manager...", Colors.YELLOW)
                                 return True
-                                
+
                         except Exception as e:
                             print_color(f"Request failed: {e}", Colors.RED)
                     else:
@@ -269,9 +276,8 @@ def scan_and_manage():
         except (KeyboardInterrupt, EOFError):
             print_color("\nInterrupt signal detected, exiting CLI...", Colors.RED)
             return False
-            
-    return False
 
+    return False
 
 def run_flask_app():
     """Run the Flask application with suppressed logging"""
@@ -282,25 +288,19 @@ def run_flask_app():
         flask.cli.show_server_banner = lambda *args: None
     except Exception:
         pass
-    
+
     try:
         app.run(host='0.0.0.0', port=PORT)
     except (KeyboardInterrupt, SystemExit):
         pass
 
-
 def run_manager():
     """Exposed API to start the server in the background and run the CLI in the foreground"""
     flask_thread = threading.Thread(target=run_flask_app, daemon=True)
     flask_thread.start()
-    
-    # Run the CLI loop in the main thread. It will return when the user types 'exit' or flushes.
+
     return scan_and_manage()
 
-
-# ==========================================
-# Main Entry Point
-# ==========================================
 if __name__ == '__main__':
-    # When executed directly, run the manager interface
+
     run_manager()
