@@ -37,7 +37,9 @@ public class LogMonitorServer implements LogLifecycleHook {
     public void onFirstLog() {
         int port = Integer.getInteger(PROP_PORT, DEFAULT_PORT);
         Thread serverThread = new Thread(() -> startHttpServer(port), "LogMonitor-HttpServer");
-        serverThread.setDaemon(true);
+        
+        serverThread.setDaemon(false); 
+        
         serverThread.start();
 
         boolean autoFlush = Boolean.parseBoolean(
