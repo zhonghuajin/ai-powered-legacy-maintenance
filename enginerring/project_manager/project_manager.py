@@ -134,6 +134,17 @@ def _select_or_create_project(work_dir, projects_dir, existing_projects):
             sys.exit(1)
 
 
+def _is_valid_git_root(path):
+    """
+    Check if the specified path is a valid Git repository root.
+    It must be a directory and contain a '.git' folder or file.
+    """
+    if not os.path.isdir(path):
+        return False
+    git_dir = os.path.join(path, ".git")
+    return os.path.exists(git_dir)
+
+
 def _create_new_project(work_dir, projects_dir):
     """
     Helper to create a new project.
@@ -159,6 +170,11 @@ def _create_new_project(work_dir, projects_dir):
         elif not os.path.isdir(git_root):
             print_color(
                 "The specified directory does not exist. Please enter a valid path.", Colors.RED
+            )
+            git_root = ""
+        elif not _is_valid_git_root(git_root):
+            print_color(
+                "The specified directory is not a valid Git repository root (missing '.git' folder/file).", Colors.RED
             )
             git_root = ""
         else:
