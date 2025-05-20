@@ -172,7 +172,7 @@ def instrument_code(work_dir, proj_path=None, git_root=None, is_new_project=Fals
     success = run_instrumentation_mode(
         git_root=git_root_dir,
         mode=mode_arg,
-        original_cwd=os.getcwd(),
+        original_cwd=work_dir,
         proj_path=proj_path
     )
 
@@ -655,7 +655,6 @@ def select_ai_prompt_script(work_dir, target_language=None):
     return selected_script
 
 
-# Modified: Added proj_path parameter and updated context_file_path logic
 def prepare_ai_prompt_interactive(work_dir, selected_script, proj_path=None, save_context=True):
     """
     Execute the interactive preparation phase of the selected AI prompt script

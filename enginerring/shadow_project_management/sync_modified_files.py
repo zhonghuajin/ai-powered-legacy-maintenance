@@ -237,6 +237,21 @@ def sync_files(original_cwd, proj_path=None):
     print(
         f"Saved {len(synced_absolute_paths)} absolute path(s) to {target_folders_file}.")
 
+    # 7.5 Run BlockWrapperTool on the modified files in incremental mode
+    if proj_path:
+        try:
+            from .instrument_with_shadow_project import run_block_wrapper_tool
+            print("\n>>> Running BlockWrapperTool on modified files in incremental mode...")
+            run_block_wrapper_tool(
+                work_dir=original_cwd,
+                proj_path=proj_path,
+                git_root=original_git_root
+            )
+        except ImportError as e:
+            print(f"Warning: Failed to import run_block_wrapper_tool dynamically: {e}")
+        except Exception as e:
+            print(f"Warning: BlockWrapperTool execution failed: {e}")
+
     # Switch back to original working directory to locate instrumentation jar
     os.chdir(original_cwd)
     print(f"Working directory changed back to: {os.getcwd()}")
