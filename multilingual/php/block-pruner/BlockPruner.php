@@ -1,20 +1,10 @@
 <?php
-/**
- * BlockPruner for PHP
- *
- * Prunes unexecuted code blocks from PHP source files based on instrumentation logs.
- *
- * Usage: php BlockPruner.php <Source Directories> <comment-mapping file> <instrument-log file> <Output Directory>
- *
- * Requirements: nikic/php-parser ^5.0 (install via: composer require nikic/php-parser)
- */
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
 use PhpParser\ParserFactory;
 use PhpParser\PrettyPrinter\Standard as PrettyPrinter;
 use PhpParser\Node;
-use PhpParser\Comment;
 
 class BlockLocation
 {
@@ -30,9 +20,7 @@ class BlockLocation
 
 class BlockPruner
 {
-    /**
-     * Entry point.
-     */
+
     public static function main(array $args): void
     {
         if (count($args) < 4) {
@@ -47,7 +35,6 @@ class BlockPruner
             exit(1);
         }
 
-        // Parse multiple source directories separated by ';'
         $sourceDirs = [];
         foreach (explode(';', $args[0]) as $part) {
             $part = trim($part);
@@ -77,24 +64,19 @@ class BlockPruner
         echo "[BlockPruner] Log File: $logFile\n";
         echo "[BlockPruner] Output Directory: $outputDir\n\n";
 
-        // Step 1: Parse comment mapping
         $blockMap = self::parseCommentMapping($mappingFile);
         printf("[Step 1] Loaded %d block mappings\n", count($blockMap));
 
-        // Step 2: Parse instrument log
         $threadLogs = self::parseInstrumentLog($logFile);
         printf("[Step 2] Loaded execution logs for %d threads\n", count($threadLogs));
 
-        // Step 3: Build file block index
         $fileBlockIndex = self::buildFileBlockIndex($blockMap);
         printf("[Step 3] Involves %d source files\n", count($fileBlockIndex));
 
-        // Step 4: Resolve source files
         $resolvedPaths = self::resolveSourceFiles(array_keys($fileBlockIndex), $sourceDirs);
         printf("[Step 4] Successfully located %d / %d source files\n",
             count($resolvedPaths), count($fileBlockIndex));
 
-        // Step 5: Prune for each thread
         $totalThreads = count($threadLogs);
         $idx = 0;
         foreach ($threadLogs as $threadName => $executedIds) {
@@ -109,23 +91,17 @@ class BlockPruner
         echo "\n[BlockPruner] All processing completed. Output Directory: $outputDir\n";
     }
 
-    // ==================== Pruning Logic ====================
-
-    /**
-     * Prune source files for a single thread's execution trace.
-     */
     private static function pruneForThread(
         string $threadName,
-        array  $executedIds,   // [id => true, ...]
-        array  $blockMap,      // [id => BlockLocation, ...]
-        array  $fileBlockIndex,// [normalizedPath => [line => blockId, ...], ...]
-        array  $resolvedPaths, // [normalizedPath => absolutePath, ...]
+        array  $executedIds,
+        array  $blockMap,
+        array  $fileBlockIndex,
+        array  $resolvedPaths,
         array  $sourceDirs,
         string $outputDir
     ): void {
         printf("===== Thread [%s]  Executed %d blocks =====\n", $threadName, count($executedIds));
 
-        // Determine which files are involved
         $involvedFiles = [];
         foreach ($executedIds as $id => $_) {
             if (isset($blockMap[$id])) {
@@ -144,7 +120,6 @@ class BlockPruner
             $lineToBlockId = $fileBlockIndex[$normalizedFile] ?? null;
             if ($lineToBlockId === null) continue;
 
-            // Classify blocks into executed/unexecuted
             $unexecutedLines = [];
             $executedLineToId = [];
             foreach ($lineToBlockId as $line => $blockId) {
@@ -155,14 +130,12 @@ class BlockPruner
                 }
             }
 
-            // Resolve source file path
             $srcFile = $resolvedPaths[$normalizedFile] ?? null;
             if ($srcFile === null) {
                 fprintf(STDERR, "  [Skip] Source file not found: %s\n", $normalizedFile);
                 continue;
             }
 
-            // Parse PHP source file
             $code = file_get_contents($srcFile);
             if ($code === false) {
                 fprintf(STDERR, "  [Skip] Cannot read file: %s\n", $srcFile);
@@ -182,10 +155,8 @@ class BlockPruner
                 continue;
             }
 
-            // Prune unexecuted blocks
             $prunedCount = self::pruneUnexecutedBlocks($ast, $unexecutedLines, $executedLineToId, $threadName);
 
-            // Write output
             $matchingSourceDir = self::findMatchingSourceDir($srcFile, $sourceDirs);
             $relativePath = self::getRelativePath($matchingSourceDir, $srcFile);
             $outFile = $outputDir . DIRECTORY_SEPARATOR . $safeDirName . DIRECTORY_SEPARATOR . $relativePath;
@@ -211,9 +182,6 @@ class BlockPruner
         }
     }
 
-    /**
-     * Find which source directory the given source file resides under.
-     */
     private static function findMatchingSourceDir(string $srcFile, array $sourceDirs): string
     {
         $normalized = self::normalizePath(realpath($srcFile) ?: $srcFile);
@@ -223,7 +191,7 @@ class BlockPruner
                 return $sd;
             }
         }
-        // Fallback: pick directory with longest common suffix
+
         $best = $sourceDirs[0];
         $bestScore = -1;
         foreach ($sourceDirs as $sd) {
@@ -236,17 +204,6 @@ class BlockPruner
         return $best;
     }
 
-    // ==================== AST Pruning ====================
-
-    /**
-     * Prune unexecuted blocks from the AST.
-     *
-     * @param array $ast             The top-level AST nodes (modified in place)
-     * @param array $unexecutedLines [line => true, ...] lines of unexecuted blocks
-     * @param array $executedLineToId [line => blockId, ...] executed blocks
-     * @param string $threadName     Thread name for comment annotation
-     * @return int Number of blocks actually pruned
-     */
     private static function pruneUnexecutedBlocks(
         array  &$ast,
         array  $unexecutedLines,
@@ -255,11 +212,10 @@ class BlockPruner
     ): int {
         if (empty($unexecutedLines) && empty($executedLineToId)) return 0;
 
-        // Collect all block nodes with their depths
         $unexecutedBlocks = [];
 
         self::walkAstWithDepth($ast, 0, function (Node $node, int $depth) use (
-            $unexecutedLines, $executedLineToId, $threadName, &$unexecutedBlocks
+            $unexecutedLines, &$unexecutedBlocks
         ) {
             if (!self::isBlockNode($node)) return;
 
@@ -269,33 +225,24 @@ class BlockPruner
             if (isset($unexecutedLines[$startLine])) {
                 $node->setAttribute('_pruner_depth', $depth);
                 $unexecutedBlocks[] = $node;
-            } elseif (isset($executedLineToId[$startLine])) {
-                // Mark executed block with a comment
-                $blockId = $executedLineToId[$startLine];
-                $commentText = " [Executed Block ID: $blockId, Thread: $threadName] ";
-                $comment = new Comment("/* $commentText */");
-                $existing = $node->getComments();
-                $existing[] = $comment;
-                $node->setAttribute('comments', $existing);
             }
         });
 
-        // Sort by depth (deepest first) to handle nested blocks correctly
         usort($unexecutedBlocks, function (Node $a, Node $b) {
             $depthA = $a->getAttribute('_pruner_depth', 0);
             $depthB = $b->getAttribute('_pruner_depth', 0);
-            return $depthB - $depthA; // Descending
+            return $depthB - $depthA;
         });
 
-        $executedLineSet = $executedLineToId; // [line => blockId] - keys are executed lines
+        $executedLineSet = $executedLineToId;
 
         $prunedCount = 0;
         foreach ($unexecutedBlocks as $block) {
             if (!self::containsExecutedBlock($block, $executedLineSet)) {
-                // Clear all statements in this block
+
                 self::clearBlockStmts($block);
             } else {
-                // Remove only non-executed child statements
+
                 self::removeNonExecutedChildren($block, $executedLineSet);
             }
             $prunedCount++;
@@ -304,17 +251,11 @@ class BlockPruner
         return $prunedCount;
     }
 
-    /**
-     * Check if a node represents a "block" (has a stmts array property).
-     */
     private static function isBlockNode(Node $node): bool
     {
         return property_exists($node, 'stmts') && is_array($node->stmts);
     }
 
-    /**
-     * Clear all statements in a block node.
-     */
     private static function clearBlockStmts(Node $node): void
     {
         if (property_exists($node, 'stmts') && is_array($node->stmts)) {
@@ -322,9 +263,6 @@ class BlockPruner
         }
     }
 
-    /**
-     * Remove child statements that don't contain any executed blocks.
-     */
     private static function removeNonExecutedChildren(Node $block, array $executedLineSet): void
     {
         if (!property_exists($block, 'stmts') || !is_array($block->stmts)) return;
@@ -338,12 +276,9 @@ class BlockPruner
         $block->stmts = $kept;
     }
 
-    /**
-     * Check if a node or any of its descendants contains an executed block.
-     */
     private static function containsExecutedBlock(Node $node, array $executedLineSet): bool
     {
-        // Check self
+
         if (self::isBlockNode($node)) {
             $startLine = $node->getStartLine();
             if ($startLine >= 0 && isset($executedLineSet[$startLine])) {
@@ -351,7 +286,6 @@ class BlockPruner
             }
         }
 
-        // Check descendants recursively
         foreach ($node->getSubNodeNames() as $name) {
             $subNode = $node->{$name};
             if ($subNode instanceof Node) {
@@ -370,9 +304,6 @@ class BlockPruner
         return false;
     }
 
-    /**
-     * Walk the AST recursively, tracking depth, and invoke callback for each node.
-     */
     private static function walkAstWithDepth($nodes, int $depth, callable $callback): void
     {
         if (!is_array($nodes)) {
@@ -399,14 +330,6 @@ class BlockPruner
         }
     }
 
-    // ==================== File Parsing ====================
-
-    /**
-     * Parse the comment mapping file.
-     * Format: ID = filePath:lineNo
-     *
-     * @return array<int, BlockLocation>
-     */
     private static function parseCommentMapping(string $file): array
     {
         $map = [];
@@ -426,7 +349,6 @@ class BlockPruner
             $idPart = trim(substr($line, 0, $eqIdx));
             $pathAndLine = trim(substr($line, $eqIdx + 1));
 
-            // Find last colon to separate path from line number
             $lastColon = strrpos($pathAndLine, ':');
             if ($lastColon === false || $lastColon === 0) continue;
 
@@ -449,14 +371,6 @@ class BlockPruner
         return $map;
     }
 
-    /**
-     * Parse the instrumentation log file.
-     * Format:
-     *   [ThreadName] ...
-     *   id1->id2->id3->...
-     *
-     * @return array<string, array<int, true>>  threadName => [blockId => true, ...]
-     */
     private static function parseInstrumentLog(string $file): array
     {
         $result = [];
@@ -478,7 +392,7 @@ class BlockPruner
                     $result[$currentThread] = [];
                 }
             } elseif ($currentThread !== null) {
-                // Parse block IDs separated by '->'
+
                 $parts = explode('->', $line);
                 foreach ($parts as $part) {
                     $part = trim($part);
@@ -495,14 +409,6 @@ class BlockPruner
         return $result;
     }
 
-    // ==================== Index Building ====================
-
-    /**
-     * Build an index: normalizedFilePath => [startLine => blockId, ...]
-     *
-     * @param array<int, BlockLocation> $blockMap
-     * @return array<string, array<int, int>>
-     */
     private static function buildFileBlockIndex(array $blockMap): array
     {
         $index = [];
@@ -515,20 +421,10 @@ class BlockPruner
         return $index;
     }
 
-    // ==================== File Resolution ====================
-
-    /**
-     * Resolve normalized file paths to actual filesystem paths.
-     *
-     * @param array $normalizedPaths
-     * @param array $sourceDirs
-     * @return array<string, string>  normalizedPath => absolutePath
-     */
     private static function resolveSourceFiles(array $normalizedPaths, array $sourceDirs): array
     {
         $resolved = [];
 
-        // Build a name index: fileName => [absolutePath, ...]
         $nameIndex = [];
         foreach ($sourceDirs as $sourceDir) {
             if (!is_dir($sourceDir)) {
@@ -560,9 +456,6 @@ class BlockPruner
         return $resolved;
     }
 
-    /**
-     * Recursively index a directory, collecting all .php files by filename.
-     */
     private static function indexDirectory(string $dir, array &$nameIndex): void
     {
         $iterator = new RecursiveIteratorIterator(
@@ -571,7 +464,7 @@ class BlockPruner
         );
 
         foreach ($iterator as $file) {
-            /** @var SplFileInfo $file */
+
             if ($file->isFile() && strtolower($file->getExtension()) === 'php') {
                 $absPath = $file->getRealPath();
                 $fileName = $file->getFilename();
@@ -583,9 +476,6 @@ class BlockPruner
         }
     }
 
-    /**
-     * Try to resolve the path directly.
-     */
     private static function tryResolveDirect(string $normalizedPath): ?string
     {
         $osPath = str_replace('/', DIRECTORY_SEPARATOR, $normalizedPath);
@@ -595,23 +485,19 @@ class BlockPruner
         return null;
     }
 
-    /**
-     * Try to resolve by known directory markers (e.g., src/, app/, lib/).
-     */
     private static function tryResolveByMarker(string $normalizedPath, string $sourceDir): ?string
     {
         $markers = ['src/', 'app/', 'lib/', 'includes/', 'modules/'];
         foreach ($markers as $marker) {
             $idx = strpos($normalizedPath, $marker);
             if ($idx !== false) {
-                // Try without marker prefix
+
                 $relative = substr($normalizedPath, $idx + strlen($marker));
                 $candidate = $sourceDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relative);
                 if (is_file($candidate)) {
                     return realpath($candidate) ?: $candidate;
                 }
 
-                // Try with marker
                 $withMarker = substr($normalizedPath, $idx);
                 $candidate2 = $sourceDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $withMarker);
                 if (is_file($candidate2)) {
@@ -622,9 +508,6 @@ class BlockPruner
         return null;
     }
 
-    /**
-     * Try to resolve by filename matching.
-     */
     private static function tryResolveByName(string $normalizedPath, array $nameIndex): ?string
     {
         $lastSlash = strrpos($normalizedPath, '/');
@@ -652,19 +535,11 @@ class BlockPruner
         return null;
     }
 
-    // ==================== Utility Methods ====================
-
-    /**
-     * Normalize a file path to use forward slashes.
-     */
     private static function normalizePath(string $path): string
     {
         return str_replace('\\', '/', $path);
     }
 
-    /**
-     * Calculate the common suffix length of two strings (case-insensitive).
-     */
     private static function commonSuffixLength(string $a, string $b): int
     {
         $i = strlen($a) - 1;
@@ -678,17 +553,11 @@ class BlockPruner
         return $count;
     }
 
-    /**
-     * Sanitize a string for use as a directory name.
-     */
     private static function sanitizeDirName(string $name): string
     {
         return preg_replace('/[^a-zA-Z0-9_\-.]/', '_', $name);
     }
 
-    /**
-     * Get the relative path from a base directory to a file.
-     */
     private static function getRelativePath(string $baseDir, string $filePath): string
     {
         $base = self::normalizePath(realpath($baseDir) ?: $baseDir);
@@ -699,13 +568,9 @@ class BlockPruner
             return str_replace('/', DIRECTORY_SEPARATOR, $relative);
         }
 
-        // Fallback: just use the filename
         return basename($filePath);
     }
 }
 
-// ==================== Script Entry Point ====================
-
-// Remove the script name from argv
 $args = array_slice($argv, 1);
 BlockPruner::main($args);
