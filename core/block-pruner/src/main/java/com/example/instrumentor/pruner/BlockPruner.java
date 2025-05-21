@@ -16,14 +16,10 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
-
 public class BlockPruner {
 
-    
-
-    
     private static class BlockLocation {
-        final String normalizedPath; 
+        final String normalizedPath;
         final int startLine;
 
         BlockLocation(String normalizedPath, int startLine) {
@@ -31,8 +27,6 @@ public class BlockPruner {
             this.startLine = startLine;
         }
     }
-
-    
 
     public static void main(String[] args) throws Exception {
         if (args.length < 4) {
@@ -48,7 +42,6 @@ public class BlockPruner {
             return;
         }
 
-        // Parse multiple source directories separated by ';'
         List<Path> sourceDirs = new ArrayList<>();
         for (String part : args[0].split(";")) {
             part = part.trim();
@@ -75,29 +68,23 @@ public class BlockPruner {
         System.out.println("[BlockPruner] Output Directory: " + outputDir);
         System.out.println();
 
-        
         Map<Integer, BlockLocation> blockMap = parseCommentMapping(mappingFile);
         System.out.printf("[Step 1] Loaded %d block mappings%n", blockMap.size());
 
-        
         LinkedHashMap<String, Set<Integer>> threadLogs = parseInstrumentLog(logFile);
         System.out.printf("[Step 2] Loaded execution logs for %d threads%n", threadLogs.size());
 
-        
         Map<String, Map<Integer, Integer>> fileBlockIndex = buildFileBlockIndex(blockMap);
         System.out.printf("[Step 3] Involves %d source files%n", fileBlockIndex.size());
 
-        
         Map<String, Path> resolvedPaths = resolveSourceFiles(fileBlockIndex.keySet(), sourceDirs);
         System.out.printf("[Step 4] Successfully located %d / %d source files%n",
                 resolvedPaths.size(), fileBlockIndex.size());
 
-        
         ParserConfiguration parserConfig = new ParserConfiguration();
         parserConfig.setLanguageLevel(ParserConfiguration.LanguageLevel.JAVA_17);
         StaticJavaParser.setConfiguration(parserConfig);
 
-        
         int totalThreads = threadLogs.size();
         int idx = 0;
         for (Map.Entry<String, Set<Integer>> entry : threadLogs.entrySet()) {
@@ -113,9 +100,6 @@ public class BlockPruner {
         System.out.println("[BlockPruner] All processing completed. Output Directory: " + outputDir);
     }
 
-    
-
-    
     private static void pruneForThread(
             String threadName,
             Set<Integer> executedIds,
@@ -127,7 +111,6 @@ public class BlockPruner {
 
         System.out.printf("===== Thread [%s]  Executed %d blocks =====%n", threadName, executedIds.size());
 
-        
         Set<String> involvedFiles = new LinkedHashSet<>();
         for (int id : executedIds) {
             BlockLocation loc = blockMap.get(id);
@@ -147,10 +130,9 @@ public class BlockPruner {
             Map<Integer, Integer> lineToBlockId = fileBlockIndex.get(normalizedFile);
             if (lineToBlockId == null) continue;
 
-            
             Set<Integer> unexecutedLines = new LinkedHashSet<>();
             Map<Integer, Integer> executedLineToId = new LinkedHashMap<>();
-            
+
             for (Map.Entry<Integer, Integer> e : lineToBlockId.entrySet()) {
                 if (executedIds.contains(e.getValue())) {
                     executedLineToId.put(e.getKey(), e.getValue());
@@ -159,14 +141,12 @@ public class BlockPruner {
                 }
             }
 
-            
             Path srcFile = resolvedPaths.get(normalizedFile);
             if (srcFile == null) {
                 System.err.printf("  [Skip] Source file not found: %s%n", normalizedFile);
                 continue;
             }
 
-            
             CompilationUnit cu;
             try {
                 cu = StaticJavaParser.parse(srcFile);
@@ -175,10 +155,8 @@ public class BlockPruner {
                 continue;
             }
 
-            
             int prunedCount = pruneUnexecutedBlocks(cu, unexecutedLines, executedLineToId, threadName);
 
-            
             Path matchingSourceDir = findMatchingSourceDir(srcFile, sourceDirs);
             Path relativePath = matchingSourceDir.relativize(srcFile.toAbsolutePath().normalize());
             Path outFile = outputDir.resolve(safeDirName).resolve(relativePath);
@@ -197,10 +175,6 @@ public class BlockPruner {
         }
     }
 
-    /**
-     * Find which source directory the given source file resides under.
-     * Falls back to the first source directory if no match is found.
-     */
     private static Path findMatchingSourceDir(Path srcFile, List<Path> sourceDirs) {
         Path normalized = srcFile.toAbsolutePath().normalize();
         for (Path sd : sourceDirs) {
@@ -208,7 +182,7 @@ public class BlockPruner {
                 return sd;
             }
         }
-        // Fallback: pick the directory that shares the longest common suffix with the file path
+
         Path best = sourceDirs.get(0);
         int bestScore = -1;
         for (Path sd : sourceDirs) {
@@ -221,41 +195,32 @@ public class BlockPruner {
         return best;
     }
 
-    
-
-    
     private static int pruneUnexecutedBlocks(CompilationUnit cu,
                                              Set<Integer> unexecutedLines,
                                              Map<Integer, Integer> executedLineToId,
                                              String threadName) {
         if (unexecutedLines.isEmpty() && executedLineToId.isEmpty()) return 0;
 
-        
         List<BlockStmt> unexecutedBlocks = new ArrayList<>();
         cu.walk(BlockStmt.class, block ->
                 block.getBegin().ifPresent(pos -> {
                     if (unexecutedLines.contains(pos.line)) {
                         unexecutedBlocks.add(block);
-                    } else if (executedLineToId.containsKey(pos.line)) {
-                        
-                        int blockId = executedLineToId.get(pos.line);
-                        block.setLineComment(" [Executed Block ID: " + blockId + ", Thread: " + threadName + "] ");
                     }
                 })
         );
 
-        
         unexecutedBlocks.sort(Comparator.comparingInt(BlockPruner::nodeDepth).reversed());
 
         Set<Integer> executedLines = executedLineToId.keySet();
         int prunedCount = 0;
-        
+
         for (BlockStmt block : unexecutedBlocks) {
             if (!containsExecutedBlock(block, executedLines)) {
-                
+
                 block.getStatements().clear();
             } else {
-                
+
                 List<Statement> toRemove = new ArrayList<>();
                 for (Statement stmt : block.getStatements()) {
                     if (!containsExecutedBlock(stmt, executedLines)) {
@@ -272,7 +237,6 @@ public class BlockPruner {
         return prunedCount;
     }
 
-    
     private static boolean containsExecutedBlock(Node node, Set<Integer> executedLines) {
         for (BlockStmt block : node.findAll(BlockStmt.class)) {
             if (block.getBegin().isPresent()
@@ -281,9 +245,8 @@ public class BlockPruner {
             }
         }
         return false;
-    }    
+    }
 
-    
     private static int nodeDepth(Node node) {
         int depth = 0;
         Node current = node;
@@ -294,9 +257,6 @@ public class BlockPruner {
         return depth;
     }
 
-    
-
-    
     private static Map<Integer, BlockLocation> parseCommentMapping(Path file) throws IOException {
         Map<Integer, BlockLocation> map = new LinkedHashMap<>();
 
@@ -310,7 +270,6 @@ public class BlockPruner {
             String idPart = line.substring(0, eqIdx).trim();
             String pathAndLine = line.substring(eqIdx + 1).trim();
 
-            
             int lastColon = pathAndLine.lastIndexOf(':');
             if (lastColon <= 0) continue;
 
@@ -327,9 +286,6 @@ public class BlockPruner {
         return map;
     }
 
-    
-
-    
     private static LinkedHashMap<String, Set<Integer>> parseInstrumentLog(Path file) throws IOException {
         LinkedHashMap<String, Set<Integer>> result = new LinkedHashMap<>();
         Pattern headerPattern = Pattern.compile("^\\[(.+?)].*");
@@ -344,8 +300,8 @@ public class BlockPruner {
             if (m.matches()) {
                 currentThread = m.group(1);
                 result.put(currentThread, new LinkedHashSet<>());
-            } else if (currentThread != null) { 
-                
+            } else if (currentThread != null) {
+
                 Set<Integer> ids = result.get(currentThread);
                 for (String part : line.split("->")) {
                     part = part.trim();
@@ -362,9 +318,6 @@ public class BlockPruner {
         return result;
     }
 
-    
-
-    
     private static Map<String, Map<Integer, Integer>> buildFileBlockIndex(
             Map<Integer, BlockLocation> blockMap) {
         Map<String, Map<Integer, Integer>> index = new LinkedHashMap<>();
@@ -376,12 +329,10 @@ public class BlockPruner {
         return index;
     }
 
-    
     private static Map<String, Path> resolveSourceFiles(Set<String> normalizedPaths, List<Path> sourceDirs)
             throws IOException {
         Map<String, Path> resolved = new LinkedHashMap<>();
 
-        
         Map<String, List<Path>> nameIndex = new HashMap<>();
         for (Path sourceDir : sourceDirs) {
             if (!Files.isDirectory(sourceDir)) {
@@ -416,7 +367,6 @@ public class BlockPruner {
         return resolved;
     }
 
-    
     private static Path tryResolveDirect(String normalizedPath) {
         try {
             Path p = Paths.get(normalizedPath.replace('/', File.separatorChar));
@@ -426,19 +376,18 @@ public class BlockPruner {
         }
     }
 
-    
     private static Path tryResolveByMarker(String normalizedPath, Path sourceDir) {
         String[] markers = {"src/main/java/", "src/test/java/", "src/"};
         for (String marker : markers) {
             int idx = normalizedPath.indexOf(marker);
             if (idx >= 0) {
-                
+
                 String relative = normalizedPath.substring(idx + marker.length());
                 Path candidate = sourceDir.resolve(relative);
                 if (Files.isRegularFile(candidate)) {
                     return candidate.toAbsolutePath().normalize();
                 }
-                
+
                 String withMarker = normalizedPath.substring(idx);
                 Path candidate2 = sourceDir.resolve(withMarker);
                 if (Files.isRegularFile(candidate2)) {
@@ -449,7 +398,6 @@ public class BlockPruner {
         return null;
     }
 
-    
     private static Path tryResolveByName(String normalizedPath, Map<String, List<Path>> nameIndex) {
         String fileName = normalizedPath.substring(normalizedPath.lastIndexOf('/') + 1);
         List<Path> candidates = nameIndex.getOrDefault(fileName, Collections.emptyList());
@@ -474,14 +422,10 @@ public class BlockPruner {
         return null;
     }
 
-    
-
-    
     private static String normalizePath(String path) {
         return path.replace('\\', '/');
     }
 
-    
     private static int commonSuffixLength(String a, String b) {
         int i = a.length() - 1, j = b.length() - 1, count = 0;
         while (i >= 0 && j >= 0
@@ -493,7 +437,6 @@ public class BlockPruner {
         return count;
     }
 
-    
     private static String sanitizeDirName(String name) {
         return name.replaceAll("[^a-zA-Z0-9_\\-.]", "_");
     }

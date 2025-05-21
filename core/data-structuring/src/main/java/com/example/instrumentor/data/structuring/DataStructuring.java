@@ -37,7 +37,7 @@ public class DataStructuring {
     }
 
     public static void main(String[] args) {
-        // 修改：现在仅需 1 个参数
+
         if (args.length < 1) {
             System.err.println("Usage: java ThreadDependencyAnalyzer <pruned_directory_path>");
             System.err.println("Example: java ThreadDependencyAnalyzer ./pruned");
@@ -45,7 +45,7 @@ public class DataStructuring {
         }
 
         String prunedDirPath = args[0];
-        // 修改：直接硬编码输出到当前工作目录下的 final-output-calltree.md
+
         String outputFilePath = "final-output-calltree.md";
 
         try {
