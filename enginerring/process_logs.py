@@ -240,8 +240,21 @@ def _process_javascript_logs(target_folders_list, log_file, comment_mapping_file
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Error executing JavaScript Block Pruner: {e}")
         
-    # 2. Execute JavaScript Data Structuring (Stub for future implementation if needed)
-    print("[INFO] JavaScript Data Structuring execution can be added here if applicable.")
+    # 2. Execute JavaScript Data Structuring
+    print("Executing JavaScript Data Structuring...")
+    js_structuring_script_path = str(PROJECT_ROOT / "multilingual" / "javascript" / "data-structuring" / "DataStructuring.js")
+    
+    js_structuring_cmd = [
+        "node",
+        js_structuring_script_path,
+        pruned_folder
+    ]
+    
+    print(f"Running command: {' '.join(js_structuring_cmd)}")
+    try:
+        subprocess.run(js_structuring_cmd, env=env, check=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Error executing JavaScript Data Structuring: {e}")
 
 
 def main():

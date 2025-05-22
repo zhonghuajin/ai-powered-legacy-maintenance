@@ -78,11 +78,8 @@ class BlockPruner {
             if (!lineToBlockId) continue;
 
             const unexecutedLines = {};
-            const executedLineToId = {};
             for (const [line, blockId] of Object.entries(lineToBlockId)) {
-                if (executedIds[blockId]) {
-                    executedLineToId[line] = blockId;
-                } else {
+                if (!executedIds[blockId]) {
                     unexecutedLines[line] = true;
                 }
             }
@@ -113,7 +110,7 @@ class BlockPruner {
                 continue;
             }
 
-            const prunedCount = this.pruneUnexecutedBlocks(ast, unexecutedLines, executedLineToId, threadName);
+            const prunedCount = this.pruneUnexecutedBlocks(ast, unexecutedLines);
 
             const matchingSourceDir = this.findMatchingSourceDir(srcFile, sourceDirs);
             const relativePath = this.getRelativePath(matchingSourceDir, srcFile);
@@ -124,11 +121,8 @@ class BlockPruner {
             const output = generate(ast, {}, code);
             fs.writeFileSync(outFile, output.code + "\n");
 
-            const totalBlocks = Object.keys(lineToBlockId).length;
-            const keptBlocks = Object.keys(executedLineToId).length;
             const clearedBlocks = Object.keys(unexecutedLines).length;
-
-            let msg = `  ${path.basename(srcFile).padEnd(55)} Kept ${String(keptBlocks).padStart(3)} | Cleared ${String(clearedBlocks).padStart(3)} | Total ${String(totalBlocks).padStart(3)} blocks`;
+            let msg = `  ${path.basename(srcFile).padEnd(55)} Cleared ${String(clearedBlocks).padStart(3)} unexecuted blocks`;
             if (prunedCount !== clearedBlocks) {
                 msg += `  ⚠ AST matched ${prunedCount}/${clearedBlocks}`;
             }
@@ -136,8 +130,8 @@ class BlockPruner {
         }
     }
 
-    static pruneUnexecutedBlocks(ast, unexecutedLines, executedLineToId, threadName) {
-        if (Object.keys(unexecutedLines).length === 0 && Object.keys(executedLineToId).length === 0) return 0;
+    static pruneUnexecutedBlocks(ast, unexecutedLines) {
+        if (Object.keys(unexecutedLines).length === 0) return 0;
 
         const unexecutedBlocks = [];
 
@@ -150,63 +144,26 @@ class BlockPruner {
                     const startLine = node.loc.start.line;
 
                     if (unexecutedLines[startLine]) {
-
                         let depth = 0;
                         let curr = path;
                         while (curr.parentPath) { depth++; curr = curr.parentPath; }
                         node._pruner_depth = depth;
                         unexecutedBlocks.push(node);
-                    } else if (executedLineToId[startLine]) {
-                        const blockId = executedLineToId[startLine];
-                        t.addComment(node, 'inner', ` [Executed Block ID: ${blockId}, Thread: ${threadName}] `, false);
                     }
                 }
             }
         });
 
+        // 从深层到浅层排序，确保先处理内层嵌套块
         unexecutedBlocks.sort((a, b) => (b._pruner_depth || 0) - (a._pruner_depth || 0));
 
         let prunedCount = 0;
         for (const block of unexecutedBlocks) {
-            if (!this.containsExecutedBlock(block, executedLineToId)) {
-                block.body = [];
-            } else {
-
-                block.body = block.body.filter(stmt => this.containsExecutedBlock(stmt, executedLineToId));
-            }
+            block.body = [];
             prunedCount++;
         }
 
         return prunedCount;
-    }
-
-    static containsExecutedBlock(node, executedLineSet) {
-        if (!node) return false;
-
-        if ((t.isBlockStatement(node) || t.isProgram(node)) && node.loc) {
-            if (executedLineSet[node.loc.start.line]) return true;
-        }
-
-        let contains = false;
-
-        for (const key in node) {
-            if (key === 'loc' || key === 'type' || key.startsWith('_')) continue;
-            const child = node[key];
-            if (Array.isArray(child)) {
-                for (const item of child) {
-                    if (typeof item === 'object' && this.containsExecutedBlock(item, executedLineSet)) {
-                        contains = true;
-                        break;
-                    }
-                }
-            } else if (typeof child === 'object' && child !== null) {
-                if (this.containsExecutedBlock(child, executedLineSet)) {
-                    contains = true;
-                }
-            }
-            if (contains) break;
-        }
-        return contains;
     }
 
     static parseCommentMapping(file) {

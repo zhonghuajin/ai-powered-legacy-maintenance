@@ -462,6 +462,13 @@ def startup_log_manager_server(work_dir, proj_path=None):
         return False
 
 
+import os
+import shutil
+import glob
+import json
+import sys
+import time  # 导入 time 模块用于等待
+
 def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
     print_color(
         "\n>>> Analyzing logs and extracting denoised data...", Colors.CYAN)
@@ -524,11 +531,25 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
             Colors.YELLOW
         )
 
-    log_files = sorted(
-        glob.glob(os.path.join(search_dir, "instrumentor-log-*.txt")),
-        key=os.path.getmtime,
-        reverse=True
-    )
+    wait_count = 0
+    while True:
+        log_files = sorted(
+            glob.glob(os.path.join(search_dir, "instrumentor-log-*.txt")),
+            key=os.path.getmtime,
+            reverse=True
+        )
+        
+        if log_files:
+            break
+            
+        wait_count += 1
+        print_color(
+            f"[WAIT] No log files found in {search_dir} yet. "
+            f"Waiting for Step 2 to generate logs... (Waited {wait_count * 3}s)", 
+            Colors.YELLOW
+        )
+        time.sleep(3)
+
     events_files = sorted(
         glob.glob(os.path.join(search_dir, "instrumentor-events-*.txt")),
         key=os.path.getmtime,
@@ -546,14 +567,6 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
         with open(fake_events_file, "w", encoding="utf-8") as f:
             pass
         events_files = [fake_events_file]
-
-    if not log_files:
-        print_color(
-            f"Could not find generated log file in: {search_dir}. "
-            "Please check whether Step 2 executed successfully and generated the logs.",
-            Colors.RED
-        )
-        return
 
     log_file = log_files[0]
     events_file = events_files[0]
@@ -596,7 +609,6 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
         )
     except Exception as e:
         print_color(f"Log processing failed: {e}", Colors.RED)
-
 
 def select_ai_prompt_script(work_dir, target_language=None):
     print_color("\n>>> Pre-selecting AI Prompt Generator...", Colors.CYAN)
