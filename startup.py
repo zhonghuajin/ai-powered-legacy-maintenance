@@ -219,34 +219,28 @@ def run_initial_startup_verification(work_dir, proj_path):
         print_color("\n========================================", Colors.YELLOW)
         print_color(f" Verification / Startup Configuration Required ({config_key}) ", Colors.YELLOW)
         print_color("========================================", Colors.YELLOW)
-        print_color("Select verification/startup method:", Colors.CYAN)
-        print_color("[1] Run a project startup command in a new terminal", Colors.CYAN)
-        print_color("[2] Open a URL in the browser (e.g., for hot-reload)", Colors.CYAN)
-        print_color("Press [1] or [2] to choose instantly...", Colors.YELLOW)
+        print_color("Please enter your project startup command OR URL directly:", Colors.CYAN)
+        print_color("  - If it starts with http://, https://, localhost, or 127.0.0.1, it will open in the browser.", Colors.CYAN)
+        print_color("  - Otherwise, it will run as a terminal command.", Colors.CYAN)
 
-        get_char_func = globals().get('get_single_char') or get_single_char_fallback
+        while not value:
+            value = input("\nEnter command or URL: ").strip()
+            if not value:
+                print_color("[Warning] Input cannot be empty.", Colors.YELLOW)
 
-        while choice not in ["1", "2"]:
-            try:
-                choice = get_char_func()
-                if isinstance(choice, bytes):
-                    choice = choice.decode('utf-8', errors='ignore')
-                choice = choice.strip()
-            except Exception:
-                choice = input("Enter choice (1 or 2): ").strip()
-
-        print_color(f"\n[Selected Option {choice}] Proceeding...", Colors.GREEN)
-
-        if choice == "1":
-            while not value:
-                value = input("Enter the project startup command: ").strip()
-                if not value:
-                    print_color("[Warning] Startup command cannot be empty.", Colors.YELLOW)
-        elif choice == "2":
-            while not value:
-                value = input("Enter the URL to open in browser (e.g., http://localhost:8080): ").strip()
-                if not value:
-                    print_color("[Warning] URL cannot be empty.", Colors.YELLOW)
+        # Automatically determine the type based on input
+        lower_val = value.lower()
+        if (
+            lower_val.startswith(("http://", "https://")) or 
+            lower_val.startswith("localhost") or 
+            lower_val.startswith("127.0.0.1") or
+            lower_val.startswith("www.")
+        ):
+            choice = "2"
+            print_color(f"\n[Auto-Detected] Input recognized as URL.", Colors.GREEN)
+        else:
+            choice = "1"
+            print_color(f"\n[Auto-Detected] Input recognized as Terminal Command.", Colors.GREEN)
 
         config_data[config_key] = {
             "type": choice,
