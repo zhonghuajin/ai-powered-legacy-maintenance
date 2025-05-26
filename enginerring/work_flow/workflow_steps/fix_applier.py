@@ -6,6 +6,7 @@ import builtins
 import importlib
 import subprocess
 import webbrowser
+import signal
 from print_utils.utils import Colors, print_color
 from . import common
 
@@ -45,16 +46,16 @@ def get_single_char_fallback():
 
 def close_previous_fix_window():
     """
-    Closes the previously opened terminal window.
+    Closes the previously opened terminal window and all its child processes.
     """
     global _active_fix_process
     current_os = platform.system()
     
     if current_os == 'Windows':
         try:
-            # Forcefully close any window matching our unique title
+            # Added /T to forcefully terminate the window AND all child processes spawned inside it
             subprocess.run(
-                f'taskkill /F /FI "WINDOWTITLE eq {_win_title}*"',
+                f'taskkill /F /T /FI "WINDOWTITLE eq {_win_title}*"',
                 shell=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
@@ -64,15 +65,20 @@ def close_previous_fix_window():
     else:
         if _active_fix_process is not None:
             try:
-                if _active_fix_process.poll() is None:
-                    try:
-                        os.killpg(os.getpgid(_active_fix_process.pid), 15)
-                    except Exception:
-                        _active_fix_process.terminate()
-                    _active_fix_process.wait(timeout=2)
+                # Get process group ID and kill the entire process group (including all active servers/subprocesses)
+                pgid = os.getpgid(_active_fix_process.pid)
+                os.killpg(pgid, signal.SIGKILL)
             except Exception:
-                pass
-            _active_fix_process = None
+                try:
+                    _active_fix_process.terminate()
+                except Exception:
+                    pass
+            finally:
+                try:
+                    _active_fix_process.wait(timeout=1)
+                except Exception:
+                    pass
+                _active_fix_process = None
 
 
 def execute_startup_verification(config_data, config_path, git_root, config_key="startup_command_fix"):
@@ -161,9 +167,11 @@ def execute_startup_verification(config_data, config_path, git_root, config_key=
                 cmd_str = f'start "{_win_title}" cmd /k "{value}"'
                 subprocess.Popen(cmd_str, shell=True, cwd=git_root)
             elif current_os == 'Darwin':
-                applescript = f'tell application "Terminal" to do script "cd {git_root} && {value}"'
+                # Instead of letting Terminal run it untracked, we run it in a new process group so we can kill it
                 _active_fix_process = subprocess.Popen(
-                    ['osascript', '-e', applescript])
+                    ['osascript', '-e', f'tell application "Terminal" to do script "cd {git_root} && {value}"'],
+                    preexec_fn=os.setsid if hasattr(os, 'setsid') else None
+                )
                 process_to_wait = _active_fix_process
             else:
                 _active_fix_process = subprocess.Popen(

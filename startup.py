@@ -12,6 +12,7 @@ import subprocess
 import argparse
 import platform
 import webbrowser
+import signal
 
 from print_utils.utils import Colors, print_color, pause_for_next_step
 from enginerring.work_flow.prechecks import (
@@ -73,16 +74,16 @@ def get_single_char_fallback():
 
 def close_previous_startup_window():
     """
-    Closes the previously opened terminal window.
+    Closes the previously opened terminal window and all its child processes.
     """
     global _active_startup_process
     current_os = platform.system()
     
     if current_os == 'Windows':
         try:
-            # Forcefully close any window matching our unique title
+            # Added /T to forcefully terminate the window AND all child processes spawned inside it
             subprocess.run(
-                f'taskkill /F /FI "WINDOWTITLE eq {_win_title}*"',
+                f'taskkill /F /T /FI "WINDOWTITLE eq {_win_title}*"',
                 shell=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
@@ -92,15 +93,20 @@ def close_previous_startup_window():
     else:
         if _active_startup_process is not None:
             try:
-                if _active_startup_process.poll() is None:
-                    try:
-                        os.killpg(os.getpgid(_active_startup_process.pid), 15)
-                    except Exception:
-                        _active_startup_process.terminate()
-                    _active_startup_process.wait(timeout=2)
+                # Get process group ID and kill the entire process group (including all active servers/subprocesses)
+                pgid = os.getpgid(_active_startup_process.pid)
+                os.killpg(pgid, signal.SIGKILL)
             except Exception:
-                pass
-            _active_startup_process = None
+                try:
+                    _active_startup_process.terminate()
+                except Exception:
+                    pass
+            finally:
+                try:
+                    _active_startup_process.wait(timeout=1)
+                except Exception:
+                    pass
+                _active_startup_process = None
 
 
 def switch_to_source_branch(proj_path):
@@ -263,8 +269,11 @@ def run_initial_startup_verification(work_dir, proj_path):
                 cmd_str = f'start "{_win_title}" cmd /k "{value}"'
                 subprocess.Popen(cmd_str, shell=True, cwd=git_root)
             elif current_os == 'Darwin':
-                applescript = f'tell application "Terminal" to do script "cd {git_root} && {value}"'
-                _active_startup_process = subprocess.Popen(['osascript', '-e', applescript])
+                # Run the AppleScript inside a tracked process group to allow termination
+                _active_startup_process = subprocess.Popen(
+                    ['osascript', '-e', f'tell application "Terminal" to do script "cd {git_root} && {value}"'],
+                    preexec_fn=os.setsid if hasattr(os, 'setsid') else None
+                )
                 process_to_wait = _active_startup_process
             else:
                 _active_startup_process = subprocess.Popen(
