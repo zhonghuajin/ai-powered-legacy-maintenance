@@ -8,8 +8,8 @@ const DEFAULT_OUTPUT_FILE = 'final-output-calltree.md';
 function cleanSource(source) {
   if (!source) return '';
   return source
-    .replace(/\/\/\s*[Executed Block ID:.*?]/g, '')
-    .replace(/\/\*\s*[Executed Block ID:.*?]\s*\*\//g, '')
+    .replace(/\/\/\s*\[Executed Block ID:.*?\]/g, '')
+    .replace(/\/\*\s*\[Executed Block ID:.*?\]\s*\*\//g, '')
     .trim();
 }
 
@@ -191,7 +191,8 @@ function generateMarkdown(inputDir, outputPath) {
         threads.push({
           name: item,
           order: order,
-          files: files
+          files: files,
+          itemPath: itemPath
         });
       }
     }
@@ -204,7 +205,8 @@ function generateMarkdown(inputDir, outputPath) {
 
     let allThreadFunctions = [];
     thread.files.forEach(filePath => {
-      const relativePath = path.relative(process.cwd(), filePath).replace(/\\/g, '/');
+
+      const relativePath = path.relative(thread.itemPath, filePath).replace(/\\/g, '/');
       const fileFunctions = analyzeFileWithBabel(filePath, relativePath);
       allThreadFunctions = allThreadFunctions.concat(fileFunctions);
     });

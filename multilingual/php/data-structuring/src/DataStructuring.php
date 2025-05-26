@@ -212,6 +212,12 @@ class DataStructuring
 
                     $relativePath = str_replace('\\', '/', substr($phpFile, strlen($prunedDirPath) + 1));
 
+                    $parts = explode('/', $relativePath);
+                    if (count($parts) > 1) {
+                        array_shift($parts);
+                        $relativePath = implode('/', $parts);
+                    }
+
                     $visitor = new MethodCollectorVisitor($relativePath, $code);
                     $traverser = new NodeTraverser();
                     $traverser->addVisitor($visitor);

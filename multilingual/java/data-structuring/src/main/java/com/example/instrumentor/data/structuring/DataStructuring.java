@@ -84,7 +84,7 @@ public class DataStructuring {
                 for (Path javaFile : javaFiles) {
                     try {
                         CompilationUnit cu = StaticJavaParser.parse(javaFile);
-                        String relativePath = prunedDir.relativize(javaFile).toString().replace("\\", "/");
+                        String relativePath = threadDir.relativize(javaFile).toString().replace("\\", "/");
 
                         cu.findAll(ClassOrInterfaceDeclaration.class).forEach(classDecl -> {
                             String className = classDecl.getNameAsString();
