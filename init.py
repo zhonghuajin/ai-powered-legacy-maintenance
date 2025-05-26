@@ -26,7 +26,6 @@ def run_without_proxy(*args, **kwargs):
     if "env" not in kwargs:
         kwargs["env"] = get_clean_env()
     else:
-
         clean_env = kwargs["env"].copy()
         proxy_vars = [
             "HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy",
@@ -42,7 +41,7 @@ def main():
     parser.add_argument(
         "--skip-composer",
         action="store_true",
-        help="Skip executing 'composer install' in the PHP directory"
+        help="Skip executing 'composer install' in the PHP directories"
     )
     parser.add_argument(
         "--skip-npm",
@@ -68,7 +67,6 @@ def main():
     print(f"Waiting for you to edit and close the file: {env_file_path}")
 
     try:
-
         editor_env = get_clean_env()
         if os.name == "nt":
             editor = os.environ.get("EDITOR", "notepad")
@@ -101,7 +99,6 @@ def main():
         sys.exit(1)
 
     try:
-
         result = run_without_proxy(
             [
                 sys.executable,
@@ -141,9 +138,7 @@ def main():
     if not proxy_set:
         is_china = False
         try:
-
             req = urllib.request.Request("https://ipinfo.io/country")
-
             proxy_handler = urllib.request.ProxyHandler({})
             opener = urllib.request.build_opener(proxy_handler)
             with opener.open(req, timeout=3) as response:
@@ -186,7 +181,6 @@ def main():
                 sys.exit(1)
 
     try:
-
         subprocess.run(
             [
                 sys.executable,
@@ -370,8 +364,45 @@ def main():
             )
             sys.exit(1)
 
+    # ================= 新增步骤 =================
+    print("\nStep 8: Executing composer install for PHP data-structuring environment...")
+    php_data_structuring_dir = os.path.join(script_dir, "multilingual", "php", "data-structuring")
+
+    if args.skip_composer:
+        print("Skipped 'composer install' for data-structuring as requested.")
+        print("Note: If you need PHP data-structuring support later, run it manually:")
+        print(f"      cd {php_data_structuring_dir}")
+        print("      composer install")
+    else:
+        if not os.path.isdir(php_data_structuring_dir):
+            print(
+                f"Error: PHP data-structuring directory not found at {php_data_structuring_dir}", 
+                file=sys.stderr
+            )
+            sys.exit(1)
+
+        composer_cmd = "composer.bat" if os.name == "nt" else "composer"
+        try:
+            result = run_without_proxy(
+                [composer_cmd, "install"],
+                cwd=php_data_structuring_dir
+            )
+            if result.returncode != 0:
+                print("Composer install for data-structuring failed.", file=sys.stderr)
+                sys.exit(1)
+            else:
+                print("Composer install for data-structuring completed successfully.")
+        except FileNotFoundError:
+            print(
+                f"Error: Composer command '{composer_cmd}' not found. "
+                "Please ensure Composer is installed and in your PATH.",
+                file=sys.stderr
+            )
+            sys.exit(1)
+    # ============================================
+
     print(
-        "\nStep 8: Executing mvn clean package to build the "
+        "\nStep 9: Executing mvn clean package to build the "
         "JavaScript Redis Log Monitor..."
     )
     js_monitor_pom_path = os.path.join(
@@ -405,7 +436,7 @@ def main():
         )
         sys.exit(1)
 
-    print("\nStep 9: Executing npm install for JavaScript environment...")
+    print("\nStep 10: Executing npm install for JavaScript environment...")
     js_dir = os.path.join(script_dir, "multilingual", "javascript")
 
     if args.skip_npm:
