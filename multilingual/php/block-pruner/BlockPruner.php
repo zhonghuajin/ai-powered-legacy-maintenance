@@ -24,7 +24,7 @@ class BlockPruner
     public static function main(array $args): void
     {
         if (count($args) < 4) {
-            fwrite(STDERR, "Usage: BlockPruner <Source Directories> <comment-mapping file> <instrument-log file> <Output Directory>\n");
+            fwrite(STDERR, "Usage: BlockPruner <Source Directories> <comment-mapping file> <instrument-log file> <Output Directory> [<Base Reference Directory>]\n");
             fwrite(STDERR, "\n");
             fwrite(STDERR, "Parameter Description:\n");
             fwrite(STDERR, "  <Source Directories>       PHP source root directories, separated by ';' for multiple paths\n");
@@ -32,6 +32,8 @@ class BlockPruner
             fwrite(STDERR, "  <comment-mapping>          Instrumentation mapping file (format: ID = filePath:lineNo)\n");
             fwrite(STDERR, "  <instrument-log>           Runtime instrumentation log file\n");
             fwrite(STDERR, "  <Output Directory>         Output root directory for pruned source code\n");
+            fwrite(STDERR, "  [Base Reference Directory] (Optional) Base directory to preserve relative directory structures\n");
+            fwrite(STDERR, "                             e.g. \"C:\\Work\\HKT\\OPIOS\\a_this_folder_for_merge\\broadband-backend\"\n");
             exit(1);
         }
 
@@ -56,13 +58,23 @@ class BlockPruner
         }
         $outputDir = realpath($outputDir) ?: $outputDir;
 
+        $baseRefDir = null;
+        if (isset($args[4])) {
+            $resolvedBase = realpath(trim($args[4]));
+            $baseRefDir = $resolvedBase !== false ? $resolvedBase : trim($args[4]);
+        }
+
         echo "[BlockPruner] Source Directories:\n";
         foreach ($sourceDirs as $i => $dir) {
             printf("  [%d] %s\n", $i + 1, $dir);
         }
         echo "[BlockPruner] Mapping File: $mappingFile\n";
         echo "[BlockPruner] Log File: $logFile\n";
-        echo "[BlockPruner] Output Directory: $outputDir\n\n";
+        echo "[BlockPruner] Output Directory: $outputDir\n";
+        if ($baseRefDir !== null) {
+            echo "[BlockPruner] Base Reference Directory: $baseRefDir\n";
+        }
+        echo "\n";
 
         $blockMap = self::parseCommentMapping($mappingFile);
         printf("[Step 1] Loaded %d block mappings\n", count($blockMap));
@@ -84,7 +96,7 @@ class BlockPruner
             printf("\n[%d/%d] ", $idx, $totalThreads);
             self::pruneForThread(
                 $threadName, $executedIds, $blockMap, $fileBlockIndex,
-                $resolvedPaths, $sourceDirs, $outputDir
+                $resolvedPaths, $sourceDirs, $outputDir, $baseRefDir
             );
         }
 
@@ -98,7 +110,8 @@ class BlockPruner
         array  $fileBlockIndex,
         array  $resolvedPaths,
         array  $sourceDirs,
-        string $outputDir
+        string $outputDir,
+        ?string $baseRefDir
     ): void {
         printf("===== Thread [%s]  Executed %d blocks =====\n", $threadName, count($executedIds));
 
@@ -158,7 +171,9 @@ class BlockPruner
             $prunedCount = self::pruneUnexecutedBlocks($ast, $unexecutedLines, $executedLineToId, $threadName);
 
             $matchingSourceDir = self::findMatchingSourceDir($srcFile, $sourceDirs);
-            $relativePath = self::getRelativePath($matchingSourceDir, $srcFile);
+            $relativePathBase = ($baseRefDir !== null) ? $baseRefDir : $matchingSourceDir;
+            $relativePath = self::getRelativePath($relativePathBase, $srcFile);
+            
             $outFile = $outputDir . DIRECTORY_SEPARATOR . $safeDirName . DIRECTORY_SEPARATOR . $relativePath;
 
             $outDir = dirname($outFile);

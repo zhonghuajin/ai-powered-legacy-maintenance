@@ -30,7 +30,7 @@ public class BlockPruner {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 4) {
-            System.err.println("Usage: BlockPruner <Source Directories> <comment-mapping file> <instrument-log file> <Output Directory>");
+            System.err.println("Usage: BlockPruner <Source Directories> <comment-mapping file> <instrument-log file> <Output Directory> [<Base Reference Directory>]");
             System.err.println();
             System.err.println("Parameter Description:");
             System.err.println("  <Source Directories>       Java source root directories, separated by ';' for multiple paths");
@@ -38,6 +38,7 @@ public class BlockPruner {
             System.err.println("  <comment-mapping>          Instrumentation mapping file (format: ID = filePath:lineNo)");
             System.err.println("  <instrument-log>           Runtime instrumentation log file");
             System.err.println("  <Output Directory>         Output root directory for pruned source code");
+            System.err.println("  [Base Reference Directory] (Optional) Base directory to preserve relative directory structures");
             System.exit(1);
             return;
         }
@@ -59,6 +60,11 @@ public class BlockPruner {
         Path logFile     = Paths.get(args[2]);
         Path outputDir   = Paths.get(args[3]).toAbsolutePath().normalize();
 
+        Path baseRefDir = null;
+        if (args.length >= 5) {
+            baseRefDir = Paths.get(args[4].trim()).toAbsolutePath().normalize();
+        }
+
         System.out.println("[BlockPruner] Source Directories:");
         for (int i = 0; i < sourceDirs.size(); i++) {
             System.out.printf("  [%d] %s%n", i + 1, sourceDirs.get(i));
@@ -66,6 +72,9 @@ public class BlockPruner {
         System.out.println("[BlockPruner] Mapping File: " + mappingFile);
         System.out.println("[BlockPruner] Log File: " + logFile);
         System.out.println("[BlockPruner] Output Directory: " + outputDir);
+        if (baseRefDir != null) {
+            System.out.println("[BlockPruner] Base Reference Directory: " + baseRefDir);
+        }
         System.out.println();
 
         Map<Integer, BlockLocation> blockMap = parseCommentMapping(mappingFile);
@@ -93,7 +102,7 @@ public class BlockPruner {
             Set<Integer> executedIds = entry.getValue();
             System.out.printf("%n[%d/%d] ", idx, totalThreads);
             pruneForThread(threadName, executedIds, blockMap, fileBlockIndex,
-                    resolvedPaths, sourceDirs, outputDir);
+                    resolvedPaths, sourceDirs, outputDir, baseRefDir);
         }
 
         System.out.println();
@@ -107,7 +116,8 @@ public class BlockPruner {
             Map<String, Map<Integer, Integer>> fileBlockIndex,
             Map<String, Path> resolvedPaths,
             List<Path> sourceDirs,
-            Path outputDir) throws IOException {
+            Path outputDir,
+            Path baseRefDir) throws IOException {
 
         System.out.printf("===== Thread [%s]  Executed %d blocks =====%n", threadName, executedIds.size());
 
@@ -158,7 +168,10 @@ public class BlockPruner {
             int prunedCount = pruneUnexecutedBlocks(cu, unexecutedLines, executedLineToId, threadName);
 
             Path matchingSourceDir = findMatchingSourceDir(srcFile, sourceDirs);
-            Path relativePath = matchingSourceDir.relativize(srcFile.toAbsolutePath().normalize());
+
+            Path relativePathBase = (baseRefDir != null) ? baseRefDir : matchingSourceDir;
+            Path relativePath = relativePathBase.relativize(srcFile.toAbsolutePath().normalize());
+
             Path outFile = outputDir.resolve(safeDirName).resolve(relativePath);
             Files.createDirectories(outFile.getParent());
             Files.writeString(outFile, cu.toString(), StandardCharsets.UTF_8);

@@ -8,12 +8,13 @@ const t = require('@babel/types');
 class BlockPruner {
     static main(args) {
         if (args.length < 4) {
-            console.error("Usage: node BlockPruner.js <Source Directories> <comment-mapping file> <instrument-log file> <Output Directory>");
+            console.error("Usage: node BlockPruner.js <Source Directories> <comment-mapping file> <instrument-log file> <Output Directory> [<Base Reference Directory>]");
             console.error("\nParameter Description:");
             console.error("  <Source Directories>       JS source root directories, separated by ';' for multiple paths");
             console.error("  <comment-mapping>          Instrumentation mapping file (format: ID = filePath:lineNo)");
             console.error("  <instrument-log>           Runtime instrumentation log file");
             console.error("  <Output Directory>         Output root directory for pruned source code");
+            console.error("  [Base Reference Directory] (Optional) Base directory to preserve relative directory structures");
             process.exit(1);
         }
 
@@ -27,6 +28,8 @@ class BlockPruner {
         const logFile = path.resolve(args[2]);
         const outputDir = path.resolve(args[3]);
 
+        const baseRefDir = args[4] ? path.resolve(args[4].trim()) : null;
+
         if (!fs.existsSync(outputDir)) {
             fs.mkdirSync(outputDir, { recursive: true });
         }
@@ -35,7 +38,11 @@ class BlockPruner {
         sourceDirs.forEach((dir, i) => console.log(`  [${i + 1}] ${dir}`));
         console.log(`[BlockPruner] Mapping File: ${mappingFile}`);
         console.log(`[BlockPruner] Log File: ${logFile}`);
-        console.log(`[BlockPruner] Output Directory: ${outputDir}\n`);
+        console.log(`[BlockPruner] Output Directory: ${outputDir}`);
+        if (baseRefDir) {
+            console.log(`[BlockPruner] Base Reference Directory: ${baseRefDir}`);
+        }
+        console.log();
 
         const blockMap = this.parseCommentMapping(mappingFile);
         console.log(`[Step 1] Loaded ${Object.keys(blockMap).length} block mappings`);
@@ -54,13 +61,13 @@ class BlockPruner {
         for (const [threadName, executedIds] of Object.entries(threadLogs)) {
             idx++;
             console.log(`\n[${idx}/${totalThreads}] ===== Thread [${threadName}]  Executed ${Object.keys(executedIds).length} blocks =====`);
-            this.pruneForThread(threadName, executedIds, blockMap, fileBlockIndex, resolvedPaths, sourceDirs, outputDir);
+            this.pruneForThread(threadName, executedIds, blockMap, fileBlockIndex, resolvedPaths, sourceDirs, outputDir, baseRefDir);
         }
 
         console.log(`\n[BlockPruner] All processing completed. Output Directory: ${outputDir}`);
     }
 
-    static pruneForThread(threadName, executedIds, blockMap, fileBlockIndex, resolvedPaths, sourceDirs, outputDir) {
+    static pruneForThread(threadName, executedIds, blockMap, fileBlockIndex, resolvedPaths, sourceDirs, outputDir, baseRefDir) {
         const involvedFiles = new Set();
         for (const id in executedIds) {
             if (blockMap[id]) involvedFiles.add(blockMap[id].normalizedPath);
@@ -113,7 +120,9 @@ class BlockPruner {
             const prunedCount = this.pruneUnexecutedBlocks(ast, unexecutedLines);
 
             const matchingSourceDir = this.findMatchingSourceDir(srcFile, sourceDirs);
-            const relativePath = this.getRelativePath(matchingSourceDir, srcFile);
+
+            const relativePathBase = baseRefDir ? baseRefDir : matchingSourceDir;
+            const relativePath = this.getRelativePath(relativePathBase, srcFile);
             const outFile = path.join(outputDir, safeDirName, relativePath);
 
             fs.mkdirSync(path.dirname(outFile), { recursive: true });
@@ -154,7 +163,6 @@ class BlockPruner {
             }
         });
 
-        // 从深层到浅层排序，确保先处理内层嵌套块
         unexecutedBlocks.sort((a, b) => (b._pruner_depth || 0) - (a._pruner_depth || 0));
 
         let prunedCount = 0;

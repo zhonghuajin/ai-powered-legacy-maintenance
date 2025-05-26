@@ -30,6 +30,7 @@ def process_logs(
     event_dictionary_file="event_dictionary.txt",
     block_pruner_jar=None,
     data_structuring_jar=None,
+    base_reference_dir=None,
 ):
     """
     Core logic for processing instrumentation logs.
@@ -88,27 +89,30 @@ def process_logs(
     print(f"  PrunedFolder:       {pruned_folder}")
     print(f"  EventsFile:         {events_file}")
     print(f"  EventDictionaryFile:{event_dictionary_file}")
+    if base_reference_dir:
+        print(f"  BaseReferenceDir:   {base_reference_dir}")
 
     # Route based on programming language
     if language == "java":
         _process_java_logs(
             target_folders_list, log_file, comment_mapping_file, events_file,
-            pruned_folder, event_dictionary_file, block_pruner_jar, data_structuring_jar
+            pruned_folder, event_dictionary_file, block_pruner_jar, data_structuring_jar,
+            base_reference_dir
         )
     elif language == "python":
         _process_python_logs(
             target_folders_list, log_file, comment_mapping_file, events_file,
-            pruned_folder, event_dictionary_file
+            pruned_folder, event_dictionary_file, base_reference_dir
         )
     elif language == "php":
         _process_php_logs(
             target_folders_list, log_file, comment_mapping_file, events_file,
-            pruned_folder, event_dictionary_file
+            pruned_folder, event_dictionary_file, base_reference_dir
         )
     elif language in ["javascript", "js"]:
         _process_javascript_logs(
             target_folders_list, log_file, comment_mapping_file, events_file,
-            pruned_folder, event_dictionary_file
+            pruned_folder, event_dictionary_file, base_reference_dir
         )
     else:
         raise ValueError(f"Unsupported language: {language}")
@@ -116,7 +120,7 @@ def process_logs(
     print("Log processing, data structuring, and source code restoration completed successfully!")
 
 
-def _process_java_logs(target_folders_list, log_file, comment_mapping_file, events_file, pruned_folder, event_dictionary_file, block_pruner_jar, data_structuring_jar):
+def _process_java_logs(target_folders_list, log_file, comment_mapping_file, events_file, pruned_folder, event_dictionary_file, block_pruner_jar, data_structuring_jar, base_reference_dir=None):
     """Specific logic for processing Java logs using JAR files."""
 
     if not block_pruner_jar:
@@ -150,6 +154,9 @@ def _process_java_logs(target_folders_list, log_file, comment_mapping_file, even
         log_file,
         pruned_folder
     ]
+    if base_reference_dir:
+        block_pruner_cmd.append(base_reference_dir)
+
     try:
         subprocess.run(block_pruner_cmd, env=env, check=True)
     except subprocess.CalledProcessError as e:
@@ -171,7 +178,7 @@ def _process_java_logs(target_folders_list, log_file, comment_mapping_file, even
         raise RuntimeError(f"Error executing Data Structuring: {e}")
 
 
-def _process_python_logs(target_folders_list, log_file, comment_mapping_file, events_file, pruned_folder, event_dictionary_file):
+def _process_python_logs(target_folders_list, log_file, comment_mapping_file, events_file, pruned_folder, event_dictionary_file, base_reference_dir=None):
     """Specific logic for processing Python logs."""
     print("Executing Python log processing tools...")
     # TODO: Implement Python specific block pruner and data structuring logic
@@ -179,7 +186,7 @@ def _process_python_logs(target_folders_list, log_file, comment_mapping_file, ev
     print("[INFO] Python log processing is currently a stub and needs implementation.")
 
 
-def _process_php_logs(target_folders_list, log_file, comment_mapping_file, events_file, pruned_folder, event_dictionary_file):
+def _process_php_logs(target_folders_list, log_file, comment_mapping_file, events_file, pruned_folder, event_dictionary_file, base_reference_dir=None):
     """Specific logic for processing PHP logs."""
     print("Executing PHP log processing tools...")
 
@@ -199,6 +206,8 @@ def _process_php_logs(target_folders_list, log_file, comment_mapping_file, event
         log_file,
         pruned_folder
     ]
+    if base_reference_dir:
+        php_pruner_cmd.append(base_reference_dir)
 
     print(f"Running command: {' '.join(php_pruner_cmd)}")
     try:
@@ -226,7 +235,7 @@ def _process_php_logs(target_folders_list, log_file, comment_mapping_file, event
         raise RuntimeError(f"Error executing PHP Data Structuring: {e}")
 
 
-def _process_javascript_logs(target_folders_list, log_file, comment_mapping_file, events_file, pruned_folder, event_dictionary_file):
+def _process_javascript_logs(target_folders_list, log_file, comment_mapping_file, events_file, pruned_folder, event_dictionary_file, base_reference_dir=None):
     """Specific logic for processing JavaScript logs."""
     print("Executing JavaScript log processing tools...")
 
@@ -246,6 +255,8 @@ def _process_javascript_logs(target_folders_list, log_file, comment_mapping_file
         log_file,
         pruned_folder
     ]
+    if base_reference_dir:
+        js_pruner_cmd.append(base_reference_dir)
 
     print(f"Running command: {' '.join(js_pruner_cmd)}")
     try:
@@ -325,6 +336,11 @@ def main():
         default=None,
         help="Path to the Data Structuring jar (defaults to Javatarget path)"
     )
+    parser.add_argument(
+        "--base-reference-dir",
+        default=None,
+        help="Base directory to preserve relative directory structures"
+    )
 
     args = parser.parse_args()
 
@@ -340,6 +356,7 @@ def main():
             event_dictionary_file=args.event_dictionary_file,
             block_pruner_jar=args.block_pruner_jar,
             data_structuring_jar=args.data_structuring_jar,
+            base_reference_dir=args.base_reference_dir,
         )
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)

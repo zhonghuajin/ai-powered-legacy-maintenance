@@ -158,6 +158,7 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
         )
 
     project_lang = "java"
+    base_reference_dir = None
     if proj_path:
         config_path = os.path.join(proj_path, 'config.json')
         if os.path.exists(config_path):
@@ -165,9 +166,10 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
                 with open(config_path, 'r', encoding='utf-8') as f:
                     config_data = json.load(f)
                     project_lang = config_data.get('language', 'java').lower()
+                    base_reference_dir = config_data.get('original_git_root')
             except Exception as e:
                 print_color(
-                    f"[WARN] Failed to read language from config.json: {e}", Colors.YELLOW)
+                    f"[WARN] Failed to read language or original_git_root from config.json: {e}", Colors.YELLOW)
 
     if not os.path.isdir(search_dir):
         print_color(
@@ -250,6 +252,7 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
             comment_mapping_file=comment_mapping_file,
             events_file=events_file,
             event_dictionary_file=event_dict_file,
+            base_reference_dir=base_reference_dir,
         )
     except Exception as e:
         print_color(f"Log processing failed: {e}", Colors.RED)
