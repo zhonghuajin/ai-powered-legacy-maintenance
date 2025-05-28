@@ -281,6 +281,49 @@ def apply_fix(work_dir, proj_path=None, prompt_context=None):
                 print_color(
                     "[Success] Verification passed! Proceeding to next step.", Colors.GREEN)
 
+                # ------------------ Added Auto-Commit Flow ------------------
+                if git_root and os.path.exists(git_root):
+                    try:
+                        status_out = subprocess.check_output(
+                            ['git', 'status', '--porcelain'],
+                            cwd=git_root
+                        ).decode('utf-8').strip()
+                        
+                        if status_out:
+                            print_color("\n" + "!" * 70, Colors.YELLOW)
+                            print_color("[ AUTO-COMMIT: UNCOMMITTED CHANGES DETECTED ]".center(64), Colors.YELLOW)
+                            print_color("Executing 'git commit' for your verified changes...", Colors.YELLOW)
+                            
+                            # Stage all changes
+                            subprocess.run(['git', 'add', '.'], cwd=git_root, check=True)
+                            
+                            # Dynamically add shadow_project_management to sys.path to avoid relative import errors
+                            shadow_mgmt_dir = os.path.join(work_dir, "enginerring", "shadow_project_management")
+                            if shadow_mgmt_dir not in sys.path:
+                                sys.path.insert(0, shadow_mgmt_dir)
+                            
+                            # Get AI commit message
+                            try:
+                                import sync_modified_files
+                                importlib.reload(sync_modified_files)
+                                ai_commit_msg = sync_modified_files.get_llm_commit_message(
+                                    proj_path=proj_path,
+                                    status_output=status_out,
+                                    work_dir=work_dir
+                                )
+                            except Exception as e:
+                                print_color(f"[Warning] Failed to generate AI commit message: {e}. Using fallback.", Colors.YELLOW)
+                                ai_commit_msg = 'Auto-commit after successful verification'
+                            
+                            # Commit changes
+                            subprocess.run(['git', 'commit', '-m', ai_commit_msg], cwd=git_root, check=True)
+                            
+                            print_color(f"YOUR CHANGES HAVE BEEN COMMITTED WITH MESSAGE: {ai_commit_msg}", Colors.GREEN)
+                            print_color("!" * 70 + "\n", Colors.YELLOW)
+                    except Exception as e:
+                        print_color(f"[Error] Failed to auto-commit changes: {e}", Colors.RED)
+                # ------------------------------------------------------------
+
                 if config_path and os.path.exists(config_path):
                     try:
                         with open(config_path, "r", encoding="utf-8") as f:
