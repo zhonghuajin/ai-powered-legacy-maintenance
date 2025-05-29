@@ -178,49 +178,52 @@ def _create_and_initialize_new_project(work_dir, projects_dir):
     2. Automatically resolves the Git root directory from the input paths.
     3. Falls back to manual input if automatic resolution fails.
     4. Migrates target paths to the final project directory.
+    Uses a try...finally block to guarantee the temporary directory is cleaned up.
     """
     # Create a temporary directory to collect target paths first
     temp_proj_name = "temp_init_project"
     temp_proj_path = os.path.join(projects_dir, temp_proj_name)
     os.makedirs(temp_proj_path, exist_ok=True)
 
-    # Prompt user for target paths
-    _manage_target_folders(temp_proj_path)
-
-    # Read the entered paths
-    target_file = os.path.join(temp_proj_path, "target-folders.txt")
-    paths = _read_target_folders(target_file)
-
-    # Attempt to automatically resolve Git root from the entered paths
-    detected_git_root = None
-    if paths:
-        for p in paths:
-            detected_git_root = _get_git_root(p)
-            if detected_git_root:
-                break
-
-    # Pass the resolved git root (or None) to the project creation logic
-    proj_path, git_root = _create_new_project(work_dir, projects_dir, detected_git_root)
-
-    # Migrate the target-folders.txt to the final project folder
-    final_target_file = os.path.join(proj_path, "target-folders.txt")
-    if os.path.exists(target_file) and paths:
-        if os.path.exists(final_target_file):
-            os.remove(final_target_file)
-        os.rename(target_file, final_target_file)
-        _sync_config_original_targets(proj_path, paths)
-    else:
-        # If no paths were entered, ensure any empty target-folders.txt is written
-        _write_target_folders(final_target_file, [])
-
-    # Clean up the temporary directory
     try:
-        if os.path.exists(temp_proj_path):
-            shutil.rmtree(temp_proj_path)
-    except Exception:
-        pass
+        # Prompt user for target paths
+        _manage_target_folders(temp_proj_path)
 
-    return proj_path, git_root
+        # Read the entered paths
+        target_file = os.path.join(temp_proj_path, "target-folders.txt")
+        paths = _read_target_folders(target_file)
+
+        # Attempt to automatically resolve Git root from the entered paths
+        detected_git_root = None
+        if paths:
+            for p in paths:
+                detected_git_root = _get_git_root(p)
+                if detected_git_root:
+                    break
+
+        # Pass the resolved git root (or None) to the project creation logic
+        proj_path, git_root = _create_new_project(work_dir, projects_dir, detected_git_root)
+
+        # Migrate the target-folders.txt to the final project folder
+        final_target_file = os.path.join(proj_path, "target-folders.txt")
+        if os.path.exists(target_file) and paths:
+            if os.path.exists(final_target_file):
+                os.remove(final_target_file)
+            os.rename(target_file, final_target_file)
+            _sync_config_original_targets(proj_path, paths)
+        else:
+            # If no paths were entered, ensure any empty target-folders.txt is written
+            _write_target_folders(final_target_file, [])
+
+        return proj_path, git_root
+
+    finally:
+        # Clean up the temporary directory under any circumstances (success, exit, or error)
+        try:
+            if os.path.exists(temp_proj_path):
+                shutil.rmtree(temp_proj_path)
+        except Exception:
+            pass
 
 
 def _create_new_project(work_dir, projects_dir, pre_detected_git_root=None):
@@ -278,14 +281,23 @@ def _create_new_project(work_dir, projects_dir, pre_detected_git_root=None):
     if not name:
         name = "default_project"
 
-    # Handle duplicate project names by appending a suffix
-    original_name = name
-    counter = 1
     proj_path = os.path.join(projects_dir, name)
-    while os.path.exists(proj_path):
-        name = f"{original_name}_{counter}"
-        proj_path = os.path.join(projects_dir, name)
-        counter += 1
+
+    # Check if a project folder with the same name already exists
+    if os.path.exists(proj_path):
+        print_color(f"\n[Warning] A project folder with the same name already exists: {proj_path}", Colors.YELLOW)
+        user_choice = input("Do you want to delete the existing folder before proceeding? (y/N): ").strip().lower()
+        if user_choice in ["y", "yes"]:
+            print_color(f"Deleting existing project folder: {proj_path}", Colors.YELLOW)
+            try:
+                shutil.rmtree(proj_path)
+                print_color("Existing project folder deleted successfully.", Colors.GREEN)
+            except Exception as e:
+                print_color(f"Failed to delete existing project folder: {e}", Colors.RED)
+                sys.exit(1)
+        else:
+            print_color("Operation cancelled. Project creation aborted.", Colors.RED)
+            sys.exit(1)
 
     # Create project folder and config.json
     os.makedirs(proj_path, exist_ok=True)
