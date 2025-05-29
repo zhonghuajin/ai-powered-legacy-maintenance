@@ -52,7 +52,7 @@ public class CommentMapper {
         }
 
         if (mappingOutput == null) {
-            mappingOutput = Paths.get(System.getProperty("user.dir")).resolve("comment-mapping.txt");
+            mappingOutput = Paths.get(System.getProperty("user.dir")).resolve("block-line-mapping.txt");
         }
 
         CommentMapper mapper = new CommentMapper();

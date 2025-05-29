@@ -11,6 +11,7 @@ from enginerring.dependency_handler.scan_deps import find_project_files
 from enginerring.dependency_handler.prompt_organizer import generate_prompt
 from enginerring.dependency_handler.dependency_injector import run_injection
 
+
 def instrument_code(work_dir, proj_path=None, git_root=None, is_new_project=False):
     print_color(
         "\n>>> Setting up shadow branch and instrumenting code...", Colors.CYAN)
@@ -114,8 +115,10 @@ def instrument_code(work_dir, proj_path=None, git_root=None, is_new_project=Fals
 
     return mode_arg, is_skipped
 
+
 def _move_instrumentation_outputs_to_project(work_dir, proj_path):
-    files_to_move = ["event_dictionary.txt", "comment-mapping.txt", "method-range.txt"]
+    files_to_move = ["event_dictionary.txt",
+                     "block-line-mapping.txt", "method-range.txt"]
     for filename in files_to_move:
         src = os.path.join(work_dir, filename)
         dst = os.path.join(proj_path, filename)
@@ -125,6 +128,7 @@ def _move_instrumentation_outputs_to_project(work_dir, proj_path):
         else:
             print_color(
                 f"[WARN] {filename} not found in working directory, skip.", Colors.YELLOW)
+
 
 def handle_instrumentation_dependencies(work_dir, proj_path, git_root, ask_llm_dir, target_language=None):
     """

@@ -4,7 +4,7 @@ pruned/
 instrumentor-log-*.txt
 instrumentor-events-*.txt
 /event_dictionary.txt
-/comment-mapping.txt
+/block-line-mapping.txt
 /final-output-calltree.json
 /final-output-combined.json
 /final-output-happensbefore.json
@@ -33,14 +33,14 @@ AI_Code_Audit_Prompt.md
 AI_General_Prompt.md
 enginerring/ask_llm/dependency_llm_response.txt
 vendor
-multilingual/php/comment-mapping.txt
+multilingual/php/block-line-mapping.txt
 multilingual/php/composer.lock
 enginerring/shared_utils/shared_utils.egg-info
 .vscode/launch.json
 AI_Task_Prompt.md
 last_prompt_context.json
 enginerring/ask_llm/.env
-multilingual/javascript/comment-mapping.txt
+multilingual/javascript/block-line-mapping.txt
 node_modules/
 multilingual/javascript/package-lock.json
 intermediate-debug.json

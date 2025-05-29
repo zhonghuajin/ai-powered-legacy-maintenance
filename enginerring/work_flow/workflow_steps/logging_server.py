@@ -8,9 +8,10 @@ import json
 import subprocess
 from print_utils.utils import Colors, print_color
 
+
 def startup_log_manager_server(work_dir, proj_path=None):
     print_color("\n>>> Starting Log Manager Server...", Colors.CYAN)
-    
+
     # Check if we should skip Manager Server interactions
     if proj_path:
         config_file = os.path.join(proj_path, 'config.json')
@@ -19,10 +20,12 @@ def startup_log_manager_server(work_dir, proj_path=None):
                 with open(config_file, 'r', encoding='utf-8') as f:
                     config = json.load(f)
                 if config.get('skip_log_and_manager') is True:
-                    print_color("[Skip] Verification failed previously. Skipping Log Manager Server.", Colors.YELLOW)
+                    print_color(
+                        "[Skip] Verification failed previously. Skipping Log Manager Server.", Colors.YELLOW)
                     return False
             except Exception as e:
-                print_color(f"[Warning] Failed to read config.json: {e}", Colors.YELLOW)
+                print_color(
+                    f"[Warning] Failed to read config.json: {e}", Colors.YELLOW)
 
     if proj_path:
         config_file = os.path.join(proj_path, 'config.json')
@@ -100,6 +103,7 @@ def startup_log_manager_server(work_dir, proj_path=None):
             f"Failed to import log_manager module from {server_dir}: {e}", Colors.RED)
         return False
 
+
 def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
     print_color(
         "\n>>> Analyzing logs and extracting denoised data...", Colors.CYAN)
@@ -112,10 +116,12 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
                 with open(config_file, 'r', encoding='utf-8') as f:
                     config = json.load(f)
                 if config.get('skip_log_and_manager') is True:
-                    print_color("[Skip] Verification failed previously. Skipping Log Analysis.", Colors.YELLOW)
+                    print_color(
+                        "[Skip] Verification failed previously. Skipping Log Analysis.", Colors.YELLOW)
                     return
             except Exception as e:
-                print_color(f"[Warning] Failed to read config.json: {e}", Colors.YELLOW)
+                print_color(
+                    f"[Warning] Failed to read config.json: {e}", Colors.YELLOW)
 
     if auto_analyze:
         print_color(
@@ -223,15 +229,16 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
         proj_path, "target-folders.txt") if proj_path else ".\\target-folders.txt"
 
     if proj_path:
-        comment_mapping_file = os.path.join(proj_path, "comment-mapping.txt")
+        comment_mapping_file = os.path.join(
+            proj_path, "block-line-mapping.txt")
         event_dict_file = os.path.join(proj_path, "event_dictionary.txt")
     else:
-        comment_mapping_file = ".\\comment-mapping.txt"
+        comment_mapping_file = ".\\block-line-mapping.txt"
         event_dict_file = ".\\event_dictionary.txt"
 
     if not os.path.exists(comment_mapping_file):
         print_color(
-            f"[WARN] comment-mapping.txt not found at {comment_mapping_file}", Colors.YELLOW)
+            f"[WARN] block-line-mapping.txt not found at {comment_mapping_file}", Colors.YELLOW)
     if not os.path.exists(event_dict_file):
         print_color(
             f"[WARN] event_dictionary.txt not found at {event_dict_file}", Colors.YELLOW)

@@ -24,12 +24,12 @@ class BlockPruner
     public static function main(array $args): void
     {
         if (count($args) < 4) {
-            fwrite(STDERR, "Usage: BlockPruner <Source Directories> <comment-mapping file> <instrument-log file> <Output Directory> [<Base Reference Directory>]\n");
+            fwrite(STDERR, "Usage: BlockPruner <Source Directories> <block-line-mapping file> <instrument-log file> <Output Directory> [<Base Reference Directory>]\n");
             fwrite(STDERR, "\n");
             fwrite(STDERR, "Parameter Description:\n");
             fwrite(STDERR, "  <Source Directories>       PHP source root directories, separated by ';' for multiple paths\n");
             fwrite(STDERR, "                             e.g. \"dir1;dir2;dir3\"\n");
-            fwrite(STDERR, "  <comment-mapping>          Instrumentation mapping file (format: ID = filePath:lineNo)\n");
+            fwrite(STDERR, "  <block-line-mapping>          Instrumentation mapping file (format: ID = filePath:lineNo)\n");
             fwrite(STDERR, "  <instrument-log>           Runtime instrumentation log file\n");
             fwrite(STDERR, "  <Output Directory>         Output root directory for pruned source code\n");
             fwrite(STDERR, "  [Base Reference Directory] (Optional) Base directory to preserve relative directory structures\n");

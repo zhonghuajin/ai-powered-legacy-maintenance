@@ -8,10 +8,10 @@ const t = require('@babel/types');
 class BlockPruner {
     static main(args) {
         if (args.length < 4) {
-            console.error("Usage: node BlockPruner.js <Source Directories> <comment-mapping file> <instrument-log file> <Output Directory> [<Base Reference Directory>]");
+            console.error("Usage: node BlockPruner.js <Source Directories> <block-line-mapping file> <instrument-log file> <Output Directory> [<Base Reference Directory>]");
             console.error("\nParameter Description:");
             console.error("  <Source Directories>       JS source root directories, separated by ';' for multiple paths");
-            console.error("  <comment-mapping>          Instrumentation mapping file (format: ID = filePath:lineNo)");
+            console.error("  <block-line-mapping>          Instrumentation mapping file (format: ID = filePath:lineNo)");
             console.error("  <instrument-log>           Runtime instrumentation log file");
             console.error("  <Output Directory>         Output root directory for pruned source code");
             console.error("  [Base Reference Directory] (Optional) Base directory to preserve relative directory structures");

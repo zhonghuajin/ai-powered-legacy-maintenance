@@ -204,7 +204,7 @@ class InstrumentationPipeline {
 if (require.main === module) {
     const args = process.argv.slice(2);
     let isIncremental = false;
-    let mappingFile = path.resolve(process.cwd(), 'comment-mapping.txt');
+    let mappingFile = path.resolve(process.cwd(), 'block-line-mapping.txt');
     const targets = [];
 
     for (let i = 0; i < args.length; i++) {

@@ -45,7 +45,7 @@ public class InstrumentationPipeline {
         }
 
         if (mappingFile == null) {
-            mappingFile = Paths.get("comment-mapping.txt").toAbsolutePath().normalize();
+            mappingFile = Paths.get("block-line-mapping.txt").toAbsolutePath().normalize();
         }
 
         if (incremental && !Files.exists(mappingFile)) {

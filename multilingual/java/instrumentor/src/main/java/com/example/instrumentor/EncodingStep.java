@@ -28,7 +28,7 @@ public class EncodingStep implements InstrumentationStep {
 
         Path outputFile = context.getMappingFile() != null
                 ? context.getMappingFile()
-                : Path.of("comment-mapping.txt").toAbsolutePath();
+                : Path.of("block-line-mapping.txt").toAbsolutePath();
         mapper.writeMappingFile(outputFile);
 
         return mapper.size();

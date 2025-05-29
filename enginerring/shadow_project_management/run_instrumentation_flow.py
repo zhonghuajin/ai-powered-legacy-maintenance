@@ -30,7 +30,8 @@ def _run_java_instrumentation(target_folders, incremental, mapping_file):
     result = subprocess.run(java_cmd)
 
     if result.returncode != 0:
-        print_color("Warning: Instrumentation pipeline returned non-zero exit code.", Colors.YELLOW)
+        print_color(
+            "Warning: Instrumentation pipeline returned non-zero exit code.", Colors.YELLOW)
         return False
 
     return True
@@ -43,23 +44,26 @@ def _run_php_instrumentation(target_folders, incremental, mapping_file, work_dir
         print_color("Error: php not found in PATH.", Colors.RED)
         return False
 
-    pipeline_script = os.path.join(work_dir, "multilingual", "php", "instrumentor", "InstrumentationPipeline.php")
+    pipeline_script = os.path.join(
+        work_dir, "multilingual", "php", "instrumentor", "InstrumentationPipeline.php")
 
     if not os.path.exists(pipeline_script):
-        print_color(f"Error: PHP instrumentation script not found at {pipeline_script}", Colors.RED)
+        print_color(
+            f"Error: PHP instrumentation script not found at {pipeline_script}", Colors.RED)
         return False
 
     php_cmd = [php_exe, pipeline_script]
     if incremental:
         php_cmd += ["--incremental", "--mapping", mapping_file]
-    
+
     php_cmd += target_folders
 
     print(f"Running: {' '.join(php_cmd)}")
     result = subprocess.run(php_cmd)
 
     if result.returncode != 0:
-        print_color("Warning: PHP Instrumentation pipeline returned non-zero exit code.", Colors.YELLOW)
+        print_color(
+            "Warning: PHP Instrumentation pipeline returned non-zero exit code.", Colors.YELLOW)
         return False
 
     return True
@@ -72,10 +76,12 @@ def _run_javascript_instrumentation(target_folders, work_dir):
         print_color("Error: node not found in PATH.", Colors.RED)
         return False
 
-    pipeline_script = os.path.join(work_dir, "multilingual", "javascript", "instrumentor", "InstrumentationPipeline.js")
+    pipeline_script = os.path.join(
+        work_dir, "multilingual", "javascript", "instrumentor", "InstrumentationPipeline.js")
 
     if not os.path.exists(pipeline_script):
-        print_color(f"Error: JS instrumentation script not found at {pipeline_script}", Colors.RED)
+        print_color(
+            f"Error: JS instrumentation script not found at {pipeline_script}", Colors.RED)
         return False
 
     js_cmd = [node_exe, pipeline_script] + target_folders
@@ -84,7 +90,8 @@ def _run_javascript_instrumentation(target_folders, work_dir):
     result = subprocess.run(js_cmd)
 
     if result.returncode != 0:
-        print_color("Warning: JS Instrumentation pipeline returned non-zero exit code.", Colors.YELLOW)
+        print_color(
+            "Warning: JS Instrumentation pipeline returned non-zero exit code.", Colors.YELLOW)
         return False
 
     return True
@@ -115,12 +122,13 @@ def run_instrumentation_flow(target_folders_file=None, target_folders_list=None,
         incremental:        If True, performs incremental instrumentation by merging
                             with an existing mapping file. Only the specified targets
                             are re-instrumented; entries for other files are retained.
-        mapping_file:       Path to the existing comment-mapping.txt for incremental mode.
-                            Defaults to ./comment-mapping.txt if not specified.
+        mapping_file:       Path to the existing block-line-mapping.txt for incremental mode.
+                            Defaults to ./block-line-mapping.txt if not specified.
         language:           Target programming language for instrumentation (default: 'java').
     """
     mode_label = "Incremental" if incremental else "Full"
-    print(f"\n--- Starting Instrumentation Flow ({mode_label}) for {language.upper()} ---")
+    print(
+        f"\n--- Starting Instrumentation Flow ({mode_label}) for {language.upper()} ---")
 
     target_folders = []
 
@@ -132,7 +140,8 @@ def run_instrumentation_flow(target_folders_file=None, target_folders_list=None,
             target_folders_file = os.path.join(".", "target-folders.txt")
 
         if not os.path.exists(target_folders_file):
-            print_color(f"Error: Target folders file does not exist: {target_folders_file}", Colors.RED)
+            print_color(
+                f"Error: Target folders file does not exist: {target_folders_file}", Colors.RED)
             return False
 
         with open(target_folders_file, 'r', encoding='utf-8') as f:
@@ -143,56 +152,69 @@ def run_instrumentation_flow(target_folders_file=None, target_folders_list=None,
 
         if not target_folders:
             print()
-            print_color("=================================================================", Colors.RED)
-            print_color(f"ERROR: No target folders found in file: {target_folders_file}", Colors.RED)
-            print_color("      Please add at least one valid folder path to the file.", Colors.RED)
-            print_color("=================================================================", Colors.RED)
+            print_color(
+                "=================================================================", Colors.RED)
+            print_color(
+                f"ERROR: No target folders found in file: {target_folders_file}", Colors.RED)
+            print_color(
+                "      Please add at least one valid folder path to the file.", Colors.RED)
+            print_color(
+                "=================================================================", Colors.RED)
             print()
             return False
 
-        print(f"Loaded {len(target_folders)} target folder(s) from file: {target_folders_file}")
+        print(
+            f"Loaded {len(target_folders)} target folder(s) from file: {target_folders_file}")
 
     for folder in target_folders:
         if not os.path.exists(folder):
-            print_color(f"Error: Target folder does not exist: {folder}", Colors.RED)
+            print_color(
+                f"Error: Target folder does not exist: {folder}", Colors.RED)
             return False
 
     print(f"Target folders: {', '.join(target_folders)}")
 
     # 2. Resolve mapping file for incremental mode
     if mapping_file is None:
-        mapping_file = os.path.join(".", "comment-mapping.txt")
+        mapping_file = os.path.join(".", "block-line-mapping.txt")
 
     mapping_file = os.path.abspath(mapping_file)
 
     if incremental:
         if not os.path.exists(mapping_file):
-            print_color(f"Warning: Mapping file not found: {mapping_file}", Colors.YELLOW)
-            print_color("Falling back to full instrumentation mode.", Colors.YELLOW)
+            print_color(
+                f"Warning: Mapping file not found: {mapping_file}", Colors.YELLOW)
+            print_color(
+                "Falling back to full instrumentation mode.", Colors.YELLOW)
             incremental = False
         else:
-            print(f"Incremental mode: merging with existing mapping: {mapping_file}")
+            print(
+                f"Incremental mode: merging with existing mapping: {mapping_file}")
 
     # 3. Dispatch instrumentation based on language
     success = False
     lang_lower = language.lower()
-    
+
     if lang_lower == 'java':
-        success = _run_java_instrumentation(target_folders, incremental, mapping_file)
+        success = _run_java_instrumentation(
+            target_folders, incremental, mapping_file)
     elif lang_lower == 'php':
         work_dir = os.path.abspath(os.getcwd())
-        success = _run_php_instrumentation(target_folders, incremental, mapping_file, work_dir)
+        success = _run_php_instrumentation(
+            target_folders, incremental, mapping_file, work_dir)
     elif lang_lower in ['javascript', 'js']:
         work_dir = os.path.abspath(os.getcwd())
         success = _run_javascript_instrumentation(target_folders, work_dir)
     elif lang_lower == 'python':
-        success = _run_python_instrumentation(target_folders, incremental, mapping_file)
+        success = _run_python_instrumentation(
+            target_folders, incremental, mapping_file)
     else:
-        print_color(f"Error: Unsupported language for instrumentation: {language}", Colors.RED)
+        print_color(
+            f"Error: Unsupported language for instrumentation: {language}", Colors.RED)
         return False
 
     if success:
         print("\nInstrumentation phase completed. "
               "Please check the generated log file timestamp and use process-logs-demo.py for subsequent processing.")
-        
+
     return success

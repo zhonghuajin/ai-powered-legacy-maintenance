@@ -554,7 +554,7 @@ class InstrumentationPipeline {
 if (php_sapi_name() === 'cli') {
     $options     = getopt("", ["incremental", "mapping:", "range:"]);
     $incremental = isset($options['incremental']);
-    $mappingFile = $options['mapping'] ?? 'comment-mapping.txt';
+    $mappingFile = $options['mapping'] ?? 'block-line-mapping.txt';
     $rangeFile   = $options['range'] ?? 'method-range.txt';
 
     if (!preg_match('#^(/|[A-Za-z]:[\\\\/])#', $mappingFile)) {

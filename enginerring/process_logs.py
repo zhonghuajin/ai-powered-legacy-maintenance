@@ -307,7 +307,7 @@ def main():
         help="Path to the deduplicated instrumentation log file"
     )
     parser.add_argument(
-        "--comment-mapping-file",
+        "--block-line-mapping-file",
         required=True,
         help="Path to the comment mapping file"
     )

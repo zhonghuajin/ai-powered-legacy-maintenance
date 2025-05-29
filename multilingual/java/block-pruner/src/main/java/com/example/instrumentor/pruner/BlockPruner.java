@@ -30,12 +30,12 @@ public class BlockPruner {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 4) {
-            System.err.println("Usage: BlockPruner <Source Directories> <comment-mapping file> <instrument-log file> <Output Directory> [<Base Reference Directory>]");
+            System.err.println("Usage: BlockPruner <Source Directories> <block-line-mapping file> <instrument-log file> <Output Directory> [<Base Reference Directory>]");
             System.err.println();
             System.err.println("Parameter Description:");
             System.err.println("  <Source Directories>       Java source root directories, separated by ';' for multiple paths");
             System.err.println("                             e.g. \"dir1;dir2;dir3\"");
-            System.err.println("  <comment-mapping>          Instrumentation mapping file (format: ID = filePath:lineNo)");
+            System.err.println("  <block-line-mapping>          Instrumentation mapping file (format: ID = filePath:lineNo)");
             System.err.println("  <instrument-log>           Runtime instrumentation log file");
             System.err.println("  <Output Directory>         Output root directory for pruned source code");
             System.err.println("  [Base Reference Directory] (Optional) Base directory to preserve relative directory structures");

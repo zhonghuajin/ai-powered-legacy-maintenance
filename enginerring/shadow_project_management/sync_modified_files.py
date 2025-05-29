@@ -73,7 +73,7 @@ def get_llm_commit_message(proj_path, status_output, work_dir):
     # Modified: Use proj_path instead of work_dir
     target_dir = proj_path if proj_path else work_dir
     mapping_file = os.path.join(target_dir, 'last_prompt_context.json')
-    
+
     if not os.path.exists(mapping_file):
         return default_msg
 
@@ -241,14 +241,16 @@ def sync_files(original_cwd, proj_path=None):
     if proj_path:
         try:
             from .instrument_with_shadow_project import run_block_wrapper_tool
-            print("\n>>> Running BlockWrapperTool on modified files in incremental mode...")
+            print(
+                "\n>>> Running BlockWrapperTool on modified files in incremental mode...")
             run_block_wrapper_tool(
                 work_dir=original_cwd,
                 proj_path=proj_path,
                 git_root=original_git_root
             )
         except ImportError as e:
-            print(f"Warning: Failed to import run_block_wrapper_tool dynamically: {e}")
+            print(
+                f"Warning: Failed to import run_block_wrapper_tool dynamically: {e}")
         except Exception as e:
             print(f"Warning: BlockWrapperTool execution failed: {e}")
 
@@ -260,7 +262,7 @@ def sync_files(original_cwd, proj_path=None):
     print("Running instrumentation flow for synchronized files...")
 
     mapping_file = os.path.join(
-        proj_path, "comment-mapping.txt") if proj_path else None
+        proj_path, "block-line-mapping.txt") if proj_path else None
     if mapping_file and not os.path.isfile(mapping_file):
         print(
             f"Warning: Mapping file not found at {mapping_file}, continuing without it.")
