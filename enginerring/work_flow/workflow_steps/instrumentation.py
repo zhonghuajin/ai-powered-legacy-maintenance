@@ -115,8 +115,7 @@ def instrument_code(work_dir, proj_path=None, git_root=None, is_new_project=Fals
     return mode_arg, is_skipped
 
 def _move_instrumentation_outputs_to_project(work_dir, proj_path):
-    """Move event_dictionary.txt and comment-mapping.txt from work_dir to proj_path."""
-    files_to_move = ["event_dictionary.txt", "comment-mapping.txt"]
+    files_to_move = ["event_dictionary.txt", "comment-mapping.txt", "method-range.txt"]
     for filename in files_to_move:
         src = os.path.join(work_dir, filename)
         dst = os.path.join(proj_path, filename)

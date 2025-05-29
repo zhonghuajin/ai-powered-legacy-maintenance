@@ -91,10 +91,75 @@ class BlockInstrumentorVisitor extends NodeVisitorAbstract {
 }
 
 /**
+ * AST Traverser: Collect line ranges of all functions and class methods
+ */
+class MethodRangeVisitor extends NodeVisitorAbstract {
+    private $namespace = '';
+    private $classStack = [];
+    private $ranges = [];
+
+    public function enterNode(Node $node) {
+        if ($node instanceof Node\Stmt\Namespace_) {
+            $this->namespace = $node->name ? $node->name->toString() : '';
+        } elseif (
+            $node instanceof Node\Stmt\Class_ || 
+            $node instanceof Node\Stmt\Interface_ || 
+            $node instanceof Node\Stmt\Trait_
+        ) {
+            $className = $node->name ? $node->name->toString() : 'anonymous';
+            $this->classStack[] = $className;
+        }
+        return null;
+    }
+
+    public function leaveNode(Node $node) {
+        if ($node instanceof Node\Stmt\Namespace_) {
+            $this->namespace = '';
+        } elseif (
+            $node instanceof Node\Stmt\Class_ || 
+            $node instanceof Node\Stmt\Interface_ || 
+            $node instanceof Node\Stmt\Trait_
+        ) {
+            array_pop($this->classStack);
+        }
+
+        if ($node instanceof Node\Stmt\Function_) {
+            $name = $node->name->toString();
+            $fullName = $this->namespace ? "{$this->namespace}\\{$name}" : $name;
+            $this->ranges[] = [
+                'name'  => $fullName,
+                'start' => $node->getStartLine(),
+                'end'   => $node->getEndLine(),
+            ];
+        } elseif ($node instanceof Node\Stmt\ClassMethod) {
+            $className = end($this->classStack) ?: '';
+            $methodName = $node->name->toString();
+            if ($className) {
+                $fullClassName = $this->namespace ? "{$this->namespace}\\{$className}" : $className;
+                $fullName = "{$fullClassName}::{$methodName}";
+            } else {
+                $fullName = $methodName;
+            }
+            $this->ranges[] = [
+                'name'  => $fullName,
+                'start' => $node->getStartLine(),
+                'end'   => $node->getEndLine(),
+            ];
+        }
+        return null;
+    }
+
+    public function getRanges(): array {
+        return $this->ranges;
+    }
+}
+
+/**
  * Core Pipeline Class
  */
 class InstrumentationPipeline {
     private $mappingFile;
+    private $rangeFile;
     private $isIncremental;
 
     /** Match original comments injected during instrumentation, e.g. // /abs/path/foo.php:123 */
@@ -102,15 +167,16 @@ class InstrumentationPipeline {
     /** Match already-mapped comments, e.g. // INST#42 */
     private const MAPPED_COMMENT_PATTERN   = '/^(\s*)\/\/\s*INST#(\d+)\s*$/m';
 
-    public function __construct(bool $isIncremental, string $mappingFile) {
+    public function __construct(bool $isIncremental, string $mappingFile, string $rangeFile) {
         $this->isIncremental = $isIncremental;
         $this->mappingFile   = $mappingFile;
+        $this->rangeFile     = $rangeFile;
     }
 
     public function run(array $targets) {
-        // Fall back to full mode if mapping file is missing in incremental mode
-        if ($this->isIncremental && !file_exists($this->mappingFile)) {
-            echo "Warning: mapping file not found, falling back to full mode.\n";
+        // Fall back to full mode if mapping file or range file is missing in incremental mode
+        if ($this->isIncremental && (!file_exists($this->mappingFile) || !file_exists($this->rangeFile))) {
+            echo "Warning: mapping or range file not found, falling back to full mode.\n";
             $this->isIncremental = false;
         }
 
@@ -122,9 +188,13 @@ class InstrumentationPipeline {
             die("No PHP files found.\n");
         }
 
-        // Step 1: Instrument (AST parse and comment injection)
-        echo ">> Step: Code Instrumentation\n";
-        $this->instrumentFiles($files);
+        // Step 1: Instrument (AST parse, collect ranges, and comment injection)
+        echo ">> Step: Code Instrumentation & Range Collection\n";
+        $newRanges = $this->instrumentFiles($files);
+
+        // Step 1.5: Update Method Ranges File
+        echo ">> Step: Updating Method Ranges\n";
+        $this->updateMethodRanges($files, $newRanges);
 
         // Step 2: Encoding (generate / update ID mapping)
         echo ">> Step: Encoding Mapping\n";
@@ -137,14 +207,24 @@ class InstrumentationPipeline {
         echo "=== Pipeline complete ===\n";
     }
 
-    private function instrumentFiles(array $files) {
+    private function instrumentFiles(array $files): array {
         $parser  = (new ParserFactory)->createForNewestSupportedVersion();
         $printer = new PrettyPrinter\Standard();
+        $allRanges = [];
 
         foreach ($files as $file) {
             $code = file_get_contents($file);
             try {
                 $ast = $parser->parse($code);
+
+                // 1. Collect original method ranges before modifying AST
+                $rangeTraverser = new NodeTraverser();
+                $rangeVisitor = new MethodRangeVisitor();
+                $rangeTraverser->addVisitor($rangeVisitor);
+                $rangeTraverser->traverse($ast);
+                $allRanges[$file] = $rangeVisitor->getRanges();
+
+                // 2. Perform instrumentation comment injection
                 $traverser = new NodeTraverser();
                 $traverser->addVisitor(new BlockInstrumentorVisitor($file));
 
@@ -156,16 +236,109 @@ class InstrumentationPipeline {
                 echo "Parse error in {$file}: {$error->getMessage()}\n";
             }
         }
+
+        return $allRanges;
+    }
+
+    /**
+     * Update the method-range.txt file.
+     * Supports incremental mode by preserving ranges from non-target files.
+     */
+    private function updateMethodRanges(array $files, array $newRanges) {
+        $mergedRanges = [];
+
+        // ---- Step 1. Preserve non-target entries when incremental ----
+        if ($this->isIncremental && file_exists($this->rangeFile)) {
+            $existingRanges = $this->loadRawRanges($this->rangeFile);
+            $targetFilePaths = array_fill_keys($files, true);
+
+            foreach ($existingRanges as $entry) {
+                if (isset($targetFilePaths[$entry['file']])) {
+                    // Belongs to a re-instrumented target file: discard
+                    continue;
+                }
+                $mergedRanges[] = $entry;
+            }
+        }
+
+        // ---- Step 2. Merge newly collected ranges ----
+        foreach ($newRanges as $file => $ranges) {
+            foreach ($ranges as $range) {
+                $mergedRanges[] = [
+                    'file'  => $file,
+                    'name'  => $range['name'],
+                    'start' => $range['start'],
+                    'end'   => $range['end']
+                ];
+            }
+        }
+
+        // ---- Step 3. Sort ranges by file path and start line for stability ----
+        usort($mergedRanges, function ($a, $b) {
+            $fileCmp = strcmp($a['file'], $b['file']);
+            if ($fileCmp !== 0) {
+                return $fileCmp;
+            }
+            return $a['start'] <=> $b['start'];
+        });
+
+        // ---- Step 4. Persist range file ----
+        $this->writeRangeFile($mergedRanges);
+        echo "   Method ranges saved to {$this->rangeFile} (Total: " . count($mergedRanges) . " entries)\n";
+    }
+
+    private function writeRangeFile(array $ranges): void {
+        $lines   = [];
+        $lines[] = "# ================================================";
+        $lines[] = "# Method Line Range Mapping Table";
+        $lines[] = "# Generation Time: " . date('Y-m-d H:i:s');
+        $lines[] = "# Total Entries: " . count($ranges);
+        $lines[] = "# ================================================";
+        $lines[] = "# Format: File Absolute Path | Method Name = Start Line-End Line";
+        $lines[] = "# Note: This mapping needs to be regenerated after source code modifications and re-instrumentation.";
+        $lines[] = "";
+
+        foreach ($ranges as $entry) {
+            $lines[] = "{$entry['file']} | {$entry['name']} = {$entry['start']}-{$entry['end']}";
+        }
+
+        $dir = dirname($this->rangeFile);
+        if ($dir !== '' && !is_dir($dir)) {
+            mkdir($dir, 0777, true);
+        }
+        file_put_contents($this->rangeFile, implode("\n", $lines) . "\n");
+    }
+
+    /**
+     * Read an existing range file.
+     */
+    private function loadRawRanges(string $rangeFile): array {
+        $result = [];
+        $lines  = @file($rangeFile, FILE_IGNORE_NEW_LINES);
+        if ($lines === false) {
+            return $result;
+        }
+
+        foreach ($lines as $line) {
+            $trimmed = trim($line);
+            if ($trimmed === '' || $trimmed[0] === '#') {
+                continue;
+            }
+            // Format: File Absolute Path | Method Name = Start Line-End Line
+            if (preg_match('/^(.+?)\s*\|\s*(.+?)\s*=\s*(\d+)-(\d+)$/', $trimmed, $m)) {
+                $result[] = [
+                    'file'  => trim($m[1]),
+                    'name'  => trim($m[2]),
+                    'start' => (int) $m[3],
+                    'end'   => (int) $m[4]
+                ];
+            }
+        }
+        return $result;
     }
 
     /**
      * Build (or update) the comment -> ID mapping.
-     *
-     * - Full mode: scan all target files, assign IDs from 1.
-     * - Incremental mode: load existing mapping, drop entries belonging to
-     *   the target files (which are being re-instrumented), preserve all
-     *   non-target entries with their original IDs, then allocate new IDs
-     *   for the freshly scanned comments starting from max(preservedIds)+1.
      */
     private function encodeMapping(array $files) {
         $idToComment = [];
@@ -379,12 +552,16 @@ class InstrumentationPipeline {
 
 // CLI entry point
 if (php_sapi_name() === 'cli') {
-    $options     = getopt("", ["incremental", "mapping:"]);
+    $options     = getopt("", ["incremental", "mapping:", "range:"]);
     $incremental = isset($options['incremental']);
     $mappingFile = $options['mapping'] ?? 'comment-mapping.txt';
+    $rangeFile   = $options['range'] ?? 'method-range.txt';
 
     if (!preg_match('#^(/|[A-Za-z]:[\\\\/])#', $mappingFile)) {
         $mappingFile = getcwd() . DIRECTORY_SEPARATOR . $mappingFile;
+    }
+    if (!preg_match('#^(/|[A-Za-z]:[\\\\/])#', $rangeFile)) {
+        $rangeFile = getcwd() . DIRECTORY_SEPARATOR . $rangeFile;
     }
 
     $targets  = [];
@@ -399,11 +576,11 @@ if (php_sapi_name() === 'cli') {
         if ($arg === '--incremental') {
             continue;
         }
-        if ($arg === '--mapping') {
+        if ($arg === '--mapping' || $arg === '--range') {
             $skipNext = true;
             continue;
         }
-        if (strpos($arg, '--mapping=') === 0) {
+        if (strpos($arg, '--mapping=') === 0 || strpos($arg, '--range=') === 0) {
             continue;
         }
 
@@ -411,9 +588,9 @@ if (php_sapi_name() === 'cli') {
     }
 
     if (empty($targets)) {
-        die("Usage: php InstrumentationPipeline.php [--incremental] [--mapping mappingFile] <target1> [target2 ...]\n");
+        die("Usage: php InstrumentationPipeline.php [--incremental] [--mapping mappingFile] [--range rangeFile] <target1> [target2 ...]\n");
     }
 
-    $pipeline = new InstrumentationPipeline($incremental, $mappingFile);
+    $pipeline = new InstrumentationPipeline($incremental, $mappingFile, $rangeFile);
     $pipeline->run($targets);
 }
