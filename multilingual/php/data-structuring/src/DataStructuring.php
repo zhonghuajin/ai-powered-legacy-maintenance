@@ -15,6 +15,7 @@ use PhpParser\NodeVisitorAbstract;
 
 class MethodNode
 {
+    public string $signature;
     public string $className;
     public string $methodName;
     public int $paramCount;
@@ -23,8 +24,11 @@ class MethodNode
 
     public array $calls = [];
 
-    public function __construct(string $className, string $methodName, int $paramCount, string $sourceCode, ?string $filePath)
+    public array $externalCalls = [];
+
+    public function __construct(string $signature, string $className, string $methodName, int $paramCount, string $sourceCode, ?string $filePath)
     {
+        $this->signature = $signature;
         $this->className = $className;
         $this->methodName = $methodName;
         $this->paramCount = $paramCount;
@@ -34,7 +38,7 @@ class MethodNode
 
     public function getFullSignature(): string
     {
-        return $this->className . "::" . $this->methodName . " (params: " . $this->paramCount . ")";
+        return $this->signature;
     }
 }
 
@@ -54,10 +58,10 @@ class MethodCallInfo
 
 class MethodCollectorVisitor extends NodeVisitorAbstract
 {
-    public string $currentClass = '';
+    private string $namespace = '';
+    private array $classStack = [];
 
     public array $methods = [];
-
     public array $rawCalls = [];
     private string $filePath;
     private string $fileContent;
@@ -70,10 +74,16 @@ class MethodCollectorVisitor extends NodeVisitorAbstract
 
     public function enterNode(Node $node)
     {
-        if ($node instanceof Node\Stmt\Class_ || $node instanceof Node\Stmt\Interface_ || $node instanceof Node\Stmt\Trait_) {
-            if ($node->name !== null) {
-                $this->currentClass = $node->name->toString();
-            }
+        if ($node instanceof Node\Stmt\Namespace_) {
+            $this->namespace = $node->name ? $node->name->toString() : '';
+        }
+        elseif (
+            $node instanceof Node\Stmt\Class_ ||
+            $node instanceof Node\Stmt\Interface_ ||
+            $node instanceof Node\Stmt\Trait_
+        ) {
+            $className = $node->name ? $node->name->toString() : 'anonymous';
+            $this->classStack[] = $className;
         }
 
         if ($node instanceof ClassMethod || $node instanceof Function_) {
@@ -96,15 +106,42 @@ class MethodCollectorVisitor extends NodeVisitorAbstract
                 $sourceCode = substr($this->fileContent, $startFilePos, $endFilePos - $startFilePos + 1);
             }
 
-            $className = $node instanceof ClassMethod ? $this->currentClass : '<global>';
-            $nodeObj = new MethodNode($className, $methodName, $paramCount, $sourceCode, $this->filePath);
+            if ($node instanceof Function_) {
+                $fullName = $this->namespace ? "{$this->namespace}\\{$methodName}" : $methodName;
+                $className = '<global>';
+            } else {
+                $currentClass = end($this->classStack) ?: '';
+                if ($currentClass) {
+                    $fullClassName = $this->namespace ? "{$this->namespace}\\{$currentClass}" : $currentClass;
+                    $fullName = "{$fullClassName}::{$methodName}";
+                    $className = $fullClassName;
+                } else {
+                    $fullName = $methodName;
+                    $className = '';
+                }
+            }
 
-            $signature = $className . "::" . $methodName . "_" . $paramCount;
-            $this->methods[$signature] = $nodeObj;
+            $nodeObj = new MethodNode($fullName, $className, $methodName, $paramCount, $sourceCode, $this->filePath);
+
+            $this->methods[$fullName] = $nodeObj;
 
             $callsInMethod = [];
             $this->collectCalls($node, $callsInMethod);
             $this->rawCalls[spl_object_hash($nodeObj)] = $callsInMethod;
+        }
+        return null;
+    }
+
+    public function leaveNode(Node $node)
+    {
+        if ($node instanceof Node\Stmt\Namespace_) {
+            $this->namespace = '';
+        } elseif (
+            $node instanceof Node\Stmt\Class_ ||
+            $node instanceof Node\Stmt\Interface_ ||
+            $node instanceof Node\Stmt\Trait_
+        ) {
+            array_pop($this->classStack);
         }
         return null;
     }
@@ -135,7 +172,6 @@ class MethodCollectorVisitor extends NodeVisitorAbstract
                         $this->callsRef[] = new MethodCallInfo($scope, $node->name->toString(), count($node->args));
                     }
                 }
-
                 elseif ($node instanceof StaticCall) {
                     if ($node->name instanceof Node\Identifier) {
                         $scope = null;
@@ -145,7 +181,6 @@ class MethodCollectorVisitor extends NodeVisitorAbstract
                         $this->callsRef[] = new MethodCallInfo($scope, $node->name->toString(), count($node->args));
                     }
                 }
-
                 elseif ($node instanceof FuncCall) {
                     if ($node->name instanceof Node\Name) {
                         $this->callsRef[] = new MethodCallInfo(null, $node->name->toString(), count($node->args));
@@ -155,7 +190,6 @@ class MethodCollectorVisitor extends NodeVisitorAbstract
             }
         };
         $traverser->addVisitor($visitor);
-
         $traverser->traverse($parentNode->stmts ?? []);
     }
 }
@@ -178,10 +212,11 @@ class DataStructuring
             return 1;
         }
 
-        $md = "# Thread Traces\n\n";
-        $md .= "> **Data Schema & Legend:**\n";
-        $md .= "> This section represents the execution call tree for each thread.\n";
-        $md .= "> - **Call Tree**: Hierarchical execution flow. Each node contains the source file and pruned source code.\n\n";
+        $md = "# File-Internal Call Trees\n\n";
+        $md .= "> **Description & Legend:**\n";
+        $md .= "> This document presents precise **intra-file function/method call trees** based on AST analysis.\n";
+        $md .= "> - Only explicit calls within the current file/class (such as `\$this->foo()` or `self::bar()`) are expanded in the tree.\n";
+        $md .= "> - External calls or calls that cannot be statically determined are listed as `[External/Unknown]` to avoid cross-file misidentification.\n\n";
 
         $threadDirs = glob($prunedDirPath . '/*', GLOB_ONLYDIR);
         if ($threadDirs === false) {
@@ -196,12 +231,9 @@ class DataStructuring
             $threadName = basename($threadPath);
             echo "Processing thread: {$threadName}\n";
 
-            $md .= "## " . $threadName . " (Order: " . ($order++) . ")\n";
+            $md .= "# Thread: " . $threadName . " (Order: " . ($order++) . ")\n\n";
 
             $phpFiles = self::getPhpFiles($threadPath);
-
-            $methodMap = [];
-            $rawCallsMap = [];
 
             foreach ($phpFiles as $phpFile) {
                 try {
@@ -212,7 +244,6 @@ class DataStructuring
                     if ($ast === null) continue;
 
                     $relativePath = str_replace('\\', '/', substr($phpFile, strlen($prunedDirPath) + 1));
-
                     $parts = explode('/', $relativePath);
                     if (count($parts) > 1) {
                         array_shift($parts);
@@ -224,48 +255,50 @@ class DataStructuring
                     $traverser->addVisitor($visitor);
                     $traverser->traverse($ast);
 
-                    foreach ($visitor->methods as $sig => $node) {
-                        $methodMap[$sig] = $node;
+                    if (empty($visitor->methods)) {
+                        continue;
                     }
-                    foreach ($visitor->rawCalls as $hash => $calls) {
-                        $rawCallsMap[$hash] = $calls;
+
+                    $md .= "## File: `{$relativePath}`\n\n";
+
+                    $calledNodesHashes = [];
+                    foreach ($visitor->methods as $caller) {
+                        $hash = spl_object_hash($caller);
+                        $calls = $visitor->rawCalls[$hash] ?? [];
+
+                        foreach ($calls as $call) {
+                            $callee = self::findMatchingMethodInFile($call, $visitor->methods, $caller->className);
+                            if ($callee !== null && $callee !== $caller) {
+                                $caller->calls[] = $callee;
+                                $calledNodesHashes[spl_object_hash($callee)] = true;
+                            } else {
+                                $scopeStr = $call->scope ? $call->scope . '->' : '';
+                                $caller->externalCalls[] = "{$scopeStr}{$call->name}({$call->argCount} args)";
+                            }
+                        }
                     }
+
+                    $entryPoints = [];
+                    foreach ($visitor->methods as $node) {
+                        if (!isset($calledNodesHashes[spl_object_hash($node)])) {
+                            $entryPoints[] = $node;
+                        }
+                    }
+
+                    if (empty($entryPoints)) {
+                        $entryPoints = array_values($visitor->methods);
+                    }
+
+                    foreach ($entryPoints as $rootNode) {
+                        self::renderCallNode($rootNode, $md, 0);
+                    }
+
+                    $md .= "\n---\n\n";
+
                 } catch (\Throwable $e) {
                     fwrite(STDERR, "Warning: Failed to parse file {$phpFile} : " . $e->getMessage() . "\n");
                 }
             }
-
-            $calledNodesHashes = [];
-
-            foreach ($methodMap as $caller) {
-                $hash = spl_object_hash($caller);
-                $calls = $rawCallsMap[$hash] ?? [];
-
-                foreach ($calls as $call) {
-                    $callee = self::findMatchingMethod($call, $methodMap, $caller->className);
-                    if ($callee !== null && $callee !== $caller) {
-                        $caller->calls[] = $callee;
-                        $calledNodesHashes[spl_object_hash($callee)] = true;
-                    }
-                }
-            }
-
-            $entryPoints = [];
-            foreach ($methodMap as $node) {
-                if (!isset($calledNodesHashes[spl_object_hash($node)])) {
-                    $entryPoints[] = $node;
-                }
-            }
-
-            if (empty($entryPoints) && !empty($methodMap)) {
-                $entryPoints = array_values($methodMap);
-            }
-
-            foreach ($entryPoints as $rootNode) {
-                self::renderCallNode($rootNode, $md, 0);
-            }
-
-            $md .= "\n---\n\n";
         }
 
         file_put_contents($outputFilePath, $md);
@@ -286,29 +319,29 @@ class DataStructuring
         return $files;
     }
 
-    private static function findMatchingMethod(MethodCallInfo $call, array $methodMap, string $callerClassName): ?MethodNode
+    private static function findMatchingMethodInFile(MethodCallInfo $call, array $fileMethodMap, string $callerClassName): ?MethodNode
     {
         if (strcasecmp($call->name, '__construct') === 0 || strcasecmp($call->name, '__destruct') === 0) {
             return null;
         }
 
-        if ($call->scope === null || $call->scope === 'this' || $call->scope === 'self' || $call->scope === 'static') {
-            $key = $callerClassName . "::" . $call->name . "_" . $call->argCount;
-            if (isset($methodMap[$key])) {
-                return $methodMap[$key];
+        if ($call->scope === null || $call->scope === 'this' || $call->scope === 'self' || $call->scope === 'static' || strcasecmp($call->scope, $callerClassName) === 0) {
+            $key = $callerClassName . "::" . $call->name;
+            if (isset($fileMethodMap[$key])) {
+                return $fileMethodMap[$key];
             }
-        }
 
-        if ($call->scope !== null) {
-            $key = $call->scope . "::" . $call->name . "_" . $call->argCount;
-            if (isset($methodMap[$key])) {
-                return $methodMap[$key];
-            }
-        }
+            if ($call->scope === null) {
+                $namespacePrefix = '';
+                $lastBackslash = strrpos($callerClassName, '\\');
+                if ($lastBackslash !== false) {
+                    $namespacePrefix = substr($callerClassName, 0, $lastBackslash);
+                }
 
-        foreach ($methodMap as $node) {
-            if ($node->methodName === $call->name && $node->paramCount === $call->argCount) {
-                return $node;
+                $globalKey = $namespacePrefix ? "{$namespacePrefix}\\{$call->name}" : $call->name;
+                if (isset($fileMethodMap[$globalKey])) {
+                    return $fileMethodMap[$globalKey];
+                }
             }
         }
 
@@ -320,15 +353,10 @@ class DataStructuring
         $indent = str_repeat("    ", $level);
         $contentIndent = $indent . "    ";
 
-        if ($node->filePath !== null) {
-            $md .= $indent . "- *File:* `" . $node->filePath . "`\n";
-        } else {
-            $md .= $indent . "- *(no file)*\n";
-        }
+        $md .= $indent . "- **Method:** `" . $node->signature . "` (Params: " . $node->paramCount . ")\n";
 
         if ($node->sourceCode !== '') {
             $source = trim($node->sourceCode);
-
             $md .= $contentIndent . "```php\n";
             $lines = explode("\n", $source);
             foreach ($lines as $line) {
@@ -337,10 +365,15 @@ class DataStructuring
             $md .= $contentIndent . "```\n";
         }
 
-        if (!empty($node->calls)) {
+        if (!empty($node->calls) || !empty($node->externalCalls)) {
             $md .= $contentIndent . "*Calls:*\n";
+
             foreach ($node->calls as $child) {
                 self::renderCallNode($child, $md, $level + 1);
+            }
+
+            foreach ($node->externalCalls as $extCall) {
+                $md .= $contentIndent . "    - *[External/Unknown]* `{$extCall}`\n";
             }
         }
     }

@@ -8,11 +8,9 @@ import json
 import subprocess
 from print_utils.utils import Colors, print_color
 
-
 def startup_log_manager_server(work_dir, proj_path=None):
     print_color("\n>>> Starting Log Manager Server...", Colors.CYAN)
 
-    # Check if we should skip Manager Server interactions
     if proj_path:
         config_file = os.path.join(proj_path, 'config.json')
         if os.path.exists(config_file):
@@ -103,12 +101,10 @@ def startup_log_manager_server(work_dir, proj_path=None):
             f"Failed to import log_manager module from {server_dir}: {e}", Colors.RED)
         return False
 
-
 def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
     print_color(
         "\n>>> Analyzing logs and extracting denoised data...", Colors.CYAN)
 
-    # Check if we should skip Log Analysis interactions
     if proj_path:
         config_file = os.path.join(proj_path, 'config.json')
         if os.path.exists(config_file):
@@ -229,16 +225,22 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
         proj_path, "target-folders.txt") if proj_path else ".\\target-folders.txt"
 
     if proj_path:
-        comment_mapping_file = os.path.join(
+        block_line_mapping_file = os.path.join(
             proj_path, "block-line-mapping.txt")
+        block_signature_file = os.path.join(
+            proj_path, "block-signature.txt")
         event_dict_file = os.path.join(proj_path, "event_dictionary.txt")
     else:
-        comment_mapping_file = ".\\block-line-mapping.txt"
+        block_line_mapping_file = ".\\block-line-mapping.txt"
+        block_signature_file = ".\\block-signature.txt"
         event_dict_file = ".\\event_dictionary.txt"
 
-    if not os.path.exists(comment_mapping_file):
+    if not os.path.exists(block_line_mapping_file):
         print_color(
-            f"[WARN] block-line-mapping.txt not found at {comment_mapping_file}", Colors.YELLOW)
+            f"[WARN] block-line-mapping.txt not found at {block_line_mapping_file}", Colors.YELLOW)
+    if not os.path.exists(block_signature_file):
+        print_color(
+            f"[WARN] block-signature.txt not found at {block_signature_file}", Colors.YELLOW)
     if not os.path.exists(event_dict_file):
         print_color(
             f"[WARN] event_dictionary.txt not found at {event_dict_file}", Colors.YELLOW)
@@ -256,7 +258,8 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
             language=project_lang,
             target_folders_file=target_folders_file,
             log_file=log_file,
-            comment_mapping_file=comment_mapping_file,
+            block_line_mapping_file=block_line_mapping_file,
+            block_signature_file=block_signature_file,
             events_file=events_file,
             event_dictionary_file=event_dict_file,
             base_reference_dir=base_reference_dir,
