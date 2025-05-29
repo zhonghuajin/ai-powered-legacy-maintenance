@@ -5,8 +5,7 @@ import shutil
 
 from print_utils.utils import print_color, Colors
 
-
-def _run_java_instrumentation(target_folders, incremental, mapping_file):
+def _run_java_instrumentation(target_folders, incremental, mapping_file, range_file, signature_file):
     """Single JAR call, replaces previous multiple subprocesses"""
     java_home = os.environ.get("JAVA_HOME")
     if not java_home:
@@ -23,7 +22,13 @@ def _run_java_instrumentation(target_folders, incremental, mapping_file):
 
     java_cmd = [java_exe, "-jar", pipeline_jar]
     if incremental:
-        java_cmd += ["--incremental", "-m", mapping_file]
+
+        java_cmd += [
+            "--incremental",
+            "-m", mapping_file,
+            "-r", range_file,
+            "-s", signature_file
+        ]
     java_cmd += target_folders
 
     print(f"Running: {' '.join(java_cmd)}")
@@ -36,8 +41,7 @@ def _run_java_instrumentation(target_folders, incremental, mapping_file):
 
     return True
 
-
-def _run_php_instrumentation(target_folders, incremental, mapping_file, work_dir):
+def _run_php_instrumentation(target_folders, incremental, mapping_file, range_file, signature_file, work_dir):
     """Executes the PHP-specific instrumentation logic."""
     php_exe = shutil.which("php")
     if not php_exe:
@@ -54,7 +58,13 @@ def _run_php_instrumentation(target_folders, incremental, mapping_file, work_dir
 
     php_cmd = [php_exe, pipeline_script]
     if incremental:
-        php_cmd += ["--incremental", "--mapping", mapping_file]
+
+        php_cmd += [
+            "--incremental",
+            "--mapping", mapping_file,
+            "--range", range_file,
+            "--signature", signature_file
+        ]
 
     php_cmd += target_folders
 
@@ -67,7 +77,6 @@ def _run_php_instrumentation(target_folders, incremental, mapping_file, work_dir
         return False
 
     return True
-
 
 def _run_javascript_instrumentation(target_folders, work_dir):
     """Executes the JavaScript-specific instrumentation logic."""
@@ -96,19 +105,15 @@ def _run_javascript_instrumentation(target_folders, work_dir):
 
     return True
 
-
-def _run_python_instrumentation(target_folders, incremental, mapping_file):
+def _run_python_instrumentation(target_folders, incremental, mapping_file, range_file, signature_file):
     """
     Executes the Python-specific instrumentation logic.
     (Placeholder for future implementation)
     """
     print("\nChecking Python environment and dependencies...")
     print_color("[Info] Python instrumentation logic goes here.", Colors.CYAN)
-    # TODO: Implement Python AST parsing or instrumentation tool execution
-    # python_cmd = [sys.executable, "-m", "python_instrumentor"] + target_folders
-    # subprocess.run(python_cmd)
-    return True
 
+    return True
 
 def run_instrumentation_flow(target_folders_file=None, target_folders_list=None,
                              incremental=False, mapping_file=None, language='java'):
@@ -132,7 +137,6 @@ def run_instrumentation_flow(target_folders_file=None, target_folders_list=None,
 
     target_folders = []
 
-    # 1. Read and validate target folders
     if target_folders_list:
         target_folders = target_folders_list
     else:
@@ -174,40 +178,54 @@ def run_instrumentation_flow(target_folders_file=None, target_folders_list=None,
 
     print(f"Target folders: {', '.join(target_folders)}")
 
-    # 2. Resolve mapping file for incremental mode
     if mapping_file is None:
         mapping_file = os.path.join(".", "block-line-mapping.txt")
 
     mapping_file = os.path.abspath(mapping_file)
 
+    mapping_dir = os.path.dirname(mapping_file)
+    range_file = os.path.abspath(os.path.join(mapping_dir, "method-range.txt"))
+    signature_file = os.path.abspath(os.path.join(mapping_dir, "block-signature.txt"))
+
     if incremental:
+
+        missing_files = []
         if not os.path.exists(mapping_file):
-            print_color(
-                f"Warning: Mapping file not found: {mapping_file}", Colors.YELLOW)
-            print_color(
-                "Falling back to full instrumentation mode.", Colors.YELLOW)
+            missing_files.append(mapping_file)
+        if not os.path.exists(range_file):
+            missing_files.append(range_file)
+        if not os.path.exists(signature_file):
+            missing_files.append(signature_file)
+
+        if missing_files:
+            print_color("Warning: Incremental mode requires all mapping files to exist.", Colors.YELLOW)
+            for mf in missing_files:
+                print_color(f"  Missing: {mf}", Colors.YELLOW)
+            print_color("Falling back to full instrumentation mode.", Colors.YELLOW)
             incremental = False
         else:
-            print(
-                f"Incremental mode: merging with existing mapping: {mapping_file}")
+            print(f"Incremental mode: merging with existing files:")
+            print(f"  Mapping:   {mapping_file}")
+            print(f"  Ranges:    {range_file}")
+            print(f"  Signature: {signature_file}")
 
-    # 3. Dispatch instrumentation based on language
     success = False
     lang_lower = language.lower()
 
     if lang_lower == 'java':
         success = _run_java_instrumentation(
-            target_folders, incremental, mapping_file)
+            target_folders, incremental, mapping_file, range_file, signature_file)
     elif lang_lower == 'php':
         work_dir = os.path.abspath(os.getcwd())
         success = _run_php_instrumentation(
-            target_folders, incremental, mapping_file, work_dir)
+            target_folders, incremental, mapping_file, range_file, signature_file, work_dir)
     elif lang_lower in ['javascript', 'js']:
+
         work_dir = os.path.abspath(os.getcwd())
         success = _run_javascript_instrumentation(target_folders, work_dir)
     elif lang_lower == 'python':
         success = _run_python_instrumentation(
-            target_folders, incremental, mapping_file)
+            target_folders, incremental, mapping_file, range_file, signature_file)
     else:
         print_color(
             f"Error: Unsupported language for instrumentation: {language}", Colors.RED)

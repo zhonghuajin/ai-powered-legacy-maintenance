@@ -160,6 +160,7 @@ class MethodRangeVisitor extends NodeVisitorAbstract {
 class InstrumentationPipeline {
     private $mappingFile;
     private $rangeFile;
+    private $signatureFile;
     private $isIncremental;
 
     /** Match original comments injected during instrumentation, e.g. // /abs/path/foo.php:123 */
@@ -167,16 +168,17 @@ class InstrumentationPipeline {
     /** Match already-mapped comments, e.g. // INST#42 */
     private const MAPPED_COMMENT_PATTERN   = '/^(\s*)\/\/\s*INST#(\d+)\s*$/m';
 
-    public function __construct(bool $isIncremental, string $mappingFile, string $rangeFile) {
+    public function __construct(bool $isIncremental, string $mappingFile, string $rangeFile, string $signatureFile) {
         $this->isIncremental = $isIncremental;
         $this->mappingFile   = $mappingFile;
         $this->rangeFile     = $rangeFile;
+        $this->signatureFile = $signatureFile;
     }
 
     public function run(array $targets) {
-        // Fall back to full mode if mapping file or range file is missing in incremental mode
-        if ($this->isIncremental && (!file_exists($this->mappingFile) || !file_exists($this->rangeFile))) {
-            echo "Warning: mapping or range file not found, falling back to full mode.\n";
+        // Fall back to full mode if any mapping file is missing in incremental mode
+        if ($this->isIncremental && (!file_exists($this->mappingFile) || !file_exists($this->rangeFile) || !file_exists($this->signatureFile))) {
+            echo "Warning: mapping, range or signature file not found, falling back to full mode.\n";
             $this->isIncremental = false;
         }
 
@@ -199,6 +201,10 @@ class InstrumentationPipeline {
         // Step 2: Encoding (generate / update ID mapping)
         echo ">> Step: Encoding Mapping\n";
         $this->encodeMapping($files);
+
+        // Step 2.5: Generate Block to Signature Mapping
+        echo ">> Step: Generating Block to Signature Mapping\n";
+        $this->generateBlockSignatures($files);
 
         // Step 3: Activation (replace comments with function calls)
         echo ">> Step: Activation\n";
@@ -335,6 +341,121 @@ class InstrumentationPipeline {
             }
         }
         return $result;
+    }
+
+    /**
+     * Build (or update) the block ID -> Method Signature mapping.
+     */
+    private function generateBlockSignatures(array $files) {
+        $blockToSignature = [];
+        $targetFilePaths = array_fill_keys($files, true);
+
+        // ---- Step 1. Preserve non-target entries when incremental ----
+        if ($this->isIncremental && file_exists($this->signatureFile)) {
+            $existingSignatures = $this->loadRawSignatures($this->signatureFile);
+            $commentMap = $this->loadRawMapping($this->mappingFile);
+
+            foreach ($existingSignatures as $id => $sig) {
+                $comment = $commentMap[$id] ?? null;
+                if ($comment !== null) {
+                    $filePath = $this->extractFilePathFromComment($comment);
+                    if ($filePath !== null && isset($targetFilePaths[$filePath])) {
+                        // Belongs to a re-instrumented target file: discard
+                        continue;
+                    }
+                }
+                $blockToSignature[$id] = $sig;
+            }
+        }
+
+        // ---- Step 2. Load current mappings and ranges ----
+        $commentMap = $this->loadRawMapping($this->mappingFile);
+        $ranges = $this->loadRawRanges($this->rangeFile);
+
+        // Group ranges by file path for faster lookup
+        $rangesByFile = [];
+        foreach ($ranges as $range) {
+            $rangesByFile[$range['file']][] = $range;
+        }
+
+        // ---- Step 3. Find signature for target file blocks ----
+        foreach ($commentMap as $id => $comment) {
+            $filePath = $this->extractFilePathFromComment($comment);
+            if ($filePath === null || !isset($targetFilePaths[$filePath])) {
+                continue;
+            }
+
+            $line = $this->extractLineFromComment($comment);
+            if ($line === null) {
+                continue;
+            }
+
+            $matchedSignature = '[Global]'; // Default if outside any function
+            if (isset($rangesByFile[$filePath])) {
+                foreach ($rangesByFile[$filePath] as $range) {
+                    if ($line >= $range['start'] && $line <= $range['end']) {
+                        $matchedSignature = $range['name'];
+                        break; // Found the innermost matching range
+                    }
+                }
+            }
+            $blockToSignature[$id] = $matchedSignature;
+        }
+
+        // ---- Step 4. Persist signature file ----
+        ksort($blockToSignature);
+        $this->writeSignatureFile($blockToSignature);
+        echo "   Block signatures saved to {$this->signatureFile} (Total: " . count($blockToSignature) . " entries)\n";
+    }
+
+    private function writeSignatureFile(array $signatures): void {
+        $lines   = [];
+        $lines[] = "# ================================================";
+        $lines[] = "# Block ID -> Method Signature Mapping Table";
+        $lines[] = "# Generation Time: " . date('Y-m-d H:i:s');
+        $lines[] = "# Total Entries: " . count($signatures);
+        $lines[] = "# ================================================";
+        $lines[] = "# Format: Block ID = Method Signature";
+        $lines[] = "# Note: This mapping needs to be regenerated after source code modifications and re-instrumentation.";
+        $lines[] = "";
+
+        foreach ($signatures as $id => $sig) {
+            $lines[] = "{$id} = {$sig}";
+        }
+
+        $dir = dirname($this->signatureFile);
+        if ($dir !== '' && !is_dir($dir)) {
+            mkdir($dir, 0777, true);
+        }
+        file_put_contents($this->signatureFile, implode("\n", $lines) . "\n");
+    }
+
+    private function loadRawSignatures(string $signatureFile): array {
+        $result = [];
+        $lines  = @file($signatureFile, FILE_IGNORE_NEW_LINES);
+        if ($lines === false) {
+            return $result;
+        }
+
+        foreach ($lines as $line) {
+            $trimmed = trim($line);
+            if ($trimmed === '' || $trimmed[0] === '#') {
+                continue;
+            }
+            if (preg_match('/^(\d+)\s*=\s*(.+)$/', $trimmed, $m)) {
+                $result[(int) $m[1]] = trim($m[2]);
+            }
+        }
+        return $result;
+    }
+
+    private function extractLineFromComment(string $comment): ?int {
+        $lastColon = strrpos($comment, ':');
+        if ($lastColon === false || $lastColon === 0) {
+            return null;
+        }
+        $afterColon = substr($comment, $lastColon + 1);
+        return (int) $afterColon;
     }
 
     /**
@@ -552,16 +673,20 @@ class InstrumentationPipeline {
 
 // CLI entry point
 if (php_sapi_name() === 'cli') {
-    $options     = getopt("", ["incremental", "mapping:", "range:"]);
+    $options     = getopt("", ["incremental", "mapping:", "range:", "signature:"]);
     $incremental = isset($options['incremental']);
     $mappingFile = $options['mapping'] ?? 'block-line-mapping.txt';
     $rangeFile   = $options['range'] ?? 'method-range.txt';
+    $signatureFile = $options['signature'] ?? 'block-signature.txt';
 
     if (!preg_match('#^(/|[A-Za-z]:[\\\\/])#', $mappingFile)) {
         $mappingFile = getcwd() . DIRECTORY_SEPARATOR . $mappingFile;
     }
     if (!preg_match('#^(/|[A-Za-z]:[\\\\/])#', $rangeFile)) {
         $rangeFile = getcwd() . DIRECTORY_SEPARATOR . $rangeFile;
+    }
+    if (!preg_match('#^(/|[A-Za-z]:[\\\\/])#', $signatureFile)) {
+        $signatureFile = getcwd() . DIRECTORY_SEPARATOR . $signatureFile;
     }
 
     $targets  = [];
@@ -576,11 +701,11 @@ if (php_sapi_name() === 'cli') {
         if ($arg === '--incremental') {
             continue;
         }
-        if ($arg === '--mapping' || $arg === '--range') {
+        if ($arg === '--mapping' || $arg === '--range' || $arg === '--signature') {
             $skipNext = true;
             continue;
         }
-        if (strpos($arg, '--mapping=') === 0 || strpos($arg, '--range=') === 0) {
+        if (strpos($arg, '--mapping=') === 0 || strpos($arg, '--range=') === 0 || strpos($arg, '--signature=') === 0) {
             continue;
         }
 
@@ -588,9 +713,9 @@ if (php_sapi_name() === 'cli') {
     }
 
     if (empty($targets)) {
-        die("Usage: php InstrumentationPipeline.php [--incremental] [--mapping mappingFile] [--range rangeFile] <target1> [target2 ...]\n");
+        die("Usage: php InstrumentationPipeline.php [--incremental] [--mapping mappingFile] [--range rangeFile] [--signature signatureFile] <target1> [target2 ...]\n");
     }
 
-    $pipeline = new InstrumentationPipeline($incremental, $mappingFile, $rangeFile);
+    $pipeline = new InstrumentationPipeline($incremental, $mappingFile, $rangeFile, $signatureFile);
     $pipeline->run($targets);
 }
