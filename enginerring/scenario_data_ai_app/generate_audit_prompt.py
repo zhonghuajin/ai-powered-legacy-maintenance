@@ -28,9 +28,12 @@ You are a senior software security audit expert and Java concurrency programming
 The following data comes from real system runtime trace logs, containing the **absolutely authentic and noise-free** execution context for this scenario:
 1. **Trace Sequence**: Linear sequence of basic code blocks (Basic Block) executed by threads.
 2. **Call Tree**: Contains method signatures, source files, executed Block IDs, and **pruned (only actually executed parts) source code**.
-3. **Happens-Before**: Synchronization edges between threads (memory visibility of left operation to right operation).
-4. **Data Races**: Unsynchronized concurrent shared variable access conflicts (read-write or write-write conflicts).
-5. **Taint Flows**: Data/taint propagation paths across or within threads.
+3. **Data Structure of `final-output-calltree.md`**: 
+   - This file contains the threads, files, functions, blocks, and their corresponding code that were actually executed in the Scenario.
+   - The threads, the files appearing within each thread, and the functions within those files have all been strictly sorted according to the chronological order in which they appeared during runtime.
+4. **Happens-Before**: Synchronization edges between threads (memory visibility of left operation to right operation).
+5. **Data Races**: Unsynchronized concurrent shared variable access conflicts (read-write or write-write conflicts).
+6. **Taint Flows**: Data/taint propagation paths across or within threads.
 
 **Important Premise**: The data only contains **actually executed** code. If a piece of code does not appear, it means it was absolutely not executed in this scenario. Please reason entirely based on these factual data, **never fabricate** non-existent code logic.
 

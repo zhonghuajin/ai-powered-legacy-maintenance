@@ -30,8 +30,11 @@ You are a senior software architect and debugging expert. Based on the provided 
 
 The following data comes from real system runtime trace logs. It is a "zero-noise" factual record of the specific execution scenario that triggered the bug. It contains:
 1. **Call Tree**: The exact sequence of executed basic blocks, pruned source code, and method signatures. Unexecuted branches are entirely removed.
-2. **Happens-Before & Data Races (If applicable)**: Explicit synchronization edges and unsynchronized concurrent accesses between threads.
-3. **Important Premise**: Please reason entirely based on this factual data. **Do not guess or fabricate** execution paths. If a piece of code is not in the data, it did not execute.
+2. **Data Structure of `final-output-calltree.md`**: 
+   - This file contains the threads, files, functions, blocks, and their corresponding code that were actually executed in the Scenario.
+   - The threads, the files appearing within each thread, and the functions within those files have all been strictly sorted according to the chronological order in which they appeared during runtime.
+3. **Happens-Before & Data Races (If applicable)**: Explicit synchronization edges and unsynchronized concurrent accesses between threads.
+4. **Important Premise**: Please reason entirely based on this factual data. **Do not guess or fabricate** execution paths. If a piece of code is not in the data, it did not execute.
 
 ### ✅ [Runtime Evidence] Complete Execution Data
 =========================================
@@ -129,6 +132,9 @@ You are a senior software architect and debugging expert. Based on the provided 
 
 The following data comes from real system runtime trace logs. It is a "zero-noise" factual record of the specific execution scenario that triggered the bug. It contains:
 - **Call Tree**: The exact sequence of executed basic blocks, pruned source code, and method signatures. Unexecuted branches are entirely removed.
+- **Data Structure of `final-output-calltree.md`**: 
+  - This file contains the threads, files, functions, blocks, and their corresponding code that were actually executed in the Scenario.
+  - The threads, the files appearing within each thread, and the functions within those files have all been strictly sorted according to the chronological order in which they appeared during runtime.
 - **Important Premise**: Please reason entirely based on this factual data. **Do not guess or fabricate** execution paths. If a piece of code is not in the data, it did not execute.
 
 ### ✅ [Runtime Evidence] Complete Execution Data

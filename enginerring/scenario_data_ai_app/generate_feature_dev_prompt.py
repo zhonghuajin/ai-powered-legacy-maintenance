@@ -30,7 +30,10 @@ You are a senior software architect and code development expert. Based on the ex
 The following data comes from real system runtime trace logs and contains the following core information:
 1. **Trace Sequence**: A linear sequence of basic blocks executed by the thread.
 2. **Call Tree**: Includes method signatures, source files, executed Block IDs, and **pruned source code**.
-3. **Important Premise**: The data only contains code that was **actually executed**. If a piece of code does not appear in the data, it means it was not executed in this scenario. Please reason entirely based on this factual data and **never fabricate** nonexistent code structures.
+3. **Data Structure of `final-output-calltree.md`**: 
+   - This file contains the threads, files, functions, blocks, and their corresponding code that were actually executed in the Scenario.
+   - The threads, the files appearing within each thread, and the functions within those files have all been strictly sorted according to the chronological order in which they appeared during runtime.
+4. **Important Premise**: The data only contains code that was **actually executed**. If a piece of code does not appear in the data, it means it was not executed in this scenario. Please reason entirely based on this factual data and **never fabricate** nonexistent code structures.
 
 ### ✅ [Reference Scenario] Complete Call Chain Data
 =========================================
