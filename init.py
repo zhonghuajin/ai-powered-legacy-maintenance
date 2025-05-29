@@ -192,14 +192,15 @@ def main():
                 "anthropic",
                 "python-dotenv",
                 "aiohttp",
-                "flask"
+                "flask",
+                "requests"
             ],
             env=llm_env,
             check=True
         )
         print(
             "Python dependencies "
-            "(openai<2.0.0, anthropic, python-dotenv, aiohttp, flask) "
+            "(openai<2.0.0, anthropic, python-dotenv, aiohttp, flask, requests) "
             "installed successfully."
         )
     except subprocess.CalledProcessError:
@@ -364,7 +365,6 @@ def main():
             )
             sys.exit(1)
 
-    # ================= 新增步骤 =================
     print("\nStep 8: Executing composer install for PHP data-structuring environment...")
     php_data_structuring_dir = os.path.join(script_dir, "multilingual", "php", "data-structuring")
 
@@ -376,7 +376,7 @@ def main():
     else:
         if not os.path.isdir(php_data_structuring_dir):
             print(
-                f"Error: PHP data-structuring directory not found at {php_data_structuring_dir}", 
+                f"Error: PHP data-structuring directory not found at {php_data_structuring_dir}",
                 file=sys.stderr
             )
             sys.exit(1)
@@ -399,7 +399,6 @@ def main():
                 file=sys.stderr
             )
             sys.exit(1)
-    # ============================================
 
     print(
         "\nStep 9: Executing mvn clean package to build the "
