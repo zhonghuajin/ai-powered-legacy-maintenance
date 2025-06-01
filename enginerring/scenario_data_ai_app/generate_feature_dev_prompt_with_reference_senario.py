@@ -4,7 +4,9 @@
 import os
 import sys
 
-# AI will modify codes
+"""
+AI will modify codes
+"""
 
 # ==========================================
 # 0. Define Global Descriptions (To Avoid Redundancy)
