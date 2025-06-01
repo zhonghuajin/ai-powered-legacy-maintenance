@@ -5,7 +5,18 @@ import subprocess
 import shutil
 from pathlib import Path
 from datetime import datetime
-from .run_instrumentation_flow import run_instrumentation_flow
+
+# Robust import for run_instrumentation_flow to prevent relative import errors
+try:
+    from .run_instrumentation_flow import run_instrumentation_flow
+except ImportError:
+    try:
+        from run_instrumentation_flow import run_instrumentation_flow
+    except ImportError:
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        if current_dir not in sys.path:
+            sys.path.insert(0, current_dir)
+        from run_instrumentation_flow import run_instrumentation_flow
 
 
 def run_cmd(cmd, check=True):
@@ -90,10 +101,19 @@ def get_llm_commit_message(proj_path, status_output, work_dir):
         {status_output}
         """
 
-        ask_llm_dir = os.path.join(work_dir, 'enginerring', 'ask_llm')
-        if ask_llm_dir not in sys.path:
-            sys.path.insert(0, ask_llm_dir)
-        from llm_chat import LLMClient
+        # Ensure the work_dir is in sys.path to resolve the 'enginerring' package correctly
+        if work_dir not in sys.path:
+            sys.path.insert(0, work_dir)
+
+        # Try importing using the absolute package path (same as dependency_injector.py)
+        try:
+            from enginerring.ask_llm.llm_chat import LLMClient
+        except ImportError:
+            # Fallback to direct import if absolute package resolution fails
+            ask_llm_dir = os.path.join(work_dir, 'enginerring', 'ask_llm')
+            if ask_llm_dir not in sys.path:
+                sys.path.insert(0, ask_llm_dir)
+            from llm_chat import LLMClient
 
         provider = os.environ.get('AUTO_SELECTED_LLM_PROVIDER', 'deepseek')
         client = LLMClient(provider=provider)
