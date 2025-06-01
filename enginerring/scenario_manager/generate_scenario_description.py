@@ -19,7 +19,7 @@ from print_utils.utils import Colors, print_color
 
 def _move_scenario_outputs(work_dir: str, proj_path: str):
     """
-    Move final-*.json, final-*.md and scenario_description.json
+    Move final-*.json, final-*.md, execution_flow_with_code.md and scenario_description.json
     to <proj_path>/scenario_data and rename that directory
     using the scenario_id field from scenario_description.json.
     """
@@ -79,6 +79,12 @@ def _move_scenario_outputs(work_dir: str, proj_path: str):
         for file_path in glob.glob(os.path.join(work_dir, pattern)):
             shutil.move(file_path, os.path.join(
                 target_dir, os.path.basename(file_path)))
+
+    # Move execution_flow_with_code.md
+    execution_flow_file = os.path.join(work_dir, 'execution_flow_with_code.md')
+    if os.path.exists(execution_flow_file):
+        shutil.move(execution_flow_file, os.path.join(
+            target_dir, 'execution_flow_with_code.md'))
 
     # Move scenario_description.json
     shutil.move(scenario_desc_path, os.path.join(
