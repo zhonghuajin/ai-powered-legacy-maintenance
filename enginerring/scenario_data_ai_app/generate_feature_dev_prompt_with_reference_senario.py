@@ -7,6 +7,12 @@ import sys
 # AI will modify codes
 
 # ==========================================
+# 0. Define Global Descriptions (To Avoid Redundancy)
+# ==========================================
+CALL_TREE_DESC = "Reflects the runtime appearance order of files, sorted by thread within the current scenario, along with their intra-file function call relationships."
+EXEC_FLOW_DESC = "Reflects the runtime appearance order of functions, sorted and presented by thread within the current scenario, along with their source code."
+
+# ==========================================
 # 1. Define Prompt Template
 # ==========================================
 PROMPT_TEMPLATE = """# Code Secondary Development and Feature Extension Guidance Task
@@ -18,10 +24,10 @@ You are a senior software architect and code development expert. Based on the ex
 ## 📋 Requirement Definition
 
 **🎯 Target New Feature**: 
-{requirement}
+{{requirement}}
 
 **💬 Additional Notes (Optional)**: 
-{additional_info}
+{{additional_info}}
 
 ---
 
@@ -29,21 +35,21 @@ You are a senior software architect and code development expert. Based on the ex
 
 The following data comes from real system runtime trace logs and contains the following core information:
 1. **Trace Sequence**: A linear sequence of basic blocks executed by the thread.
-2. **Call Tree (`final-output-calltree.md`)**: Reflects the runtime appearance order of files, sorted by thread within the current scenario, along with their intra-file function call relationships.
-3. **Execution Flow with Code (`execution_flow_with_code.md`)**: Reflects the runtime appearance order of functions, sorted and presented by thread within the current scenario, along with their source code.
+2. **Call Tree (`final-output-calltree.md`)**: {call_tree_desc}
+3. **Execution Flow with Code (`execution_flow_with_code.md`)**: {exec_flow_desc}
 4. **Important Premise**: The data only contains code that was **actually executed**. If a piece of code does not appear in the data, it means it was not executed in this scenario. Please reason entirely based on this factual data and **never fabricate** nonexistent code structures.
 
 ### ✅ [Reference Scenario] Complete Call Chain Data (Call Tree)
 =========================================
-{trace_data}
+{{trace_data}}
 =========================================
 
 ### 📝 [Reference Scenario] Detailed Execution Flow with Source Code
 =========================================
-{execution_flow_data}
+{{execution_flow_data}}
 =========================================
 
---OTHER_TRACE_DATA--
+{{other_trace_data}}
 ---
 
 ## 🎯 Development Analysis Requirements
@@ -152,8 +158,8 @@ def get_multiline_input(prompt_title, default_val=""):
     return result
 
 
-def prepare_prompt():
-    print("#AI will modify codes")
+def prepare_prompt(proj_path=None): # ✨ [Added] Added optional parameter proj_path to support precise scan scenario
+    print("# AI will modify codes")
     """
     Phase 1: Interactive prompt preparation.
     Collects user inputs before long-running tasks.
@@ -172,9 +178,75 @@ def prepare_prompt():
     # 2. Skip additional notes step
     additional_info = "[No additional notes provided.]"
 
+    # ✨ [Added] Advance interaction for Select Another Scenario for Trace Data
+    other_trace_data_content = ""
+    if proj_path:
+        # proj_path usually follows the structure: work_dir/projects/project_name
+        # we can locate the projects directory via its parent directory
+        projects_dir = os.path.dirname(proj_path)
+        scenarios = []
+        if os.path.exists(projects_dir):
+            for root, dirs, files in os.walk(projects_dir):
+                if 'final-output-calltree.md' in files:
+                    # Exclude the currently running scenario directory itself
+                    if os.path.abspath(root) != os.path.abspath(proj_path):
+                        scenarios.append(root)
+
+        if scenarios:
+            print('\n========================================')
+            print(' Select Another Scenario for Trace Data ')
+            print('========================================')
+            for i, scenario in enumerate(scenarios, 1):
+                rel_path = os.path.relpath(scenario, projects_dir)
+                print(f"  {i}. {rel_path}")
+            print('========================================')
+
+            choice = input(f'Enter your choice to inject reference trace (1-{len(scenarios)}, or press Enter to skip): ').strip()
+            if choice.isdigit() and 1 <= int(choice) <= len(scenarios):
+                selected_scenario_dir = scenarios[int(choice) - 1]
+                trace_file_path = os.path.join(selected_scenario_dir, 'final-output-calltree.md')
+                flow_file_path = os.path.join(selected_scenario_dir, 'execution_flow_with_code.md')
+
+                try:
+                    # 1. Read call tree data
+                    with open(trace_file_path, 'r', encoding='utf-8') as tf:
+                        trace_data = tf.read()
+
+                    # 2. Read execution flow data (if exists)
+                    flow_data = ""
+                    if os.path.exists(flow_file_path):
+                        try:
+                            with open(flow_file_path, 'r', encoding='utf-8') as ff:
+                                flow_data = ff.read()
+                        except Exception as fe:
+                            print(f"[!] Failed to read execution flow from reference scenario: {fe}")
+
+                    other_trace_data_header = f"\n\n=========================================\n### Trace Data from Other Scenario: {os.path.basename(selected_scenario_dir)}\n> **Note**: This is runtime data from another scenario and may be helpful as a reference for the current implementation requirements.\n=========================================\n"
+                    
+                    # Append call tree data (using global constant CALL_TREE_DESC)
+                    other_trace_data_content = other_trace_data_header + f"#### Call Tree. {CALL_TREE_DESC}:\n" + trace_data
+                    
+                    # ✨ [Modified] Inject execution_flow_with_code.md data from the same directory (using global constant EXEC_FLOW_DESC)
+                    if flow_data:
+                        other_trace_data_content += f"\n\n#### Execution Flow with Code. {EXEC_FLOW_DESC}:\n" + flow_data
+                    else:
+                        other_trace_data_content += "\n\n#### Execution Flow with Code:\n[No execution flow with code data found in this scenario.]"
+
+                    reference_note = "\n=========================================\n"
+                    other_trace_data_content += reference_note
+                    
+                    print(f"[+] Successfully scheduled reference trace data and execution flow from {os.path.basename(selected_scenario_dir)} for injection.")
+                except Exception as e:
+                    print(f"[!] Failed to read trace data from reference scenario: {e}")
+            else:
+                print('[!] Skipping reference trace data injection.')
+        else:
+            print('[Info] No other reference scenarios found in projects directory.')
+
     return {
         "requirement": requirement,
-        "additional_info": additional_info
+        "additional_info": additional_info,
+        "other_trace_data": other_trace_data_content # ✨ [Added] Store in context and pass to Phase 2
     }
 
 
@@ -187,6 +259,12 @@ def generate_prompt_with_context(cli_file_path, context):
 
     requirement = context.get("requirement", "")
     additional_info = context.get("additional_info", "")
+    # ✨ [Added] Extract reference trace data pre-selected in Phase 1 from context
+    other_trace_data = context.get("other_trace_data", "")
+
+    # Fallback to empty string if context does not contain it
+    if not other_trace_data:
+        other_trace_data = ""
 
     # 3. Read trace data file
     trace_data = ""
@@ -245,12 +323,18 @@ def generate_prompt_with_context(cli_file_path, context):
             print(f"❌ Failed to read file: {e}")
             continue
 
-    # 4. Assemble the final prompt
-    final_prompt = PROMPT_TEMPLATE.format(
+    # 4. Assemble the final prompt (formatting global descriptions dynamically)
+    formatted_template = PROMPT_TEMPLATE.format(
+        call_tree_desc=CALL_TREE_DESC,
+        exec_flow_desc=EXEC_FLOW_DESC
+    )
+    
+    final_prompt = formatted_template.format(
         requirement=requirement,
         additional_info=additional_info,
         trace_data=trace_data,
-        execution_flow_data=execution_flow_data
+        execution_flow_data=execution_flow_data,
+        other_trace_data=other_trace_data # Fill in reference trace data
     )
 
     # 5. Write to file

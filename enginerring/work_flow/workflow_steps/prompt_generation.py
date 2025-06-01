@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import importlib
+import inspect
 from print_utils.utils import Colors, print_color
 from .common import get_single_char
 
@@ -108,7 +109,16 @@ def prepare_ai_prompt_interactive(work_dir, selected_script, proj_path=None, sav
         importlib.reload(module)
 
         if hasattr(module, 'prepare_prompt'):
-            prompt_context = module.prepare_prompt()
+            prepare_func = getattr(module, 'prepare_prompt')
+            sig = inspect.signature(prepare_func)
+
+            # Dynamically detect if prepare_prompt supports proj_path parameter
+            if 'proj_path' in sig.parameters:
+                print_color(f"[Info] Passing proj_path to {selected_script}'s prepare_prompt.", Colors.GREEN)
+                prompt_context = prepare_func(proj_path=proj_path)
+            else:
+                print_color(f"[Info] {selected_script}'s prepare_prompt does not accept proj_path. Calling without it.", Colors.GREEN)
+                prompt_context = prepare_func()
 
             if prompt_context and save_context:
                 target_dir = proj_path if proj_path else work_dir
@@ -132,73 +142,9 @@ def prepare_ai_prompt_interactive(work_dir, selected_script, proj_path=None, sav
     return prompt_context
 
 def _post_process_other_trace_data(work_dir, selected_script):
-    if not selected_script:
-        return
-
-    script_path = os.path.join(work_dir, "enginerring", "scenario_data_ai_app", selected_script)
-
-    try:
-        with open(script_path, 'r', encoding='utf-8') as f:
-            script_content = f.read()
-    except Exception as e:
-        print_color(f'[WARN] Could not read selected script {selected_script}: {e}', Colors.YELLOW)
-        return
-
-    if '--OTHER_TRACE_DATA--' in script_content:
-        print_color('\n[!] Detected --OTHER_TRACE_DATA-- placeholder in the selected script. Need to inject trace data from another scenario.', Colors.YELLOW)
-
-        projects_dir = os.path.join(work_dir, 'projects')
-        scenarios = []
-        if os.path.exists(projects_dir):
-            for root, dirs, files in os.walk(projects_dir):
-                if 'final-output-calltree.md' in files:
-                    scenarios.append(root)
-
-        if not scenarios:
-            print_color('[WARN] No scenarios found with final-output-calltree.md.', Colors.RED)
-            return
-
-        print_color('\n========================================', Colors.CYAN)
-        print_color(' Select Another Scenario for Trace Data ', Colors.CYAN)
-        print_color('========================================', Colors.CYAN)
-        for i, scenario in enumerate(scenarios, 1):
-            rel_path = os.path.relpath(scenario, projects_dir)
-            print(f"  {i}. {rel_path}")
-        print_color('========================================', Colors.CYAN)
-
-        choice = input(f'Enter your choice (1-{len(scenarios)}): ').strip()
-        if choice.isdigit() and 1 <= int(choice) <= len(scenarios):
-            selected_scenario_dir = scenarios[int(choice) - 1]
-            trace_file_path = os.path.join(selected_scenario_dir, 'final-output-calltree.md')
-
-            try:
-                with open(trace_file_path, 'r', encoding='utf-8') as tf:
-                    trace_data = tf.read()
-
-                other_trace_data_header = f"\n\n=========================================\n### Trace Data from Other Scenario: {os.path.basename(selected_scenario_dir)}\n=========================================\n"
-                reference_note = "\n\n> **Note**: This is runtime data from another scenario and may be helpful as a reference for the current implementation requirements.\n=========================================\n"
-                replacement = other_trace_data_header + trace_data + reference_note
-
-                prompt_file = os.path.join(work_dir, 'AI_Task_Prompt.md')
-
-                if not os.path.exists(prompt_file):
-                    raise FileNotFoundError(f"Expected prompt file not found: {prompt_file}")
-
-                try:
-                    with open(prompt_file, 'r', encoding='utf-8') as f:
-                        content = f.read()
-
-                    if '--OTHER_TRACE_DATA--' in content:
-                        new_content = content.replace('--OTHER_TRACE_DATA--', replacement)
-                        with open(prompt_file, 'w', encoding='utf-8') as f:
-                            f.write(new_content)
-                        print_color(f'[+] Successfully injected trace data from {os.path.basename(selected_scenario_dir)} into {os.path.basename(prompt_file)}', Colors.GREEN)
-                except Exception as e:
-                    print_color(f'[!] Failed to process {os.path.basename(prompt_file)}: {e}', Colors.RED)
-            except Exception as e:
-                print_color(f'[!] Failed to read trace data or process prompt file: {e}', Colors.RED)
-        else:
-            print_color('[!] Invalid choice, skipping trace data injection.', Colors.YELLOW)
+    # Kept empty or as compatibility fallback for legacy scripts.
+    # Scripts that have been moved to the prepare_prompt phase will no longer trigger interaction here.
+    pass
 
 def execute_ai_prompt(work_dir, selected_script, prompt_context=None):
     if not selected_script:
@@ -232,10 +178,11 @@ def execute_ai_prompt(work_dir, selected_script, prompt_context=None):
 
         if hasattr(module, 'generate_prompt_with_context'):
             module.generate_prompt_with_context(selected_calltree_path, prompt_context)
-            _post_process_other_trace_data(work_dir, selected_script)
+            # Removed _post_process_other_trace_data(work_dir, selected_script) to avoid duplicate interactive prompts
             return selected_script
         elif hasattr(module, 'generate_prompt'):
             module.generate_prompt(selected_calltree_path)
+            # For legacy scripts that don't support context, keep the original post-processing as fallback
             _post_process_other_trace_data(work_dir, selected_script)
             return selected_script
         else:

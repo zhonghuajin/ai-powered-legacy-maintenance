@@ -151,7 +151,7 @@ def get_multiline_input(prompt_title, default_val=""):
 
 
 def prepare_prompt():
-    print("#AI will modify codes")
+    print("# AI will modify codes")
     """
     Phase 1: Interactive prompt preparation.
     Collects user inputs before long-running tasks.
