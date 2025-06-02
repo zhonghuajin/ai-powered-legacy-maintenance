@@ -6,9 +6,12 @@ const generate = require('@babel/generator').default;
 const t = require('@babel/types');
 
 class InstrumentationPipeline {
-    constructor(isIncremental, mappingFile) {
+    constructor(isIncremental, mappingFile, rangeFile, signatureFile) {
         this.isIncremental = isIncremental;
         this.mappingFile = mappingFile;
+        this.rangeFile = rangeFile;
+        this.signatureFile = signatureFile;
+
         this.idToComment = new Map();
         this.commentToId = new Map();
         this.nextId = 1;
@@ -16,9 +19,20 @@ class InstrumentationPipeline {
         this.instrumentFunctionName = 'window.staining';
     }
 
+    /**
+     * 辅助函数：生成增量文件路径 (例如 path/to/file.txt -> path/to/file.incremental.txt)
+     */
+    getIncrementalPath(filePath) {
+        const dir = path.dirname(filePath);
+        const ext = path.extname(filePath);
+        const basename = path.basename(filePath, ext);
+        return path.join(dir, `${basename}.incremental${ext}`);
+    }
+
     run(targets) {
-        if (this.isIncremental && !fs.existsSync(this.mappingFile)) {
-            console.warn("Warning: mapping file not found, falling back to full mode.");
+        // 如果在增量模式下缺少任何一个映射文件，则回退到全量模式
+        if (this.isIncremental && (!fs.existsSync(this.mappingFile) || !fs.existsSync(this.rangeFile) || !fs.existsSync(this.signatureFile))) {
+            console.warn("Warning: mapping, range or signature file not found, falling back to full mode.");
             this.isIncremental = false;
         }
 
@@ -31,26 +45,41 @@ class InstrumentationPipeline {
             process.exit(1);
         }
 
+        // 1. 加载已有的映射关系（增量模式下）
         this.loadMapping(files);
 
+        // 2. 插桩并收集函数/方法行范围
+        console.log(">> Step: Code Instrumentation & Range Collection");
+        const allRanges = new Map(); // filePath -> ranges[]
         let totalActivated = 0;
+
         for (const file of files) {
-            const activatedCount = this.instrumentFile(file);
+            const { activatedCount, ranges } = this.instrumentAndCollectRanges(file);
             totalActivated += activatedCount;
+            allRanges.set(file, ranges);
         }
 
+        // 3. 更新方法范围文件 (method-range.txt)
+        console.log(">> Step: Updating Method Ranges");
+        this.updateMethodRanges(allRanges);
+
+        // 4. 保存 ID 映射文件 (block-line-mapping.txt)
+        console.log(">> Step: Encoding Mapping");
         this.saveMapping();
+
+        // 5. 生成 Block ID 到函数签名的映射 (block-signature.txt)
+        console.log(">> Step: Generating Block to Signature Mapping");
+        this.generateBlockSignatures();
 
         console.log(`   Activated ${totalActivated} instrumentation points.`);
         console.log("=== Pipeline complete ===");
     }
 
-    instrumentFile(filePath) {
+    instrumentAndCollectRanges(filePath) {
         const code = fs.readFileSync(filePath, 'utf-8');
         let ast;
 
         try {
-
             ast = parser.parse(code, {
                 sourceType: 'module',
                 plugins: [
@@ -61,14 +90,62 @@ class InstrumentationPipeline {
             });
         } catch (error) {
             console.error(`Parse error in ${filePath}: ${error.message}`);
-            return 0;
+            return { activatedCount: 0, ranges: [] };
         }
 
         let fileActivatedCount = 0;
         const self = this;
+        const ranges = [];
 
         traverse(ast, {
+            // 收集函数/方法范围
+            FunctionDeclaration(p) {
+                const name = p.node.id ? p.node.id.name : 'anonymous';
+                ranges.push({
+                    name: name,
+                    start: p.node.loc.start.line,
+                    end: p.node.loc.end.line
+                });
+            },
+            ClassMethod(p) {
+                let className = 'anonymous';
+                const classParent = p.findParent(parent => parent.isClassDeclaration() || parent.isClassExpression());
+                if (classParent && classParent.node.id) {
+                    className = classParent.node.id.name;
+                }
+                const methodName = p.node.key.name || 'anonymous';
+                ranges.push({
+                    name: `${className}::${methodName}`,
+                    start: p.node.loc.start.line,
+                    end: p.node.loc.end.line
+                });
+            },
+            ArrowFunctionExpression(p) {
+                let name = 'anonymous';
+                if (p.parentPath.isVariableDeclarator()) {
+                    name = p.parentPath.node.id.name;
+                }
+                ranges.push({
+                    name: name,
+                    start: p.node.loc.start.line,
+                    end: p.node.loc.end.line
+                });
+            },
+            FunctionExpression(p) {
+                let name = 'anonymous';
+                if (p.parentPath.isVariableDeclarator()) {
+                    name = p.parentPath.node.id.name;
+                } else if (p.node.id) {
+                    name = p.node.id.name;
+                }
+                ranges.push({
+                    name: name,
+                    start: p.node.loc.start.line,
+                    end: p.node.loc.end.line
+                });
+            },
 
+            // 插桩逻辑：在每一个 BlockStatement 开头插入 window.staining(id)
             BlockStatement(pathNode) {
                 const line = pathNode.node.loc.start.line;
                 if (line <= 0) return;
@@ -98,12 +175,165 @@ class InstrumentationPipeline {
         });
 
         if (fileActivatedCount > 0) {
-
             const output = generate(ast, {}, code);
             fs.writeFileSync(filePath, output.code, 'utf-8');
         }
 
-        return fileActivatedCount;
+        return { activatedCount: fileActivatedCount, ranges };
+    }
+
+    /**
+     * 更新并保存 method-range.txt
+     */
+    updateMethodRanges(allRanges) {
+        const targetRanges = [];
+
+        for (const [file, ranges] of allRanges.entries()) {
+            for (const range of ranges) {
+                targetRanges.push({
+                    file,
+                    name: range.name,
+                    start: range.start,
+                    end: range.end
+                });
+            }
+        }
+
+        // 排序以保持输出稳定性
+        targetRanges.sort((a, b) => {
+            const fileCmp = a.file.localeCompare(b.file);
+            if (fileCmp !== 0) return fileCmp;
+            return a.start - b.start;
+        });
+
+        const outputFile = this.isIncremental ? this.getIncrementalPath(this.rangeFile) : this.rangeFile;
+        this.writeRangeFile(outputFile, targetRanges);
+        console.log(`   Method ranges saved to ${outputFile} (Total: ${targetRanges.length} entries)`);
+    }
+
+    writeRangeFile(filePath, ranges) {
+        const lines = [
+            "# ================================================",
+            "# Method Line Range Mapping Table",
+            `# Generation Time: ${new Date().toISOString()}`,
+            `# Total Entries: ${ranges.length}`,
+            "# ================================================",
+            "# Format: File Absolute Path | Method Name = Start Line-End Line",
+            "# Note: This mapping needs to be regenerated after source code modifications and re-instrumentation.",
+            ""
+        ];
+
+        for (const entry of ranges) {
+            lines.push(`${entry.file} | ${entry.name} = ${entry.start}-${entry.end}`);
+        }
+
+        const dir = path.dirname(filePath);
+        if (dir && !fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        fs.writeFileSync(filePath, lines.join('\n') + '\n', 'utf-8');
+    }
+
+    /**
+     * 加载现有的 ranges 文件（解析辅助函数）
+     */
+    loadRawRanges(filePath) {
+        const result = [];
+        if (!fs.existsSync(filePath)) return result;
+
+        const lines = fs.readFileSync(filePath, 'utf-8').split('\n');
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#')) continue;
+
+            // 格式: File Absolute Path | Method Name = Start Line-End Line
+            const match = trimmed.match(/^(.+?)\s*\|\s*(.+?)\s*=\s*(\d+)-(\d+)$/);
+            if (match) {
+                result.push({
+                    file: match[1].trim(),
+                    name: match[2].trim(),
+                    start: parseInt(match[3], 10),
+                    end: parseInt(match[4], 10)
+                });
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 生成 Block ID -> Method Signature 映射表并保存到 block-signature.txt
+     */
+    generateBlockSignatures() {
+        const blockToSignature = new Map();
+
+        const mappingToLoad = this.isIncremental ? this.getIncrementalPath(this.mappingFile) : this.mappingFile;
+        const rangesToLoad = this.isIncremental ? this.getIncrementalPath(this.rangeFile) : this.rangeFile;
+
+        const commentMap = this.loadRawMapping(mappingToLoad);
+        const ranges = this.loadRawRanges(rangesToLoad);
+
+        // 按文件路径对 ranges 进行分组以提高检索效率
+        const rangesByFile = new Map();
+        for (const range of ranges) {
+            if (!rangesByFile.has(range.file)) {
+                rangesByFile.set(range.file, []);
+            }
+            rangesByFile.get(range.file).push(range);
+        }
+
+        for (const [id, comment] of commentMap.entries()) {
+            const filePath = this.extractFilePath(comment);
+            const line = this.extractLineFromComment(comment);
+
+            if (!filePath || line === null) continue;
+
+            let matchedSignature = '[Global]'; // 默认在全局作用域
+            const fileRanges = rangesByFile.get(filePath);
+
+            if (fileRanges) {
+                for (const range of fileRanges) {
+                    if (line >= range.start && line <= range.end) {
+                        matchedSignature = range.name;
+                        break; // 匹配到最内层的函数范围
+                    }
+                }
+            }
+            blockToSignature.set(id, matchedSignature);
+        }
+
+        const outputFile = this.isIncremental ? this.getIncrementalPath(this.signatureFile) : this.signatureFile;
+        this.writeSignatureFile(outputFile, blockToSignature);
+        console.log(`   Block signatures saved to ${outputFile} (Total: ${blockToSignature.size} entries)`);
+    }
+
+    writeSignatureFile(filePath, signatures) {
+        const lines = [
+            "# ================================================",
+            "# Block ID -> Method Signature Mapping Table",
+            `# Generation Time: ${new Date().toISOString()}`,
+            `# Total Entries: ${signatures.size}`,
+            "# ================================================",
+            "# Format: Block ID = Method Signature",
+            "# Note: This mapping needs to be regenerated after source code modifications and re-instrumentation.",
+            ""
+        ];
+
+        const sortedIds = Array.from(signatures.keys()).sort((a, b) => a - b);
+        for (const id of sortedIds) {
+            lines.push(`${id} = ${signatures.get(id)}`);
+        }
+
+        const dir = path.dirname(filePath);
+        if (dir && !fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        fs.writeFileSync(filePath, lines.join('\n') + '\n', 'utf-8');
+    }
+
+    extractLineFromComment(comment) {
+        const lastColon = comment.lastIndexOf(':');
+        if (lastColon <= 0) return null;
+        return parseInt(comment.substring(lastColon + 1), 10);
     }
 
     loadMapping(targetFiles) {
@@ -112,8 +342,30 @@ class InstrumentationPipeline {
         }
 
         const targetFileSet = new Set(targetFiles);
-        const lines = fs.readFileSync(this.mappingFile, 'utf-8').split('\n');
+        const rawMap = this.loadRawMapping(this.mappingFile);
 
+        for (const [id, comment] of rawMap.entries()) {
+            const filePath = this.extractFilePath(comment);
+
+            // 如果是当前正在处理的目标文件，在增量模式下我们会重新分配/覆盖，跳过加载
+            if (filePath && targetFileSet.has(filePath)) {
+                continue;
+            }
+
+            this.idToComment.set(id, comment);
+            this.commentToId.set(comment, id);
+        }
+
+        if (this.idToComment.size > 0) {
+            this.nextId = Math.max(...Array.from(this.idToComment.keys())) + 1;
+        }
+    }
+
+    loadRawMapping(filePath) {
+        const result = new Map();
+        if (!fs.existsSync(filePath)) return result;
+
+        const lines = fs.readFileSync(filePath, 'utf-8').split('\n');
         for (const line of lines) {
             const trimmed = line.trim();
             if (!trimmed || trimmed.startsWith('#')) continue;
@@ -122,23 +374,14 @@ class InstrumentationPipeline {
             if (match) {
                 const id = parseInt(match[1], 10);
                 const comment = match[2].trim();
-                const filePath = this.extractFilePath(comment);
-
-                if (filePath && targetFileSet.has(filePath)) {
-                    continue;
-                }
-
-                this.idToComment.set(id, comment);
-                this.commentToId.set(comment, id);
+                result.set(id, comment);
             }
         }
-
-        if (this.idToComment.size > 0) {
-            this.nextId = Math.max(...Array.from(this.idToComment.keys())) + 1;
-        }
+        return result;
     }
 
     saveMapping() {
+        const outputFile = this.isIncremental ? this.getIncrementalPath(this.mappingFile) : this.mappingFile;
         const lines = [
             "# ================================================",
             "# Instrumentation Comment -> Integer ID Mapping Table",
@@ -154,13 +397,13 @@ class InstrumentationPipeline {
             lines.push(`${id} = ${this.idToComment.get(id)}`);
         }
 
-        const dir = path.dirname(this.mappingFile);
+        const dir = path.dirname(outputFile);
         if (dir && !fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
         }
 
-        fs.writeFileSync(this.mappingFile, lines.join('\n') + '\n', 'utf-8');
-        console.log(`   Mapping saved to ${this.mappingFile} (Total: ${this.idToComment.size})`);
+        fs.writeFileSync(outputFile, lines.join('\n') + '\n', 'utf-8');
+        console.log(`   Mapping saved to ${outputFile} (Total: ${this.idToComment.size})`);
     }
 
     extractFilePath(comment) {
@@ -205,6 +448,8 @@ if (require.main === module) {
     const args = process.argv.slice(2);
     let isIncremental = false;
     let mappingFile = path.resolve(process.cwd(), 'block-line-mapping.txt');
+    let rangeFile = path.resolve(process.cwd(), 'method-range.txt');
+    let signatureFile = path.resolve(process.cwd(), 'block-signature.txt');
     const targets = [];
 
     for (let i = 0; i < args.length; i++) {
@@ -215,16 +460,24 @@ if (require.main === module) {
             mappingFile = path.resolve(process.cwd(), args[++i]);
         } else if (arg.startsWith('--mapping=')) {
             mappingFile = path.resolve(process.cwd(), arg.split('=')[1]);
+        } else if (arg === '--range') {
+            rangeFile = path.resolve(process.cwd(), args[++i]);
+        } else if (arg.startsWith('--range=')) {
+            rangeFile = path.resolve(process.cwd(), arg.split('=')[1]);
+        } else if (arg === '--signature') {
+            signatureFile = path.resolve(process.cwd(), args[++i]);
+        } else if (arg.startsWith('--signature=')) {
+            signatureFile = path.resolve(process.cwd(), arg.split('=')[1]);
         } else {
             targets.push(arg);
         }
     }
 
     if (targets.length === 0) {
-        console.error("Usage: node instrument.js [--incremental] [--mapping mappingFile] <target1> [target2 ...]");
+        console.error("Usage: node instrument.js [--incremental] [--mapping mappingFile] [--range rangeFile] [--signature signatureFile] <target1> [target2 ...]");
         process.exit(1);
     }
 
-    const pipeline = new InstrumentationPipeline(isIncremental, mappingFile);
+    const pipeline = new InstrumentationPipeline(isIncremental, mappingFile, rangeFile, signatureFile);
     pipeline.run(targets);
 }
