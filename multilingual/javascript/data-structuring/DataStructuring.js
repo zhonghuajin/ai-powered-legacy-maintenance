@@ -100,7 +100,10 @@ function analyzeFile(filePath, code, relativePath) {
       rawCalls.set(nodeObj, callsInMethod);
     },
 
-    FunctionDeclaration(astPath) {
+    "FunctionDeclaration|FunctionExpression"(astPath) {
+
+      if (astPath.closestParent && astPath.closestParent(p => p.isClassMethod())) return;
+
       const methodName = astPath.node.id ? astPath.node.id.name : 'anonymous';
       if (!astPath.node.body || astPath.node.body.body.length === 0) return;
 
@@ -122,6 +125,10 @@ function analyzeFile(filePath, code, relativePath) {
 
 function collectCalls(bodyPath, calls) {
   bodyPath.traverse({
+
+    "FunctionDeclaration|FunctionExpression|ClassMethod"(childPath) {
+      childPath.skip();
+    },
     CallExpression(childPath) {
       const callee = childPath.node.callee;
       const argCount = childPath.node.arguments.length;
