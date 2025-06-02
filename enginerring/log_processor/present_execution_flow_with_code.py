@@ -5,16 +5,20 @@ import argparse
 __all__ = ['generate_flow_report']
 
 def parse_calltree(filepath):
-    """
-    Parse final-output-calltree.md to extract method signatures and their corresponding source code
-    """
     code_map = {}
+    detected_lang = "php"
+
     if not os.path.exists(filepath):
         print(f"[-] Error: Cannot find calltree file: {filepath}")
-        return code_map
+        return code_map, detected_lang
 
     with open(filepath, 'r', encoding='utf-8') as f:
         content = f.read()
+
+    lang_detect_match = re.search(r'```([a-zA-Z0-9_-]+)\n', content)
+    if lang_detect_match:
+        detected_lang = lang_detect_match.group(1).strip()
+        print(f"[+] Detected programming language in calltree: {detected_lang}")
 
     method_header_re = re.compile(r'-\s+\*\*Method:\*\*\s+`([^`]+)`')
 
@@ -27,25 +31,31 @@ def parse_calltree(filepath):
         sig = match.group(1).strip()
         start_idx = match.end()
 
-        code_start = content.find("```php", start_idx)
         next_match = method_header_re.search(content, start_idx)
+        limit = next_match.start() if next_match else len(content)
 
-        if next_match and (code_start == -1 or next_match.start() < code_start):
-            pos = start_idx
-            continue
+        code_block_re = re.compile(rf'```{detected_lang}\s*\n(.*?)\n\s*```', re.DOTALL)
+        code_match = code_block_re.search(content, start_idx, limit)
 
-        if code_start != -1:
-            code_end = content.find("```", code_start + 6)
-            if code_end != -1:
-                code_text = content[code_start + 6:code_end].strip()
-                code_map[sig] = code_text
-                pos = code_end + 3
-            else:
-                pos = start_idx
+        if code_match:
+            code_text = code_match.group(1).strip()
+            code_map[sig] = code_text
+            pos = code_match.end()
         else:
             pos = start_idx
 
-    return code_map
+    return code_map, detected_lang
+
+def find_best_code_match(signature, code_map):
+    if signature in code_map:
+        return code_map[signature]
+
+    for key, code in code_map.items():
+        clean_key = key.replace("global::", "")
+        if clean_key == signature:
+            return code
+
+    return None
 
 def generate_flow_report(signature_file, calltree_file, output_file):
     """
@@ -56,7 +66,7 @@ def generate_flow_report(signature_file, calltree_file, output_file):
         return
 
     print("[+] Start parsing calltree source code...")
-    code_map = parse_calltree(calltree_file)
+    code_map, detected_lang = parse_calltree(calltree_file)
     print(f"[+] Successfully extracted source code for {len(code_map)} methods.")
 
     print("[+] Start matching execution order and generating report...")
@@ -83,13 +93,14 @@ def generate_flow_report(signature_file, calltree_file, output_file):
         markdown_lines.append(f"## Step {step}: `{signature}`")
         markdown_lines.append(f"- **File Path:** `{file_path}`\n")
 
-        if signature in code_map:
-            code = code_map[signature]
-            markdown_lines.append("```php")
+        code = find_best_code_match(signature, code_map)
+
+        if code:
+            markdown_lines.append(f"```{detected_lang}")
             markdown_lines.append(code)
             markdown_lines.append("```\n")
         else:
-            markdown_lines.append("```php")
+            markdown_lines.append(f"```{detected_lang}")
             markdown_lines.append(f"// Source code not found in calltree (e.g., default constructor or external call)")
             markdown_lines.append("```\n")
 
