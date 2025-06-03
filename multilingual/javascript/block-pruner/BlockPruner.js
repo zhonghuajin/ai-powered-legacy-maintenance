@@ -140,14 +140,33 @@ class BlockPruner {
     }
 
     static pruneUnexecutedBlocks(ast, unexecutedLines) {
-        if (Object.keys(unexecutedLines).length === 0) return 0;
-
         const unexecutedBlocks = [];
 
         traverse(ast, {
             enter(path) {
                 const node = path.node;
                 if (!node.loc) return;
+
+                const isAnyFunctionOrSignature =
+                    t.isFunction(node) ||
+                    t.isTSDeclareFunction(node) ||
+                    t.isTSMethodSignature(node) ||
+                    t.isTSConstructSignatureDeclaration(node) ||
+                    t.isTSCallSignatureDeclaration(node) ||
+                    t.isTSDeclareMethod(node);
+
+                if (isAnyFunctionOrSignature) {
+                    const startLine = node.loc.start.line;
+                    const commentValue = ` line: ${startLine} `;
+
+                    const hasLineComment = (node.leadingComments || []).some(
+                        c => c.value.trim() === `line: ${startLine}`
+                    );
+
+                    if (!hasLineComment) {
+                        t.addComment(node, 'leading', commentValue, true);
+                    }
+                }
 
                 if (t.isBlockStatement(node) || t.isProgram(node)) {
                     const startLine = node.loc.start.line;
@@ -172,7 +191,7 @@ class BlockPruner {
         }
 
         return prunedCount;
-    }
+    }    
 
     static parseCommentMapping(file) {
         const map = {};

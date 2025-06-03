@@ -41,10 +41,18 @@ function getJsFilesRecursively(dir) {
   return results;
 }
 
-/**
- * MUST stay byte-for-byte equivalent to InstrumentationPipeline.computeFunctionName,
- * otherwise the signatures produced here will not match signature_order.txt.
- */
+function getOriginalLine(node) {
+  if (node.leadingComments && node.leadingComments.length > 0) {
+    for (const comment of node.leadingComments) {
+      const match = comment.value.match(/line:\s*(\d+)/);
+      if (match) {
+        return parseInt(match[1], 10);
+      }
+    }
+  }
+  return node.loc ? node.loc.start.line : 0;
+}
+
 function computeFunctionName(p) {
   const node = p.node;
 
@@ -89,22 +97,18 @@ function computeFunctionName(p) {
   return 'anonymous';
 }
 
-/**
- * MUST match InstrumentationPipeline.buildRangeName.
- */
-function buildRangeName(baseName, node) {
-  const line = node.loc ? node.loc.start.line : 0;
-  return `${baseName}@${line}`;
+function buildRangeName(baseName, originalLine) {
+  return `${baseName}@${originalLine}`;
 }
 
 function analyzeFile(filePath, code, absPath) {
   let ast;
   try {
-    // Plugins kept identical to the instrumentation pipeline so that both tools
-    // parse the same constructs and therefore agree on node positions / names.
+
     ast = parser.parse(code, {
       sourceType: 'module',
-      plugins: ['jsx', 'typescript', 'decorators-legacy']
+      plugins: ['jsx', 'typescript', 'decorators-legacy'],
+      attachComment: true
     });
   } catch (err) {
     console.error(`[ERROR] Cannot parse file AST: ${filePath}`, err.message);
@@ -113,16 +117,13 @@ function analyzeFile(filePath, code, absPath) {
 
   const methods = [];
 
-  const pushMethod = (signature, node) => {
+  const pushMethod = (signature, node, originalLine) => {
     const paramCount = node.params ? node.params.length : 0;
     const sourceCode = code.slice(node.start, node.end);
-    const startLine = node.loc ? node.loc.start.line : 0;
 
-    const nodeObj = new MethodNode(signature, paramCount, sourceCode, absPath, startLine);
+    const nodeObj = new MethodNode(signature, paramCount, sourceCode, absPath, originalLine);
     methods.push(nodeObj);
 
-    // Collect a flat list of calls for documentation purposes only;
-    // it does not influence signature matching.
     const callsInMethod = [];
     collectCalls(node, ast, callsInMethod);
     nodeObj.calls = callsInMethod;
@@ -132,7 +133,8 @@ function analyzeFile(filePath, code, absPath) {
 
     FunctionDeclaration(p) {
       const name = p.node.id ? p.node.id.name : 'anonymous';
-      pushMethod(buildRangeName(name, p.node), p.node);
+      const origLine = getOriginalLine(p.node);
+      pushMethod(buildRangeName(name, origLine), p.node, origLine);
     },
 
     ClassMethod(p) {
@@ -142,33 +144,33 @@ function analyzeFile(filePath, code, absPath) {
         className = classParent.node.id.name;
       }
       const methodName = p.node.key.name || 'anonymous';
-      // ClassMethod has NO @line suffix, exactly like the pipeline.
-      pushMethod(`${className}::${methodName}`, p.node);
+      const origLine = getOriginalLine(p.node);
+
+      pushMethod(`${className}::${methodName}`, p.node, origLine);
     },
 
     ObjectMethod(p) {
       const methodName = (p.node.key && (p.node.key.name || p.node.key.value)) || 'anonymous';
-      pushMethod(buildRangeName(methodName, p.node), p.node);
+      const origLine = getOriginalLine(p.node);
+      pushMethod(buildRangeName(methodName, origLine), p.node, origLine);
     },
 
     ArrowFunctionExpression(p) {
       const name = computeFunctionName(p);
-      pushMethod(buildRangeName(name, p.node), p.node);
+      const origLine = getOriginalLine(p.node);
+      pushMethod(buildRangeName(name, origLine), p.node, origLine);
     },
 
     FunctionExpression(p) {
       const name = computeFunctionName(p);
-      pushMethod(buildRangeName(name, p.node), p.node);
+      const origLine = getOriginalLine(p.node);
+      pushMethod(buildRangeName(name, origLine), p.node, origLine);
     }
   });
 
   return methods;
 }
 
-/**
- * Collect direct call expressions inside the given function node, without
- * descending into nested functions.
- */
 function collectCalls(functionNode, ast, calls) {
   let bodyPath = null;
 
@@ -214,7 +216,7 @@ function renderMethod(node) {
 
   md += `- **Method:** \`${node.signature}\` (Params: ${node.paramCount})\n`;
   md += `- **File Path:** \`${node.filePath}\`\n`;
-  md += `- **Line:** \`${node.startLine}\`\n\n`;
+  md += `- **Original Line:** \`${node.startLine}\`\n\n`;
 
   if (node.sourceCode) {
     const source = node.sourceCode.trim();
@@ -245,6 +247,7 @@ function generateMarkdown(inputDir, outputPath) {
   md += '> **Description & Legend:**\n';
   md += '> This document lists every function/method extracted via AST analysis.\n';
   md += '> - Each method is emitted with a signature identical to the instrumentation pipeline (`name@line`, or `Class::method`).\n';
+  md += '> - The line numbers and signatures are mapped back to the **original source code** using the injected comments.\n';
   md += '> - `*Calls:*` lists direct call expressions for reference only; it does not affect signature matching.\n\n';
 
   const items = fs.readdirSync(inputDir);
@@ -273,9 +276,7 @@ function generateMarkdown(inputDir, outputPath) {
     thread.files.forEach(filePath => {
       const code = fs.readFileSync(filePath, 'utf-8');
       const relativePath = path.relative(thread.itemPath, filePath).replace(/\\/g, '/');
-      // Absolute path so the downstream report can attempt a (file + signature)
-      // match; if the path format differs from signature_order.txt it will fall
-      // back to signature-only matching.
+
       const absPath = path.resolve(filePath);
 
       const methods = analyzeFile(filePath, code, absPath);
