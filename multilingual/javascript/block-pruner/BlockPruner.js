@@ -167,11 +167,33 @@ class BlockPruner {
                         t.addComment(node, 'leading', commentValue, true);
                     }
                 }
+            }
+        });
 
-                if (t.isBlockStatement(node) || t.isProgram(node)) {
+        traverse(ast, {
+            BlockStatement: {
+                exit(path) {
+                    const node = path.node;
+                    if (!node.loc) return;
+
                     const startLine = node.loc.start.line;
 
-                    if (unexecutedLines[startLine]) {
+                    let hasExecutedDescendant = false;
+                    path.traverse({
+                        BlockStatement(subPath) {
+                            const subNode = subPath.node;
+                            if (subNode.loc) {
+                                const subStartLine = subNode.loc.start.line;
+
+                                if (!unexecutedLines[subStartLine]) {
+                                    hasExecutedDescendant = true;
+                                    subPath.stop();
+                                }
+                            }
+                        }
+                    });
+
+                    if (unexecutedLines[startLine] && !hasExecutedDescendant) {
                         let depth = 0;
                         let curr = path;
                         while (curr.parentPath) { depth++; curr = curr.parentPath; }
@@ -191,7 +213,7 @@ class BlockPruner {
         }
 
         return prunedCount;
-    }    
+    }
 
     static parseCommentMapping(file) {
         const map = {};
