@@ -130,24 +130,29 @@ def analyze_thread_flow(log_file, block_signature_file, block_line_mapping_file)
         flow = []
         for b_id in blocks:
             sig = block_signatures.get(b_id, f"Unknown_Block_{b_id}")
-            line_info = block_lines.get(b_id, ("Unknown_File", "Unknown_Line"))
-            flow.append((sig, line_info))
+            file, line = block_lines.get(b_id, ("Unknown_File", "Unknown_Line"))
+            flow.append((sig, file, line))
 
-        # Merge adjacent duplicate calls
+        # Merge adjacent duplicate calls.
+        # Two consecutive entries are considered the same call only when BOTH
+        # the signature AND the file match, so that two different files that
+        # happen to share a signature are not collapsed together.
         dedup_flow = []
-        for sig, line_info in flow:
-            if not dedup_flow or dedup_flow[-1][0] != sig:
-                dedup_flow.append((sig, line_info))
+        for sig, file, line in flow:
+            if not dedup_flow or dedup_flow[-1][0] != sig or dedup_flow[-1][1] != file:
+                dedup_flow.append((sig, file, line))
 
-        # Collect: signature | full file path
-        for sig, (file, line) in dedup_flow:
-            output_lines.append(f"{sig} | {file}\n")
+        # Output: signature | full file path | start line of the block.
+        # The line number lets the downstream report match the exact code block
+        # even when many blocks share the signature 'anonymous'.
+        for sig, file, line in dedup_flow:
+            output_lines.append(f"{sig} | {file} | {line}\n")
 
     # Write to signature_order.txt in the current working directory
     output_path = os.path.join(os.getcwd(), "signature_order.txt")
     with open(output_path, "w", encoding="utf-8") as out_f:
         out_f.writelines(output_lines)
-    
+
     print(f"Success: Results have been written to {output_path}")
 
 if __name__ == "__main__":
@@ -155,7 +160,7 @@ if __name__ == "__main__":
     parser.add_argument("log_file", help="Path to instrumentor log file")
     parser.add_argument("block_signature_file", help="Path to block signature file")
     parser.add_argument("block_line_mapping_file", help="Path to block line mapping file")
-    
+
     args = parser.parse_args()
-    
+
     analyze_thread_flow(args.log_file, args.block_signature_file, args.block_line_mapping_file)

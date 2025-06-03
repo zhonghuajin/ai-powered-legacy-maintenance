@@ -91,33 +91,55 @@ class BlockInstrumentorVisitor extends NodeVisitorAbstract {
 }
 
 /**
- * AST Traverser: Collect line ranges of all functions and class methods
+ * AST Traverser: Collect line ranges of all functions, class methods and closures.
+ *
+ * A node stack is maintained so that anonymous closures can be given a
+ * descriptive, context-aware name (mirroring the JS pipeline). Named functions
+ * and methods are already unique within a file (namespace / Class::method
+ * prefix), so they keep their plain names; only closures receive an '@line'
+ * suffix to guarantee uniqueness.
  */
 class MethodRangeVisitor extends NodeVisitorAbstract {
     private $namespace = '';
     private $classStack = [];
     private $ranges = [];
 
+    /** @var Node[] Stack of ancestor nodes (excluding the node currently entered). */
+    private $nodeStack = [];
+    /** @var array<int,string> spl_object_id(closure) => base name computed on enter. */
+    private $closureNames = [];
+
     public function enterNode(Node $node) {
+        // Compute the closure's contextual name BEFORE pushing it onto the
+        // stack, so that the stack top is still its parent.
+        if ($node instanceof Node\Expr\Closure) {
+            $this->closureNames[spl_object_id($node)] = $this->computeClosureName();
+        }
+
         if ($node instanceof Node\Stmt\Namespace_) {
             $this->namespace = $node->name ? $node->name->toString() : '';
         } elseif (
-            $node instanceof Node\Stmt\Class_ || 
-            $node instanceof Node\Stmt\Interface_ || 
+            $node instanceof Node\Stmt\Class_ ||
+            $node instanceof Node\Stmt\Interface_ ||
             $node instanceof Node\Stmt\Trait_
         ) {
             $className = $node->name ? $node->name->toString() : 'anonymous';
             $this->classStack[] = $className;
         }
+
+        $this->nodeStack[] = $node;
         return null;
     }
 
     public function leaveNode(Node $node) {
+        // Keep the stack balanced (enterNode always pushes exactly one node).
+        array_pop($this->nodeStack);
+
         if ($node instanceof Node\Stmt\Namespace_) {
             $this->namespace = '';
         } elseif (
-            $node instanceof Node\Stmt\Class_ || 
-            $node instanceof Node\Stmt\Interface_ || 
+            $node instanceof Node\Stmt\Class_ ||
+            $node instanceof Node\Stmt\Interface_ ||
             $node instanceof Node\Stmt\Trait_
         ) {
             array_pop($this->classStack);
@@ -145,8 +167,56 @@ class MethodRangeVisitor extends NodeVisitorAbstract {
                 'start' => $node->getStartLine(),
                 'end'   => $node->getEndLine(),
             ];
+        } elseif ($node instanceof Node\Expr\Closure) {
+            // Closures share names easily, so append the start line to keep the
+            // signature unique within the file (parallel to the JS '@line' rule).
+            $base = $this->closureNames[spl_object_id($node)] ?? 'closure';
+            $this->ranges[] = [
+                'name'  => $base . '@' . $node->getStartLine(),
+                'start' => $node->getStartLine(),
+                'end'   => $node->getEndLine(),
+            ];
         }
         return null;
+    }
+
+    /**
+     * Derive a descriptive base name for the closure currently being entered,
+     * using its parent / grandparent on the node stack.
+     */
+    private function computeClosureName(): string {
+        $n = count($this->nodeStack);
+        $parent = $n >= 1 ? $this->nodeStack[$n - 1] : null;
+        $grand  = $n >= 2 ? $this->nodeStack[$n - 2] : null;
+
+        // $fn = function () { ... }  /  $this->handler = function () { ... }
+        if ($parent instanceof Node\Expr\Assign) {
+            $var = $parent->var;
+            if ($var instanceof Node\Expr\Variable && is_string($var->name)) {
+                return $var->name;
+            }
+            if ($var instanceof Node\Expr\PropertyFetch && $var->name instanceof Node\Identifier) {
+                return $var->name->toString();
+            }
+            if ($var instanceof Node\Expr\StaticPropertyFetch && $var->name instanceof Node\VarLikeIdentifier) {
+                return $var->name->toString();
+            }
+        }
+
+        // Callback argument: array_map(function () {}, ...) / $x->each(function () {})
+        if ($parent instanceof Node\Arg) {
+            $callee = 'callback';
+            if ($grand instanceof Node\Expr\FuncCall && $grand->name instanceof Node\Name) {
+                $callee = $grand->name->toString();
+            } elseif ($grand instanceof Node\Expr\MethodCall && $grand->name instanceof Node\Identifier) {
+                $callee = $grand->name->toString();
+            } elseif ($grand instanceof Node\Expr\StaticCall && $grand->name instanceof Node\Identifier) {
+                $callee = $grand->name->toString();
+            }
+            return $callee . '$cb';
+        }
+
+        return 'closure';
     }
 
     public function getRanges(): array {
@@ -390,11 +460,22 @@ class InstrumentationPipeline {
 
             $matchedSignature = '[Global]'; // Default if outside any function
             if (isset($rangesByFile[$filePath])) {
+                // Pick the INNERMOST enclosing range (largest start; on a tie,
+                // the smallest span). The previous "break on first match" picked
+                // the OUTERMOST range, so a closure / nested function body would
+                // be wrongly attributed to its enclosing method.
+                $best = null;
                 foreach ($rangesByFile[$filePath] as $range) {
                     if ($line >= $range['start'] && $line <= $range['end']) {
-                        $matchedSignature = $range['name'];
-                        break; // Found the innermost matching range
+                        if ($best === null
+                            || $range['start'] > $best['start']
+                            || ($range['start'] === $best['start'] && $range['end'] < $best['end'])) {
+                            $best = $range;
+                        }
                     }
+                }
+                if ($best !== null) {
+                    $matchedSignature = $best['name'];
                 }
             }
             $blockToSignature[$id] = $matchedSignature;

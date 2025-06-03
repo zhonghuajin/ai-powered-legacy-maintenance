@@ -67,6 +67,55 @@ class InstrumentationPipeline {
         console.log("=== Pipeline complete ===");
     }
 
+    computeFunctionName(p) {
+        const node = p.node;
+
+        if (node.id && node.id.name) {
+            return node.id.name;
+        }
+
+        const parent = p.parentPath;
+        if (!parent) return 'anonymous';
+
+        if (parent.isVariableDeclarator() && parent.node.id && parent.node.id.name) {
+            return parent.node.id.name;
+        }
+
+        if (parent.isObjectProperty() && parent.node.key) {
+            return parent.node.key.name || parent.node.key.value || 'anonymous';
+        }
+
+        if (parent.isClassProperty() && parent.node.key) {
+            return parent.node.key.name || 'anonymous';
+        }
+
+        if (parent.isAssignmentExpression() && parent.node.left) {
+            const left = parent.node.left;
+            if (left.type === 'Identifier') return left.name;
+            if (left.type === 'MemberExpression' && left.property) {
+                return left.property.name || left.property.value || 'anonymous';
+            }
+        }
+
+        if (parent.isCallExpression()) {
+            const callee = parent.node.callee;
+            let calleeName = 'callback';
+            if (callee.type === 'Identifier') {
+                calleeName = callee.name;
+            } else if (callee.type === 'MemberExpression' && callee.property) {
+                calleeName = callee.property.name || callee.property.value || 'callback';
+            }
+            return `${calleeName}$cb`;
+        }
+
+        return 'anonymous';
+    }
+
+    buildRangeName(baseName, node) {
+        const line = node.loc ? node.loc.start.line : 0;
+        return `${baseName}@${line}`;
+    }
+
     instrumentAndCollectRanges(filePath) {
         const code = fs.readFileSync(filePath, 'utf-8');
         let ast;
@@ -94,7 +143,7 @@ class InstrumentationPipeline {
             FunctionDeclaration(p) {
                 const name = p.node.id ? p.node.id.name : 'anonymous';
                 ranges.push({
-                    name: name,
+                    name: self.buildRangeName(name, p.node),
                     start: p.node.loc.start.line,
                     end: p.node.loc.end.line
                 });
@@ -112,26 +161,26 @@ class InstrumentationPipeline {
                     end: p.node.loc.end.line
                 });
             },
-            ArrowFunctionExpression(p) {
-                let name = 'anonymous';
-                if (p.parentPath.isVariableDeclarator()) {
-                    name = p.parentPath.node.id.name;
-                }
+            ObjectMethod(p) {
+                const methodName = (p.node.key && (p.node.key.name || p.node.key.value)) || 'anonymous';
                 ranges.push({
-                    name: name,
+                    name: self.buildRangeName(methodName, p.node),
+                    start: p.node.loc.start.line,
+                    end: p.node.loc.end.line
+                });
+            },
+            ArrowFunctionExpression(p) {
+                const name = self.computeFunctionName(p);
+                ranges.push({
+                    name: self.buildRangeName(name, p.node),
                     start: p.node.loc.start.line,
                     end: p.node.loc.end.line
                 });
             },
             FunctionExpression(p) {
-                let name = 'anonymous';
-                if (p.parentPath.isVariableDeclarator()) {
-                    name = p.parentPath.node.id.name;
-                } else if (p.node.id) {
-                    name = p.node.id.name;
-                }
+                const name = self.computeFunctionName(p);
                 ranges.push({
-                    name: name,
+                    name: self.buildRangeName(name, p.node),
                     start: p.node.loc.start.line,
                     end: p.node.loc.end.line
                 });
@@ -270,11 +319,19 @@ class InstrumentationPipeline {
             const fileRanges = rangesByFile.get(filePath);
 
             if (fileRanges) {
+
+                let best = null;
                 for (const range of fileRanges) {
                     if (line >= range.start && line <= range.end) {
-                        matchedSignature = range.name;
-                        break;
+                        if (!best ||
+                            range.start > best.start ||
+                            (range.start === best.start && range.end < best.end)) {
+                            best = range;
+                        }
                     }
+                }
+                if (best) {
+                    matchedSignature = best.name;
                 }
             }
             blockToSignature.set(id, matchedSignature);

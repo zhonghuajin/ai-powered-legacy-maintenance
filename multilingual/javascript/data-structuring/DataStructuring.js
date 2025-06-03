@@ -6,15 +6,13 @@ const traverse = require('@babel/traverse').default;
 const DEFAULT_OUTPUT_FILE = 'final-output-calltree.md';
 
 class MethodNode {
-  constructor(signature, className, methodName, paramCount, sourceCode, filePath) {
+  constructor(signature, paramCount, sourceCode, filePath, startLine) {
     this.signature = signature;
-    this.className = className;
-    this.methodName = methodName;
     this.paramCount = paramCount;
     this.sourceCode = sourceCode;
     this.filePath = filePath;
+    this.startLine = startLine;
     this.calls = [];
-    this.externalCalls = [];
   }
 }
 
@@ -43,90 +41,150 @@ function getJsFilesRecursively(dir) {
   return results;
 }
 
-function analyzeFile(filePath, code, relativePath) {
+/**
+ * MUST stay byte-for-byte equivalent to InstrumentationPipeline.computeFunctionName,
+ * otherwise the signatures produced here will not match signature_order.txt.
+ */
+function computeFunctionName(p) {
+  const node = p.node;
+
+  if (node.id && node.id.name) {
+    return node.id.name;
+  }
+
+  const parent = p.parentPath;
+  if (!parent) return 'anonymous';
+
+  if (parent.isVariableDeclarator() && parent.node.id && parent.node.id.name) {
+    return parent.node.id.name;
+  }
+
+  if (parent.isObjectProperty() && parent.node.key) {
+    return parent.node.key.name || parent.node.key.value || 'anonymous';
+  }
+
+  if (parent.isClassProperty() && parent.node.key) {
+    return parent.node.key.name || 'anonymous';
+  }
+
+  if (parent.isAssignmentExpression() && parent.node.left) {
+    const left = parent.node.left;
+    if (left.type === 'Identifier') return left.name;
+    if (left.type === 'MemberExpression' && left.property) {
+      return left.property.name || left.property.value || 'anonymous';
+    }
+  }
+
+  if (parent.isCallExpression()) {
+    const callee = parent.node.callee;
+    let calleeName = 'callback';
+    if (callee.type === 'Identifier') {
+      calleeName = callee.name;
+    } else if (callee.type === 'MemberExpression' && callee.property) {
+      calleeName = callee.property.name || callee.property.value || 'callback';
+    }
+    return `${calleeName}$cb`;
+  }
+
+  return 'anonymous';
+}
+
+/**
+ * MUST match InstrumentationPipeline.buildRangeName.
+ */
+function buildRangeName(baseName, node) {
+  const line = node.loc ? node.loc.start.line : 0;
+  return `${baseName}@${line}`;
+}
+
+function analyzeFile(filePath, code, absPath) {
   let ast;
   try {
+    // Plugins kept identical to the instrumentation pipeline so that both tools
+    // parse the same constructs and therefore agree on node positions / names.
     ast = parser.parse(code, {
       sourceType: 'module',
-      plugins: ['classProperties', 'dynamicImport', 'decorators-legacy']
+      plugins: ['jsx', 'typescript', 'decorators-legacy']
     });
   } catch (err) {
     console.error(`[ERROR] Cannot parse file AST: ${filePath}`, err.message);
-    return { methods: {}, rawCalls: new Map() };
+    return [];
   }
 
-  const methods = {};
-  const rawCalls = new Map();
-  const classStack = [];
+  const methods = [];
+
+  const pushMethod = (signature, node) => {
+    const paramCount = node.params ? node.params.length : 0;
+    const sourceCode = code.slice(node.start, node.end);
+    const startLine = node.loc ? node.loc.start.line : 0;
+
+    const nodeObj = new MethodNode(signature, paramCount, sourceCode, absPath, startLine);
+    methods.push(nodeObj);
+
+    // Collect a flat list of calls for documentation purposes only;
+    // it does not influence signature matching.
+    const callsInMethod = [];
+    collectCalls(node, ast, callsInMethod);
+    nodeObj.calls = callsInMethod;
+  };
 
   traverse(ast, {
 
-    ClassDeclaration: {
-      enter(astPath) {
-        const className = astPath.node.id ? astPath.node.id.name : 'anonymous';
-        classStack.push(className);
-      },
-      exit() {
-        classStack.pop();
+    FunctionDeclaration(p) {
+      const name = p.node.id ? p.node.id.name : 'anonymous';
+      pushMethod(buildRangeName(name, p.node), p.node);
+    },
+
+    ClassMethod(p) {
+      let className = 'anonymous';
+      const classParent = p.findParent(parent => parent.isClassDeclaration() || parent.isClassExpression());
+      if (classParent && classParent.node.id) {
+        className = classParent.node.id.name;
       }
-    },
-    ClassExpression: {
-      enter(astPath) {
-        const className = astPath.node.id ? astPath.node.id.name : 'anonymous';
-        classStack.push(className);
-      },
-      exit() {
-        classStack.pop();
-      }
+      const methodName = p.node.key.name || 'anonymous';
+      // ClassMethod has NO @line suffix, exactly like the pipeline.
+      pushMethod(`${className}::${methodName}`, p.node);
     },
 
-    ClassMethod(astPath) {
-      const methodName = astPath.node.key.name;
-
-      if (methodName === 'constructor') return;
-
-      if (!astPath.node.body || astPath.node.body.body.length === 0) return;
-
-      const paramCount = astPath.node.params.length;
-      const sourceCode = code.slice(astPath.node.start, astPath.node.end);
-      const currentClass = classStack[classStack.length - 1] || 'anonymous';
-      const signature = `${currentClass}::${methodName}`;
-
-      const nodeObj = new MethodNode(signature, currentClass, methodName, paramCount, sourceCode, relativePath);
-      methods[signature] = nodeObj;
-
-      const callsInMethod = [];
-      collectCalls(astPath.get('body'), callsInMethod);
-      rawCalls.set(nodeObj, callsInMethod);
+    ObjectMethod(p) {
+      const methodName = (p.node.key && (p.node.key.name || p.node.key.value)) || 'anonymous';
+      pushMethod(buildRangeName(methodName, p.node), p.node);
     },
 
-    "FunctionDeclaration|FunctionExpression"(astPath) {
+    ArrowFunctionExpression(p) {
+      const name = computeFunctionName(p);
+      pushMethod(buildRangeName(name, p.node), p.node);
+    },
 
-      if (astPath.closestParent && astPath.closestParent(p => p.isClassMethod())) return;
-
-      const methodName = astPath.node.id ? astPath.node.id.name : 'anonymous';
-      if (!astPath.node.body || astPath.node.body.body.length === 0) return;
-
-      const paramCount = astPath.node.params.length;
-      const sourceCode = code.slice(astPath.node.start, astPath.node.end);
-      const signature = `global::${methodName}`;
-
-      const nodeObj = new MethodNode(signature, '<global>', methodName, paramCount, sourceCode, relativePath);
-      methods[signature] = nodeObj;
-
-      const callsInMethod = [];
-      collectCalls(astPath.get('body'), callsInMethod);
-      rawCalls.set(nodeObj, callsInMethod);
+    FunctionExpression(p) {
+      const name = computeFunctionName(p);
+      pushMethod(buildRangeName(name, p.node), p.node);
     }
   });
 
-  return { methods, rawCalls };
+  return methods;
 }
 
-function collectCalls(bodyPath, calls) {
-  bodyPath.traverse({
+/**
+ * Collect direct call expressions inside the given function node, without
+ * descending into nested functions.
+ */
+function collectCalls(functionNode, ast, calls) {
+  let bodyPath = null;
 
-    "FunctionDeclaration|FunctionExpression|ClassMethod"(childPath) {
+  traverse(ast, {
+    enter(p) {
+      if (p.node === functionNode) {
+        bodyPath = p.get('body');
+        p.stop();
+      }
+    }
+  });
+
+  if (!bodyPath || typeof bodyPath.traverse !== 'function') return;
+
+  bodyPath.traverse({
+    "FunctionDeclaration|FunctionExpression|ClassMethod|ObjectMethod|ArrowFunctionExpression"(childPath) {
       childPath.skip();
     },
     CallExpression(childPath) {
@@ -134,7 +192,6 @@ function collectCalls(bodyPath, calls) {
       const argCount = childPath.node.arguments.length;
 
       if (callee.type === 'MemberExpression') {
-
         if (callee.property.type === 'Identifier') {
           const name = callee.property.name;
           let scope = null;
@@ -146,61 +203,35 @@ function collectCalls(bodyPath, calls) {
           calls.push(new MethodCallInfo(scope, name, argCount));
         }
       } else if (callee.type === 'Identifier') {
-
         calls.push(new MethodCallInfo(null, callee.name, argCount));
       }
     }
   });
 }
 
-function findMatchingMethodInFile(call, fileMethodMap, callerClassName) {
-  if (call.name === 'constructor') return null;
-
-  if (call.scope === null || call.scope === 'this' || call.scope === callerClassName) {
-    const key = `${callerClassName}::${call.name}`;
-    if (fileMethodMap[key]) {
-      return fileMethodMap[key];
-    }
-
-    if (call.scope === null) {
-      const globalKey = `global::${call.name}`;
-      if (fileMethodMap[globalKey]) {
-        return fileMethodMap[globalKey];
-      }
-    }
-  }
-  return null;
-}
-
-function renderCallNode(node, level) {
+function renderMethod(node) {
   let md = '';
-  const indent = '    '.repeat(level);
-  const contentIndent = indent + '    ';
 
-  md += `${indent}- **Method:** \`${node.signature}\` (Params: ${node.paramCount})\n`;
+  md += `- **Method:** \`${node.signature}\` (Params: ${node.paramCount})\n`;
+  md += `- **File Path:** \`${node.filePath}\`\n`;
+  md += `- **Line:** \`${node.startLine}\`\n\n`;
 
   if (node.sourceCode) {
     const source = node.sourceCode.trim();
-    md += `${contentIndent}\`\`\`javascript\n`;
-    const lines = source.split('\n');
-    for (const line of lines) {
-      md += `${contentIndent}${line}\n`;
-    }
-    md += `${contentIndent}\`\`\`\n`;
+    md += '```javascript\n';
+    md += source + '\n';
+    md += '```\n';
   }
 
-  if (node.calls.length > 0 || node.externalCalls.length > 0) {
-    md += `${contentIndent}*Calls:*\n`;
-
-    for (const child of node.calls) {
-      md += renderCallNode(child, level + 1);
-    }
-
-    for (const extCall of node.externalCalls) {
-      md += `${contentIndent}    - *[External/Unknown]* \`${extCall}\`\n`;
+  if (node.calls.length > 0) {
+    md += `\n*Calls:*\n`;
+    for (const call of node.calls) {
+      const scopeStr = call.scope ? `${call.scope}.` : '';
+      md += `    - \`${scopeStr}${call.name}(${call.argCount} args)\`\n`;
     }
   }
 
+  md += '\n';
   return md;
 }
 
@@ -210,11 +241,11 @@ function generateMarkdown(inputDir, outputPath) {
     process.exit(1);
   }
 
-  let md = '# File-Internal Call Trees\n\n';
+  let md = '# File-Internal Method Index\n\n';
   md += '> **Description & Legend:**\n';
-  md += '> This document presents precise **intra-file function/method call trees** based on AST analysis.\n';
-  md += '> - Only explicit calls within the current file/class (such as `this.foo()`) are expanded in the tree.\n';
-  md += '> - External calls or calls that cannot be statically determined are listed as `[External/Unknown]` to avoid cross-file misidentification.\n\n';
+  md += '> This document lists every function/method extracted via AST analysis.\n';
+  md += '> - Each method is emitted with a signature identical to the instrumentation pipeline (`name@line`, or `Class::method`).\n';
+  md += '> - `*Calls:*` lists direct call expressions for reference only; it does not affect signature matching.\n\n';
 
   const items = fs.readdirSync(inputDir);
   const threads = [];
@@ -226,16 +257,10 @@ function generateMarkdown(inputDir, outputPath) {
     if (stat.isDirectory() && item.startsWith('Thread-')) {
       const orderMatch = item.match(/\d+/);
       const order = orderMatch ? parseInt(orderMatch[0], 10) : 999;
-
       const files = getJsFilesRecursively(itemPath);
 
       if (files.length > 0) {
-        threads.push({
-          name: item,
-          order: order,
-          files: files,
-          itemPath: itemPath
-        });
+        threads.push({ name: item, order, files, itemPath });
       }
     }
   });
@@ -248,44 +273,20 @@ function generateMarkdown(inputDir, outputPath) {
     thread.files.forEach(filePath => {
       const code = fs.readFileSync(filePath, 'utf-8');
       const relativePath = path.relative(thread.itemPath, filePath).replace(/\\/g, '/');
+      // Absolute path so the downstream report can attempt a (file + signature)
+      // match; if the path format differs from signature_order.txt it will fall
+      // back to signature-only matching.
+      const absPath = path.resolve(filePath);
 
-      const { methods, rawCalls } = analyzeFile(filePath, code, relativePath);
-
-      if (Object.keys(methods).length === 0) return;
+      const methods = analyzeFile(filePath, code, absPath);
+      if (methods.length === 0) return;
 
       md += `## File: \`${relativePath}\`\n\n`;
 
-      const calledNodesHashes = new Set();
-
-      for (const [caller, calls] of rawCalls.entries()) {
-        for (const call of calls) {
-          const callee = findMatchingMethodInFile(call, methods, caller.className);
-          if (callee && callee !== caller) {
-            caller.calls.push(callee);
-            calledNodesHashes.add(callee.signature);
-          } else {
-            const scopeStr = call.scope ? `${call.scope}.` : '';
-            caller.externalCalls.push(`${scopeStr}${call.name}(${call.argCount} args)`);
-          }
-        }
-      }
-
-      let entryPoints = [];
-      for (const sig in methods) {
-        if (!calledNodesHashes.has(sig)) {
-          entryPoints.push(methods[sig]);
-        }
-      }
-
-      if (entryPoints.length === 0) {
-        entryPoints = Object.values(methods);
-      }
-
-      entryPoints.forEach(rootNode => {
-        md += renderCallNode(rootNode, 0);
+      methods.forEach(node => {
+        md += renderMethod(node);
+        md += '---\n\n';
       });
-
-      md += '\n---\n\n';
     });
   });
 
