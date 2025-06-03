@@ -101,10 +101,20 @@ function buildRangeName(baseName, originalLine) {
   return `${baseName}@${originalLine}`;
 }
 
+function isEmptyFunction(node) {
+
+  if (!node.body) return true;
+
+  if (node.body.type === 'BlockStatement') {
+    return node.body.body.length === 0;
+  }
+
+  return false;
+}
+
 function analyzeFile(filePath, code, absPath) {
   let ast;
   try {
-
     ast = parser.parse(code, {
       sourceType: 'module',
       plugins: ['jsx', 'typescript', 'decorators-legacy'],
@@ -118,6 +128,11 @@ function analyzeFile(filePath, code, absPath) {
   const methods = [];
 
   const pushMethod = (signature, node, originalLine) => {
+
+    if (isEmptyFunction(node)) {
+      return;
+    }
+
     const paramCount = node.params ? node.params.length : 0;
     const sourceCode = code.slice(node.start, node.end);
 
