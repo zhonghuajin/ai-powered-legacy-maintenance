@@ -19,9 +19,6 @@ class InstrumentationPipeline {
         this.instrumentFunctionName = 'window.staining';
     }
 
-    /**
-     * 辅助函数：生成增量文件路径 (例如 path/to/file.txt -> path/to/file.incremental.txt)
-     */
     getIncrementalPath(filePath) {
         const dir = path.dirname(filePath);
         const ext = path.extname(filePath);
@@ -30,7 +27,7 @@ class InstrumentationPipeline {
     }
 
     run(targets) {
-        // 如果在增量模式下缺少任何一个映射文件，则回退到全量模式
+
         if (this.isIncremental && (!fs.existsSync(this.mappingFile) || !fs.existsSync(this.rangeFile) || !fs.existsSync(this.signatureFile))) {
             console.warn("Warning: mapping, range or signature file not found, falling back to full mode.");
             this.isIncremental = false;
@@ -45,12 +42,10 @@ class InstrumentationPipeline {
             process.exit(1);
         }
 
-        // 1. 加载已有的映射关系（增量模式下）
         this.loadMapping(files);
 
-        // 2. 插桩并收集函数/方法行范围
         console.log(">> Step: Code Instrumentation & Range Collection");
-        const allRanges = new Map(); // filePath -> ranges[]
+        const allRanges = new Map();
         let totalActivated = 0;
 
         for (const file of files) {
@@ -59,15 +54,12 @@ class InstrumentationPipeline {
             allRanges.set(file, ranges);
         }
 
-        // 3. 更新方法范围文件 (method-range.txt)
         console.log(">> Step: Updating Method Ranges");
         this.updateMethodRanges(allRanges);
 
-        // 4. 保存 ID 映射文件 (block-line-mapping.txt)
         console.log(">> Step: Encoding Mapping");
         this.saveMapping();
 
-        // 5. 生成 Block ID 到函数签名的映射 (block-signature.txt)
         console.log(">> Step: Generating Block to Signature Mapping");
         this.generateBlockSignatures();
 
@@ -98,7 +90,7 @@ class InstrumentationPipeline {
         const ranges = [];
 
         traverse(ast, {
-            // 收集函数/方法范围
+
             FunctionDeclaration(p) {
                 const name = p.node.id ? p.node.id.name : 'anonymous';
                 ranges.push({
@@ -145,7 +137,6 @@ class InstrumentationPipeline {
                 });
             },
 
-            // 插桩逻辑：在每一个 BlockStatement 开头插入 window.staining(id)
             BlockStatement(pathNode) {
                 const line = pathNode.node.loc.start.line;
                 if (line <= 0) return;
@@ -182,9 +173,6 @@ class InstrumentationPipeline {
         return { activatedCount: fileActivatedCount, ranges };
     }
 
-    /**
-     * 更新并保存 method-range.txt
-     */
     updateMethodRanges(allRanges) {
         const targetRanges = [];
 
@@ -199,7 +187,6 @@ class InstrumentationPipeline {
             }
         }
 
-        // 排序以保持输出稳定性
         targetRanges.sort((a, b) => {
             const fileCmp = a.file.localeCompare(b.file);
             if (fileCmp !== 0) return fileCmp;
@@ -234,9 +221,6 @@ class InstrumentationPipeline {
         fs.writeFileSync(filePath, lines.join('\n') + '\n', 'utf-8');
     }
 
-    /**
-     * 加载现有的 ranges 文件（解析辅助函数）
-     */
     loadRawRanges(filePath) {
         const result = [];
         if (!fs.existsSync(filePath)) return result;
@@ -246,7 +230,6 @@ class InstrumentationPipeline {
             const trimmed = line.trim();
             if (!trimmed || trimmed.startsWith('#')) continue;
 
-            // 格式: File Absolute Path | Method Name = Start Line-End Line
             const match = trimmed.match(/^(.+?)\s*\|\s*(.+?)\s*=\s*(\d+)-(\d+)$/);
             if (match) {
                 result.push({
@@ -260,9 +243,6 @@ class InstrumentationPipeline {
         return result;
     }
 
-    /**
-     * 生成 Block ID -> Method Signature 映射表并保存到 block-signature.txt
-     */
     generateBlockSignatures() {
         const blockToSignature = new Map();
 
@@ -272,7 +252,6 @@ class InstrumentationPipeline {
         const commentMap = this.loadRawMapping(mappingToLoad);
         const ranges = this.loadRawRanges(rangesToLoad);
 
-        // 按文件路径对 ranges 进行分组以提高检索效率
         const rangesByFile = new Map();
         for (const range of ranges) {
             if (!rangesByFile.has(range.file)) {
@@ -287,14 +266,14 @@ class InstrumentationPipeline {
 
             if (!filePath || line === null) continue;
 
-            let matchedSignature = '[Global]'; // 默认在全局作用域
+            let matchedSignature = '[Global]';
             const fileRanges = rangesByFile.get(filePath);
 
             if (fileRanges) {
                 for (const range of fileRanges) {
                     if (line >= range.start && line <= range.end) {
                         matchedSignature = range.name;
-                        break; // 匹配到最内层的函数范围
+                        break;
                     }
                 }
             }
@@ -347,7 +326,6 @@ class InstrumentationPipeline {
         for (const [id, comment] of rawMap.entries()) {
             const filePath = this.extractFilePath(comment);
 
-            // 如果是当前正在处理的目标文件，在增量模式下我们会重新分配/覆盖，跳过加载
             if (filePath && targetFileSet.has(filePath)) {
                 continue;
             }
@@ -415,7 +393,20 @@ class InstrumentationPipeline {
     collectJsFiles(targets) {
         const files = [];
 
+        const shouldExclude = (filePath) => {
+            const normalizedPath = filePath.toLowerCase().replace(/\\/g, '/');
+            const segments = normalizedPath.split('/');
+            return segments.some(segment =>
+                segment === 'vendor' ||
+                segment === 'node_module' ||
+                segment === 'node_modules'
+            );
+        };
+
         const walkSync = (dir) => {
+
+            if (shouldExclude(dir)) return;
+
             const list = fs.readdirSync(dir);
             list.forEach((file) => {
                 const fullPath = path.resolve(dir, file);
@@ -423,7 +414,9 @@ class InstrumentationPipeline {
                 if (stat && stat.isDirectory()) {
                     walkSync(fullPath);
                 } else if (fullPath.endsWith('.js') || fullPath.endsWith('.jsx') || fullPath.endsWith('.ts')) {
-                    files.push(fullPath);
+                    if (!shouldExclude(fullPath)) {
+                        files.push(fullPath);
+                    }
                 }
             });
         };
@@ -434,7 +427,9 @@ class InstrumentationPipeline {
 
             const stat = fs.statSync(fullPath);
             if (stat.isFile() && /\.(js|jsx|ts)$/.test(fullPath)) {
-                files.push(fullPath);
+                if (!shouldExclude(fullPath)) {
+                    files.push(fullPath);
+                }
             } else if (stat.isDirectory()) {
                 walkSync(fullPath);
             }
