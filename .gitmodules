@@ -1,0 +1,3 @@
+[submodule "multilingual/php/instrumentor-log-recorder"]
+	path = multilingual/php/instrumentor-log-recorder
+	url = https://github.com/zhonghuajin/instrumentor-log-recorder.git
