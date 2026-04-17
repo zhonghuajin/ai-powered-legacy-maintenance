@@ -1,0 +1,14 @@
+core/*/target/
+core/*/dependency-reduced-pom.xml
+pruned/
+instrumentor-log-*.txt
+instrumentor-events-*.txt
+/event_dictionary.txt
+/comment-mapping.txt
+/final-output-calltree.json
+/final-output-combined.json
+/final-output-happensbefore.json
+/final-output-calltree.md
+/final-output-combined.md
+/final-output-happensbefore.md
+**/target/
