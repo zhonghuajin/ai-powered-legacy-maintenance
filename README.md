@@ -6,6 +6,8 @@
 
 **The Solution:** This project captures **runtime evidence** from real executions and uses it to build **zero-noise, scenario-specific code context** for AI. Instead of flooding the model with the whole codebase, it gives the model only what actually happened — making AI reasoning grounded in facts, not speculation.
 
+_Note: The approach is particularly valuable for legacy systems, but applies equally to any scenario where understanding actual runtime behavior reduces risk and improves AI accuracy._
+
 ### Static Analysis vs. Runtime Evidence
 
 | Traditional (Static Analysis) | This Project (Runtime Evidence) |
