@@ -14,3 +14,4 @@ instrumentor-events-*.txt
 **/target/
 target-folders.txt
 AI_Bug_Localization_Prompt.md
+enginerring/ask-llm/output.md

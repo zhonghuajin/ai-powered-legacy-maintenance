@@ -68,6 +68,13 @@ def main():
         print(response)
         print("="*110 + "\n")
         
+        # 将响应直接保存到当前工作目录下的固定文件中（例如 output.md）
+        output_filename = "output.md"
+        with open(output_filename, 'w', encoding='utf-8') as out_file:
+            out_file.write(response)
+            
+        print(f"[*] Response successfully saved to: {os.path.abspath(output_filename)}\n")
+        
     except Exception as e:
         print(f"\n[Error]: {str(e)}")
         sys.exit(1)
