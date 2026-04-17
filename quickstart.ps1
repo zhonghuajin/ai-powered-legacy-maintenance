@@ -2,7 +2,7 @@
 .SYNOPSIS
     Instrumentor Test Bug Fix Workflow Quickstart Script
 .DESCRIPTION
-    This script guides you through the full process of code instrumentation, compiling and running the instrumentor test, log denoising and analysis, and AI prompt generation.
+    This script guides you through the full process of code instrumentation, compiling and running the instrumentor test, log denoising and analysis, AI prompt generation, and automated bug fixing.
 #>
 
 # Helper function to print a prominent pause prompt
@@ -55,6 +55,10 @@ Write-Host "   1. Code Instrumentation" -ForegroundColor Yellow
 Write-Host "   2. Execution & Log Generation" -ForegroundColor Yellow
 Write-Host "   3. Log Denoising" -ForegroundColor Yellow
 Write-Host "   4. AI Prompt Generation" -ForegroundColor Yellow
+Write-Host "   5. Ask LLM for Bug Localization" -ForegroundColor Yellow
+Write-Host "   6. Generate Fix Prompt" -ForegroundColor Yellow
+Write-Host "   7. Ask LLM for Code Fix" -ForegroundColor Yellow
+Write-Host "   8. Apply Fix to Source Code" -ForegroundColor Yellow
 Write-Host "-------------------------------------------------------" -ForegroundColor Yellow
 Write-Host ""
 
@@ -111,6 +115,61 @@ if ($isValidJdk) {
         Write-Host "No path entered. Will attempt to use current environment; this may cause compilation or runtime failures." -ForegroundColor Red
     }
 }
+
+# ---------------------------------------------------------
+# Pre-check: Ensure .env exists for LLM steps later
+# ---------------------------------------------------------
+$askLlmDir = Join-Path $workDir "enginerring\ask-llm"
+$envFile = Join-Path $askLlmDir ".env"
+
+if (-Not (Test-Path $envFile)) {
+    Write-Host "`n[*] Pre-flight check: .env file not found for LLM steps. Generating template..." -ForegroundColor Yellow
+    
+    if (-Not (Test-Path $askLlmDir)) {
+        New-Item -ItemType Directory -Force -Path $askLlmDir | Out-Null
+    }
+    
+    $envTemplate = @"
+# 请在此处填入你需要的 API Key (不需要的可以留空)
+OPENAI_API_KEY=""
+DEEPSEEK_API_KEY=""
+ZHIPU_API_KEY=""
+MOONSHOT_API_KEY=""
+DASHSCOPE_API_KEY=""
+ANTHROPIC_API_KEY=""
+"@
+    Set-Content -Path $envFile -Value $envTemplate -Encoding UTF8
+    
+    Write-Host "[!] .env file generated at: $envFile" -ForegroundColor Green
+    Write-Host "[!] Please fill in your API keys in the generated .env file and run this quickstart script again." -ForegroundColor Red
+    exit 1
+} else {
+    Write-Host "[Environment Check] LLM .env file found." -ForegroundColor Green
+}
+
+# ---------------------------------------------------------
+# Pre-check: Select LLM Provider for the workflow
+# ---------------------------------------------------------
+Write-Host ""
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "          Select an LLM Provider        " -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "  1. DeepSeek"
+Write-Host "  2. Claude (Anthropic)"
+Write-Host "  3. GPT (OpenAI)"
+Write-Host "  4. GLM (Zhipu)"
+Write-Host "  5. Kimi (Moonshot)"
+Write-Host "  6. Qwen (DashScope)"
+Write-Host "========================================" -ForegroundColor Cyan
+
+$llmChoice = ""
+while ($llmChoice -notmatch "^[1-6]$") {
+    $llmChoice = Read-Host "Enter a number (1-6) for the LLM Provider to use throughout this workflow"
+    if ($llmChoice -notmatch "^[1-6]$") {
+        Write-Host "[!] Invalid input. Please enter a number between 1 and 6." -ForegroundColor Red
+    }
+}
+Write-Host "[Environment Check] LLM Provider selected: Option $llmChoice" -ForegroundColor Green
 
 Pause-ForNextStep -CompletedStep "[Environment Setup]" -NextStep "[Step 1] Code Instrumentation"
 
@@ -204,7 +263,117 @@ if (Test-Path $pythonScriptPath) {
     Write-Host "AI Prompt generation script not found at: $pythonScriptPath" -ForegroundColor Red
 }
 
+Pause-ForNextStep -CompletedStep "[Step 4] Generate AI Prompt" -NextStep "[Step 5] Ask LLM for Bug Localization"
+
+# ---------------------------------------------------------
+# Step 5. Ask LLM for Bug Localization
+# ---------------------------------------------------------
+Write-Host "`n>>> [Step 5] Asking LLM for Bug Localization..." -ForegroundColor Cyan
+
+# Check for System Proxy Settings
+$proxyRegPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+$proxyEnable = (Get-ItemProperty -Path $proxyRegPath -Name ProxyEnable -ErrorAction SilentlyContinue).ProxyEnable
+
+if ($proxyEnable -eq 1) {
+    $proxyServer = (Get-ItemProperty -Path $proxyRegPath -Name ProxyServer -ErrorAction SilentlyContinue).ProxyServer
+    if (![string]::IsNullOrWhiteSpace($proxyServer)) {
+        # Handle formats like "http=127.0.0.1:7890;https=127.0.0.1:7890" or just "127.0.0.1:7890"
+        $proxyAddress = $proxyServer
+        if ($proxyServer -match "http=([^;]+)") {
+            $proxyAddress = $matches[1]
+        }
+        
+        # Ensure it has http:// prefix
+        if ($proxyAddress -notmatch "^http(s)?://") {
+            $proxyAddress = "http://$proxyAddress"
+        }
+
+        $env:HTTP_PROXY = $proxyAddress
+        $env:HTTPS_PROXY = $proxyAddress
+        Write-Host "[Proxy Check] Detected system proxy is enabled." -ForegroundColor Yellow
+        Write-Host "Automatically configured HTTP_PROXY and HTTPS_PROXY to: $proxyAddress" -ForegroundColor Green
+    }
+} else {
+    Write-Host "[Proxy Check] No system proxy detected. Skipping proxy configuration." -ForegroundColor DarkGray
+}
+
+# Move into ask-llm directory and stay there for the rest of the script
+$askLlmDir = Join-Path $workDir "enginerring\ask-llm"
+Set-Location $askLlmDir
+
+$localizationPromptPath = Join-Path $workDir "AI_Bug_Localization_Prompt.md"
+
+if (Test-Path ".\run.ps1") {
+    $llmInputs1 = @(
+        $llmChoice,             # 1. Select LLM Provider (User's choice from the beginning)
+        $localizationPromptPath # 2. Markdown file path
+    )
+    # 将 .\run.ps1 替换为调用 powershell.exe
+    $llmInputs1 | powershell.exe -ExecutionPolicy Bypass -File ".\run.ps1"
+} else {
+    Write-Host "run.ps1 not found in $askLlmDir" -ForegroundColor Red
+}
+
+Pause-ForNextStep -CompletedStep "[Step 5] Ask LLM for Bug Localization" -NextStep "[Step 6] Generate Fix Prompt"
+
+# ---------------------------------------------------------
+# Step 6. Generate the Fix Prompt
+# ---------------------------------------------------------
+Write-Host "`n>>> [Step 6] Generating Fix Prompt..." -ForegroundColor Cyan
+
+$fixBugDir = Join-Path $workDir "enginerring\fix-bug"
+$generateFixScript = Join-Path $fixBugDir "generate_fix_prompt.py"
+
+if (Test-Path $generateFixScript) {
+    $fixPromptInputs = @(
+        "output.md",        # 1. Path to diagnostic report (located in current ask-llm dir)
+        $targetFoldersFile  # 2. Path to base directories (target-folders.txt)
+    )
+    $fixPromptInputs | python $generateFixScript
+} else {
+    Write-Host "generate_fix_prompt.py not found at: $generateFixScript" -ForegroundColor Red
+}
+
+Pause-ForNextStep -CompletedStep "[Step 6] Generate Fix Prompt" -NextStep "[Step 7] Ask LLM for Code Fix"
+
+# ---------------------------------------------------------
+# Step 7. Ask LLM for Code Fix
+# ---------------------------------------------------------
+Write-Host "`n>>> [Step 7] Asking LLM for Code Fix..." -ForegroundColor Cyan
+
+if (Test-Path ".\run.ps1") {
+    $llmInputs2 = @(
+        $llmChoice,                # 1. Select LLM Provider (User's choice from the beginning)
+        "AI_Apply_Fix_Prompt.md"   # 2. Markdown file path
+    )
+    # 同样替换为调用 powershell.exe
+    $llmInputs2 | powershell.exe -ExecutionPolicy Bypass -File ".\run.ps1"
+} else {
+    Write-Host "run.ps1 not found in $askLlmDir" -ForegroundColor Red
+}
+
+Pause-ForNextStep -CompletedStep "[Step 7] Ask LLM for Code Fix" -NextStep "[Step 8] Apply Fix to Source Code"
+
+# ---------------------------------------------------------
+# Step 8. Apply Fix to Source Code
+# ---------------------------------------------------------
+Write-Host "`n>>> [Step 8] Applying Fix to Source Code..." -ForegroundColor Cyan
+
+$applyFixScript = Join-Path $fixBugDir "apply_fix.py"
+
+if (Test-Path $applyFixScript) {
+    $applyFixInputs = @(
+        "output.md",        # 1. Path to fixed code (overwritten in current ask-llm dir)
+        $targetFoldersFile  # 2. Path to base directories
+    )
+    $applyFixInputs | python $applyFixScript
+} else {
+    Write-Host "apply_fix.py not found at: $applyFixScript" -ForegroundColor Red
+}
+
 Write-Host "`n=======================================================" -ForegroundColor Magenta
-Write-Host "  🎉 Workflow execution completed!" -ForegroundColor Green
-Write-Host "  Please submit the generated AI_Bug_Localization_Prompt.md to the AI model for analysis." -ForegroundColor Green
+Write-Host "  🎉 Workflow execution completed! The bug has been fixed." -ForegroundColor Green
+Write-Host "  You can now re-run the tests to verify the fix." -ForegroundColor Green
 Write-Host "=======================================================" -ForegroundColor Magenta
+
+Set-Location $workDir
