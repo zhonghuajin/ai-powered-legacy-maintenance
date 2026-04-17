@@ -175,11 +175,15 @@ Pause-ForNextStep -CompletedStep "[Step 3] Log Analysis" -NextStep "[Step 4] Gen
 # Step 4. Generate the AI Prompt
 # ---------------------------------------------------------
 Write-Host "`n>>> [Step 4] Generating AI Prompt..." -ForegroundColor Cyan
-$aiAppPath = Join-Path $workDir "core\denoised-data-ai-app"
 
-if (Test-Path $aiAppPath) {
-    Set-Location $aiAppPath
-    Write-Host "Running Python script to generate the prompt automatically with option [2]..." -ForegroundColor Green
+# Ensure we are in the original working directory
+Set-Location $workDir
+
+$aiAppPath = Join-Path $workDir "core\denoised-data-ai-app"
+$pythonScriptPath = Join-Path $aiAppPath "generate_bug_localization_prompt.py"
+
+if (Test-Path $pythonScriptPath) {
+    Write-Host "Running Python script from $workDir to generate the prompt automatically with option [2]..." -ForegroundColor Green
     
     # Construct the path to the combined file generated in Step 3
     $combinedFilePath = Join-Path $workDir "final-output-combined.md"
@@ -194,10 +198,10 @@ if (Test-Path $aiAppPath) {
         ""                  # 6. Extra Enter to prevent any trailing prompts
     )
     
-    # Pipe the array to the Python script; each element acts as a line of input
-    $aiInputs | python generate_bug_localization_prompt.py
+    # Pipe the array to the Python script using its full path
+    $aiInputs | python $pythonScriptPath
 } else {
-    Write-Host "AI Prompt generation script directory not found: $aiAppPath" -ForegroundColor Red
+    Write-Host "AI Prompt generation script not found at: $pythonScriptPath" -ForegroundColor Red
 }
 
 Write-Host "`n=======================================================" -ForegroundColor Magenta
