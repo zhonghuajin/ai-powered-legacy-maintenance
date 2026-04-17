@@ -18,3 +18,5 @@ enginerring/ask-llm/output.md
 enginerring/ask-llm/get_fix_solution/AI_Apply_Fix_Prompt.md
 enginerring/ask-llm/general/output.md
 enginerring/ask-llm/general/.env
+enginerring/ask-llm/.env
+enginerring/fix-bug/AI_Apply_Fix_Prompt.md
