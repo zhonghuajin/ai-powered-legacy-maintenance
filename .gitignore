@@ -12,3 +12,5 @@ instrumentor-events-*.txt
 /final-output-combined.md
 /final-output-happensbefore.md
 **/target/
+target-folders.txt
+AI_Bug_Localization_Prompt.md
