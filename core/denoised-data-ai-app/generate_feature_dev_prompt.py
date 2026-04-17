@@ -81,6 +81,24 @@ Please strictly follow the template below when providing the guidance plan:
 
 ## 4. Potential Risks and Notes
 [List side effects, concurrency hazards, or performance issues to watch out for during development]
+
+## 5. Files To Modify (Machine-Readable Summary)
+
+Summarize **all** files that must be modified based on the Key Hook Point above. This section is intended for automated parsing, so it MUST strictly follow these rules:
+
+- Enclose the list between the two exact marker lines shown below.
+- One file path per line, nothing else on that line.
+- Output the **raw file path only**. Do NOT add bullets (`-`, `*`), numbering (`1.`), backticks, quotes, comments, descriptions, or trailing punctuation.
+- Use the exact path as it appears in the Key Hook Point (prefer the most complete relative path available in the trace data).
+- Do NOT include duplicates. Do NOT include any file that is only referenced but not modified.
+- If no file modification is required, output a single line containing exactly: `NONE`
+
+Output format (do not alter the marker lines):
+
+<!-- FILES_TO_MODIFY_START -->
+path/to/first/file.ext
+path/to/second/file.ext
+<!-- FILES_TO_MODIFY_END -->
 """
 
 # ==========================================

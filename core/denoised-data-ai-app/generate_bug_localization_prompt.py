@@ -89,6 +89,24 @@ Please strictly follow the template below when providing your diagnostic report:
 
 ## 4. Verification Logic
 [Briefly explain why this fix resolves the issue and how it corrects the execution flow or synchronization graph]
+
+## 5. Files To Modify (Machine-Readable Summary)
+
+Summarize **all** files that must be modified based on the Root Cause Analysis above. This section is intended for automated parsing, so it MUST strictly follow these rules:
+
+- Enclose the list between the two exact marker lines shown below.
+- One file path per line, nothing else on that line.
+- Output the **raw file path only**. Do NOT add bullets (`-`, `*`), numbering (`1.`), backticks, quotes, comments, descriptions, or trailing punctuation.
+- Use the exact path as it appears in the Root Cause Analysis (prefer the most complete relative path available in the trace data).
+- Do NOT include duplicates. Do NOT include any file that is only referenced but not modified.
+- If no file modification is required, output a single line containing exactly: `NONE`
+
+Output format (do not alter the marker lines):
+
+<!-- FILES_TO_MODIFY_START -->
+path/to/first/file.ext
+path/to/second/file.ext
+<!-- FILES_TO_MODIFY_END -->
 """
 
 # Simplified template (Call-Tree only, concurrency sections removed)
@@ -165,6 +183,24 @@ Please act as a factual detective. **Focus exclusively on the Call Tree evidence
 
 ## 4. Verification Logic
 [Briefly explain why this fix resolves the issue]
+
+## 5. Files To Modify (Machine-Readable Summary)
+
+Summarize **all** files that must be modified based on the Root Cause Analysis above. This section is intended for automated parsing, so it MUST strictly follow these rules:
+
+- Enclose the list between the two exact marker lines shown below.
+- One file path per line, nothing else on that line.
+- Output the **raw file path only**. Do NOT add bullets (`-`, `*`), numbering (`1.`), backticks, quotes, comments, descriptions, or trailing punctuation.
+- Use the exact path as it appears in the Root Cause Analysis (prefer the most complete relative path available in the trace data).
+- Do NOT include duplicates. Do NOT include any file that is only referenced but not modified.
+- If no file modification is required, output a single line containing exactly: `NONE`
+
+Output format (do not alter the marker lines):
+
+<!-- FILES_TO_MODIFY_START -->
+path/to/first/file.ext
+path/to/second/file.ext
+<!-- FILES_TO_MODIFY_END -->
 """
 
 # ==========================================
