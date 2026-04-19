@@ -55,14 +55,7 @@ foreach ($folder in $TargetFolders) {
 }
 Write-Host "Target folders: $($TargetFolders -join ', ')" -ForegroundColor Yellow
 
-# 1. Restore source code
-Write-Host "Restoring the instrumented source folders using Git..." -ForegroundColor Cyan
-foreach ($folder in $TargetFolders) {
-    git restore $folder
-    git clean -fd $folder
-}
-
-# 2. Check Java environment variables
+# 1. Check Java environment variables
 Write-Host "Checking Java environment variables..." -ForegroundColor Cyan
 if (-not $env:JAVA_HOME) {
     Write-Error "Error: JAVA_HOME Environment variable not configured. Please set JAVA_HOME to point to your JDK installation directory."
@@ -71,7 +64,7 @@ if (-not $env:JAVA_HOME) {
 Write-Host "Using JAVA_HOME: $env:JAVA_HOME" -ForegroundColor Green
 $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 
-# 3. First build
+# 2. First build
 Write-Host "Executing mvn clean package to build the instrumentor..." -ForegroundColor Cyan
 mvn -f .\core\pom.xml clean package -DskipTests
 if ($LASTEXITCODE -ne 0) {
@@ -79,28 +72,28 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# 4. Execute Instrumentor related Java commands
+# 3. Execute Instrumentor related Java commands
 Write-Host "Executing code instrumentation (Instrumentor)..." -ForegroundColor Cyan
 
-# 4.1 Main instrumentation
+# 3.1 Main instrumentation
 java -jar .\core\instrumentor\target\instrumentor-1.0-SNAPSHOT.jar @TargetFolders
 if ($LASTEXITCODE -ne 0) {
     Write-Warning "Main instrumentation step returned non-zero exit code: $LASTEXITCODE"
 }
 
-# 4.2 Encoding mapping
+# 3.2 Encoding mapping
 java -jar .\core\instrumentor-with-encoding\target\instrumentor-with-encoding-1.0-SNAPSHOT.jar @TargetFolders
 if ($LASTEXITCODE -ne 0) {
     Write-Warning "Encoding mapping step returned non-zero exit code: $LASTEXITCODE"
 }
 
-# 4.3 Activator
+# 3.3 Activator
 java -jar .\core\instrumentor-activator\target\instrumentor-activator-1.0-SNAPSHOT.jar @TargetFolders
 if ($LASTEXITCODE -ne 0) {
     Write-Warning "Activator step returned non-zero exit code: $LASTEXITCODE"
 }
 
-# 5 & 6. Second build and tests
+# 4 & 5. Second build and tests
 if (-not $SkipBuildAndTest) {
     Write-Host "Executing mvn clean package again..." -ForegroundColor Cyan
     mvn -f .\core\pom.xml clean package -DskipTests

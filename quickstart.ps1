@@ -171,23 +171,38 @@ while ($llmChoice -notmatch "^[1-6]$") {
 }
 Write-Host "[Environment Check] LLM Provider selected: Option $llmChoice" -ForegroundColor Green
 
-Pause-ForNextStep -CompletedStep "[Environment Setup]" -NextStep "[Step 1] Code Instrumentation"
+Pause-ForNextStep -CompletedStep "[Environment Setup]" -NextStep "[Step 0] Setup Shadow Branch"
 
 # ---------------------------------------------------------
-# Step 1. Instrument the Code
+# Step 0 & 1. Setup Shadow Branch and Instrument Code
 # ---------------------------------------------------------
-Write-Host "`n>>> [Step 1] Instrumenting target code..." -ForegroundColor Cyan
-Set-Location $workDir
-$targetFoldersFile = Join-Path $workDir "target-folders.txt"
+Write-Host "`n>>> [Step 0 & 1] Setting up shadow branch and instrumenting code..." -ForegroundColor Cyan
 
-# Automatically generate target-folders.txt containing the instrumentor-test path
-Set-Content -Path $targetFoldersFile -Value $instrumentorTestPath
-Write-Host "target-folders.txt configured with content: $instrumentorTestPath"
+# 提示用户输入目标 Git 根目录
+$gitRootDir = Read-Host "Please enter the target Git root directory for the instrumentation project"
+while ([string]::IsNullOrWhiteSpace($gitRootDir)) {
+    Write-Host "[!] Path cannot be empty." -ForegroundColor Red
+    $gitRootDir = Read-Host "Please enter the target Git root directory"
+}
 
-Write-Host "Executing: .\run-instrumentation-demo.ps1"
-.\run-instrumentation-demo.ps1 -TargetFoldersFile $targetFoldersFile -SkipBuildAndTest
+# 更新为新的脚本名称
+$setupScriptPath = Join-Path $workDir "enginerring/shadow-project-management/instrument_with_shadow_project.py"
 
-Pause-ForNextStep -CompletedStep "[Step 1] Code Instrumentation" -NextStep "[Step 2] Compile and Run Instrumentor Test"
+if (Test-Path $setupScriptPath) {
+    Write-Host "Executing: python instrument_with_shadow_project.py `"$gitRootDir`""
+    python $setupScriptPath "$gitRootDir"
+    
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: Failed to setup shadow branch and instrument code. Exiting." -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
+} else {
+    Write-Host "Warning: instrument_with_shadow_project.py not found at $setupScriptPath." -ForegroundColor Yellow
+    Write-Host "Please ensure the script is placed in the correct directory. Exiting." -ForegroundColor Red
+    exit 1
+}
+
+Pause-ForNextStep -CompletedStep "[Step 0 & 1] Setup Shadow Branch & Instrumentation" -NextStep "[Step 2] Compile and Run Instrumentor Test"
 
 # ---------------------------------------------------------
 # Step 2. Compile and Run the Reproducer (Instrumentor Test)

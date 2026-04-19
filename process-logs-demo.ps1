@@ -121,19 +121,12 @@ Write-Host "  PrunedFolder:       $PrunedFolder" -ForegroundColor DarkGray
 Write-Host "  EventsFile:         $EventsFile" -ForegroundColor DarkGray
 Write-Host "  EventDictionaryFile:$EventDictionaryFile" -ForegroundColor DarkGray
 
-# 1. Restore source code (Undo instrumentation modifications)
-Write-Host "Restoring the instrumented source folders using Git..." -ForegroundColor Cyan
-foreach ($folder in $TargetFolders) {
-    git restore $folder
-    git clean -fd $folder
-}
-
-# 2. Block Pruner — pass multiple source directories joined by ';'
+# 1. Block Pruner — pass multiple source directories joined by ';'
 Write-Host "Executing Block Pruner..." -ForegroundColor Yellow
 $sourceDirsArg = ($TargetFolders -join ";")
 java -jar $BlockPrunerJar $sourceDirsArg $CommentMappingFile $LogFile $PrunedFolder
 
-# 3. Data Structuring
+# 2. Data Structuring
 Write-Host "Executing Data Structuring..." -ForegroundColor Yellow
 java -jar $DataStructuringJar $PrunedFolder $CommentMappingFile $LogFile $EventsFile $EventDictionaryFile
 
