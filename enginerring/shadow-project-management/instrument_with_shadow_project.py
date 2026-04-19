@@ -111,12 +111,23 @@ def main():
             
         print("Instrumentation completed.")
 
+        # ==========================================
+        # Important user notice
+        # ==========================================
+        print("\n" + "*" * 70)
+        print("\033[1;31m" + "【 IMPORTANT NOTICE 】".center(64) + "\033[0m")
+        print(f"\033[1;33mFor the Git project at: {git_root_dir}\033[0m")
+        print(f"\033[1;33mYou are currently on branch: {branch_name}\033[0m")
+        print(f"\033[1;32mIf you need to switch back to the original branch ({source_branch}), "
+              f"please run the following command first:\033[0m\033[1;31m git stash\033[0m")
+        print("*" * 70 + "\n")
+
         # # ==========================================
         # # 4. Return to Git root directory and execute git stash
         # # ==========================================
         # print(f"\n>>> Returning to Git root directory to execute git stash: {git_root_dir}")
         # os.chdir(git_root_dir)
-
+        #
         # # Use -u flag to ensure untracked files generated during instrumentation are also stashed
         # success, msg = run_git_command(["git", "stash", "-u"])
         # if success:
