@@ -27,9 +27,12 @@ def main():
     # Set up command line argument parsing
     parser = argparse.ArgumentParser(description="Create instrumentation branch, perform code instrumentation, and stash changes.")
     parser.add_argument("git_root", help="Path to the root directory of the target Git project")
+    # Add --mode argument to support full and incremental instrumentation
+    parser.add_argument("--mode", choices=["full", "incremental"], default="full", help="Instrumentation mode: full or incremental")
     args = parser.parse_args()
 
     git_root_dir = os.path.abspath(args.git_root)
+    inst_mode = args.mode
     branch_name = "shadow-project-for-instrumention"
 
     # Get the current working directory
@@ -96,18 +99,30 @@ def main():
         # ==========================================
         # 3. Execute instrumentation (Imported Pure Python function)
         # ==========================================
-        print("\n>>> Starting code instrumentation...")
+        print(f"\n>>> Starting code instrumentation in '{inst_mode}' mode...")
         target_folders_file = os.path.join(original_cwd, "target-folders.txt")
 
-        # Call the imported Python function
-        success = run_instrumentation_flow(
-            target_folders_file=target_folders_file, 
-            skip_build_and_test=True
-        )
-        
-        if not success:
-            print("Error: Instrumentation flow failed.")
-            sys.exit(1)
+        if inst_mode == "full":
+            # Call the imported Python function for full instrumentation
+            success = run_instrumentation_flow(
+                target_folders_file=target_folders_file, 
+                skip_build_and_test=True
+            )
+            
+            if not success:
+                print("Error: Full instrumentation flow failed.")
+                sys.exit(1)
+                
+        elif inst_mode == "incremental":
+            # Placeholder for incremental instrumentation
+            print("Notice: Incremental instrumentation is selected.")
+            print("TODO: Implement incremental instrumentation logic here.")
+            # Assume success to prevent the script from exiting prematurely
+            success = True 
+            
+            if not success:
+                print("Error: Incremental instrumentation flow failed.")
+                sys.exit(1)
             
         print("Instrumentation completed.")
 
@@ -121,19 +136,6 @@ def main():
         print(f"\033[1;32mIf you need to switch back to the original branch ({source_branch}), "
               f"please run the following command first:\033[0m\033[1;31m git stash\033[0m")
         print("*" * 70 + "\n")
-
-        # # ==========================================
-        # # 4. Return to Git root directory and execute git stash
-        # # ==========================================
-        # print(f"\n>>> Returning to Git root directory to execute git stash: {git_root_dir}")
-        # os.chdir(git_root_dir)
-        #
-        # # Use -u flag to ensure untracked files generated during instrumentation are also stashed
-        # success, msg = run_git_command(["git", "stash", "-u"])
-        # if success:
-        #     print(f"git stash successful:\n{msg}")
-        # else:
-        #     print(f"git stash failed: {msg}")
 
     finally:
         # ==========================================
