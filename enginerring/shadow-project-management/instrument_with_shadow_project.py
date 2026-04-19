@@ -4,6 +4,9 @@ import argparse
 import subprocess
 import json
 
+# Import the instrumentation flow from the renamed standalone module
+from run_instrumentation_flow import run_instrumentation_flow
+
 
 def run_git_command(command):
     """Run a Git command and return the result."""
@@ -20,19 +23,6 @@ def run_git_command(command):
         return False, e.stderr.strip()
 
 
-def run_script_command(command):
-    """Run an external script command and print output directly to console for progress visibility."""
-    try:
-        subprocess.run(
-            command,
-            check=True,
-            text=True
-        )
-        return True
-    except subprocess.CalledProcessError as e:
-        return False
-
-
 def main():
     # Set up command line argument parsing
     parser = argparse.ArgumentParser(description="Create instrumentation branch, perform code instrumentation, and stash changes.")
@@ -42,7 +32,7 @@ def main():
     git_root_dir = os.path.abspath(args.git_root)
     branch_name = "shadow-project-for-instrumention"
 
-    # Get the current working directory (the directory where quickstart.ps1 resides)
+    # Get the current working directory
     original_cwd = os.getcwd()
 
     if not os.path.isdir(git_root_dir):
@@ -104,38 +94,35 @@ def main():
         print(f"\nSuccessfully wrote project information to file: {os.path.abspath(output_file)}")
 
         # ==========================================
-        # 3. Execute instrumentation
+        # 3. Execute instrumentation (Imported Pure Python function)
         # ==========================================
         print("\n>>> Starting code instrumentation...")
         target_folders_file = os.path.join(original_cwd, "target-folders.txt")
 
-        # Construct PowerShell execution command
-        ps_command = [
-            "powershell.exe",
-            "-ExecutionPolicy", "Bypass",
-            "-File", ".\\run-instrumentation-demo.ps1",
-            "-TargetFoldersFile", target_folders_file,
-            "-SkipBuildAndTest"
-        ]
-
-        success = run_script_command(ps_command)
+        # Call the imported Python function
+        success = run_instrumentation_flow(
+            target_folders_file=target_folders_file, 
+            skip_build_and_test=True
+        )
+        
         if not success:
-            print("Error: Instrumentation script execution failed.")
+            print("Error: Instrumentation flow failed.")
             sys.exit(1)
+            
         print("Instrumentation completed.")
 
-        # ==========================================
-        # 4. Return to Git root directory and execute git stash
-        # ==========================================
-        print(f"\n>>> Returning to Git root directory to execute git stash: {git_root_dir}")
-        os.chdir(git_root_dir)
+        # # ==========================================
+        # # 4. Return to Git root directory and execute git stash
+        # # ==========================================
+        # print(f"\n>>> Returning to Git root directory to execute git stash: {git_root_dir}")
+        # os.chdir(git_root_dir)
 
-        # Use -u flag to ensure untracked files generated during instrumentation are also stashed
-        success, msg = run_git_command(["git", "stash", "-u"])
-        if success:
-            print(f"git stash successful:\n{msg}")
-        else:
-            print(f"git stash failed: {msg}")
+        # # Use -u flag to ensure untracked files generated during instrumentation are also stashed
+        # success, msg = run_git_command(["git", "stash", "-u"])
+        # if success:
+        #     print(f"git stash successful:\n{msg}")
+        # else:
+        #     print(f"git stash failed: {msg}")
 
     finally:
         # ==========================================

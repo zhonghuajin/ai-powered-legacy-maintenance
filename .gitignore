@@ -21,3 +21,4 @@ enginerring/ask-llm/general/.env
 enginerring/ask-llm/.env
 enginerring/fix-bug/AI_Apply_Fix_Prompt.md
 current_project
+__pycache__/
