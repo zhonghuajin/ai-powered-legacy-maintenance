@@ -58,7 +58,7 @@ def run_full_instrumentation(git_root_dir, project_file_path, original_cwd):
 
     # 执行全量插桩
     target_folders_file = os.path.join(original_cwd, "target-folders.txt")
-    success = run_instrumentation_flow(target_folders_file=target_folders_file, skip_build_and_test=True)
+    success = run_instrumentation_flow(target_folders_file=target_folders_file)
     
     if success:
         # 插桩完成后，在影子分支进行 commit

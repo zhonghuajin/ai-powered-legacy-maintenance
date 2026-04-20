@@ -33,7 +33,8 @@ def main():
         elif inst_mode == "incremental":
             print("Notice: Incremental instrumentation is selected.")
             try:
-                success = sync_files(project_file_path=project_file_path)
+                # 将 original_cwd 传递给 sync_files
+                success = sync_files(project_file_path=project_file_path, original_cwd=original_cwd)
             except Exception as e:
                 print(f"Error: Incremental sync failed with exception: {e}")
                 success = False

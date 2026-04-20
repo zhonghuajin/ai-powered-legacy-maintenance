@@ -3,6 +3,7 @@ import json
 import subprocess
 import shutil
 from pathlib import Path
+from run_instrumentation_flow import run_instrumentation_flow
 
 def run_cmd(cmd, check=True):
     """Run shell command and return output"""
@@ -13,7 +14,7 @@ def run_cmd(cmd, check=True):
         result.check_returncode()
     return result.stdout.strip()
 
-def sync_files(project_file_path):
+def sync_files(project_file_path, original_cwd):
     """
     Synchronize modified files based on the project configuration.
     """
@@ -119,14 +120,44 @@ def sync_files(project_file_path):
         synced_absolute_paths.append(str(dst_file.resolve()))
         print(f"Restored: {src_file} -> {dst_file}")
 
-    # 7. 保存绝对路径列表到配置文件
-    config["synced_absolute_paths"] = synced_absolute_paths
-    with open(current_project_file, 'w', encoding='utf-8') as f:
-        json.dump(config, f, indent=4, ensure_ascii=False)
-    print(f"Saved {len(synced_absolute_paths)} absolute path(s) to {current_project_file.name}.")
+    # 7. 保存绝对路径列表到 original_cwd 下的 target-folders.txt 中
+    target_folders_file = os.path.join(original_cwd, "target-folders.txt")
+    with open(target_folders_file, 'w', encoding='utf-8') as f:
+        for path in synced_absolute_paths:
+            f.write(path + '\n')
+    print(f"Saved {len(synced_absolute_paths)} absolute path(s) to {target_folders_file}.")
 
-    print("All operations completed successfully!")
-    return True
+    # 切换回原始工作目录以便找到插桩工具的 jar 包
+    os.chdir(original_cwd)
+    print(f"Working directory changed back to: {os.getcwd()}")
+
+    # 8. 执行增量插桩
+    print("Running instrumentation flow for synchronized files...")
+    success = run_instrumentation_flow(target_folders_file=target_folders_file)
+    
+    if success:
+        print("\nCommitting incremental instrumentation changes to the shadow branch...")
+        os.chdir(original_git_root)
+        
+        # 将所有插桩后的修改加入暂存区
+        run_cmd(['git', 'add', '.'])
+        
+        # 核心逻辑：软重置到 source_branch 的最新状态，保留暂存区的所有插桩文件
+        print(f"Soft resetting shadow branch to match '{source_branch}'...")
+        run_cmd(['git', 'reset', '--soft', source_branch])
+        
+        # 提交唯一的插桩 Commit
+        run_cmd(['git', 'commit', '-m', 'Auto-commit: Code instrumentation'])
+        
+        print("\n" + "*" * 70)
+        print("\033[1;32m" + "【 SUCCESS 】".center(64) + "\033[0m")
+        print(f"\033[1;32mShadow branch is now exactly 1 commit ahead of '{source_branch}'.\033[0m")
+        print("*" * 70 + "\n")
+        print("All operations completed successfully!")
+    else:
+        print("Instrumentation flow failed during incremental sync.")
+
+    return success
 
 def main():
     pass
