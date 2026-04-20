@@ -185,12 +185,42 @@ while ([string]::IsNullOrWhiteSpace($gitRootDir)) {
     $gitRootDir = Read-Host "Please enter the target Git root directory"
 }
 
+# 提示用户选择插桩模式
+Write-Host ""
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "       Select Instrumentation Mode      " -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "  1. Full Instrumentation"
+Write-Host "  2. Incremental Instrumentation"
+Write-Host "========================================" -ForegroundColor Cyan
+
+$instModeChoice = ""
+while ($instModeChoice -notmatch "^[1-2]$") {
+    $instModeChoice = Read-Host "Enter a number (1-2) for the instrumentation mode"
+    if ($instModeChoice -notmatch "^[1-2]$") {
+        Write-Host "[!] Invalid input. Please enter 1 or 2." -ForegroundColor Red
+    }
+}
+
+$modeArg = if ($instModeChoice -eq "1") { "full" } else { "incremental" }
+Write-Host "[Mode Selection] Selected mode: $modeArg" -ForegroundColor Green
+
 # 更新为新的脚本名称
 $setupScriptPath = Join-Path $workDir "enginerring/shadow-project-management/instrument_with_shadow_project.py"
 
 if (Test-Path $setupScriptPath) {
-    Write-Host "Executing: python instrument_with_shadow_project.py `"$gitRootDir`""
-    python $setupScriptPath "$gitRootDir"
+    if ($modeArg -eq "incremental") {
+        # 如果是增量插桩，将当前工作目录下的 current_project 绝对路径传给 Python 脚本
+        $projectFilePath = Join-Path $workDir "current_project"
+        $fullCommand = "python `"$setupScriptPath`" `"$gitRootDir`" --mode $modeArg --project-file `"$projectFilePath`""
+        Write-Host "Executing: $fullCommand" -ForegroundColor Magenta
+        python $setupScriptPath "$gitRootDir" --mode $modeArg --project-file "$projectFilePath"
+    } else {
+        # 如果是全量插桩，保持原有调用方式
+        $fullCommand = "python `"$setupScriptPath`" `"$gitRootDir`" --mode $modeArg"
+        Write-Host "Executing: $fullCommand" -ForegroundColor Magenta
+        python $setupScriptPath "$gitRootDir" --mode $modeArg
+    }
     
     if ($LASTEXITCODE -ne 0) {
         Write-Host "Error: Failed to setup shadow branch and instrument code. Exiting." -ForegroundColor Red

@@ -1,147 +1,52 @@
 import os
 import sys
 import argparse
-import subprocess
-import json
-
-# Import the instrumentation flow from the renamed standalone module
-from run_instrumentation_flow import run_instrumentation_flow
-
-
-def run_git_command(command):
-    """Run a Git command and return the result."""
-    try:
-        result = subprocess.run(
-            command,
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        return True, result.stdout.strip()
-    except subprocess.CalledProcessError as e:
-        return False, e.stderr.strip()
-
+from full_instrumentation import run_full_instrumentation
+from sync_modified_files import sync_files
 
 def main():
-    # Set up command line argument parsing
     parser = argparse.ArgumentParser(description="Create instrumentation branch, perform code instrumentation, and stash changes.")
     parser.add_argument("git_root", help="Path to the root directory of the target Git project")
+    parser.add_argument("--mode", choices=["full", "incremental"], default="full", help="Instrumentation mode: full or incremental")
+    parser.add_argument("--project-file", default="current_project", help="Path to the project info JSON file (default: current_project)")
+    
     args = parser.parse_args()
 
     git_root_dir = os.path.abspath(args.git_root)
-    branch_name = "shadow-project-for-instrumention"
-
-    # Get the current working directory
+    inst_mode = args.mode
+    project_file_path = os.path.abspath(args.project_file)
     original_cwd = os.getcwd()
 
     if not os.path.isdir(git_root_dir):
         print(f"Error: Directory '{git_root_dir}' does not exist.")
         sys.exit(1)
 
-    source_branch = "unknown"
-
     try:
-        # ==========================================
-        # 1. Enter the specified Git root directory and handle branch logic
-        # ==========================================
-        print(f"Entering directory: {git_root_dir}")
-        os.chdir(git_root_dir)
-
-        is_git_repo, _ = run_git_command(
-            ["git", "rev-parse", "--is-inside-work-tree"])
-        if not is_git_repo:
-            print(f"Error: '{git_root_dir}' is not a valid Git repository.")
-            sys.exit(1)
-
-        success, branch_out = run_git_command(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"])
-        if success:
-            source_branch = branch_out
-            print(f"Current branch: {source_branch}")
-
-        print(f"Checking if branch '{branch_name}' exists...")
-        branch_exists, _ = run_git_command(
-            ["git", "rev-parse", "--verify", branch_name])
-
-        if source_branch == branch_name:
-            print(f"Already on branch '{branch_name}', no need to switch.")
-        elif branch_exists:
-            print(f"Branch '{branch_name}' already exists, switching...")
-            success, msg = run_git_command(["git", "checkout", branch_name])
-            if not success:
-                print(f"Failed to switch branch: {msg}")
-                sys.exit(1)
-        else:
-            print(f"Branch '{branch_name}' does not exist, creating and switching...")
-            success, msg = run_git_command(
-                ["git", "checkout", "-b", branch_name])
-            if not success:
-                print(f"Failed to create branch: {msg}")
-                sys.exit(1)
-
-        # ==========================================
-        # 2. Return to original working directory and write current_project
-        # ==========================================
-        os.chdir(original_cwd)
-        output_file = "current_project"
-        project_info = {
-            "original_git_root": git_root_dir,
-            "source_branch": source_branch
-        }
-        with open(output_file, "w", encoding="utf-8") as f:
-            json.dump(project_info, f, indent=4, ensure_ascii=False)
-        print(f"\nSuccessfully wrote project information to file: {os.path.abspath(output_file)}")
-
-        # ==========================================
-        # 3. Execute instrumentation (Imported Pure Python function)
-        # ==========================================
-        print("\n>>> Starting code instrumentation...")
-        target_folders_file = os.path.join(original_cwd, "target-folders.txt")
-
-        # Call the imported Python function
-        success = run_instrumentation_flow(
-            target_folders_file=target_folders_file, 
-            skip_build_and_test=True
-        )
+        print(f"\n>>> Starting code instrumentation in '{inst_mode}' mode...")
         
-        if not success:
-            print("Error: Instrumentation flow failed.")
-            sys.exit(1)
+        if inst_mode == "full":
+            success = run_full_instrumentation(git_root_dir, project_file_path, original_cwd)
+            if not success:
+                print("Error: Full instrumentation flow failed.")
+                sys.exit(1)
+                
+        elif inst_mode == "incremental":
+            print("Notice: Incremental instrumentation is selected.")
+            try:
+                success = sync_files(project_file_path=project_file_path)
+            except Exception as e:
+                print(f"Error: Incremental sync failed with exception: {e}")
+                success = False
+            
+            if not success:
+                print("Error: Incremental instrumentation flow failed.")
+                sys.exit(1)
             
         print("Instrumentation completed.")
 
-        # ==========================================
-        # Important user notice
-        # ==========================================
-        print("\n" + "*" * 70)
-        print("\033[1;31m" + "【 IMPORTANT NOTICE 】".center(64) + "\033[0m")
-        print(f"\033[1;33mFor the Git project at: {git_root_dir}\033[0m")
-        print(f"\033[1;33mYou are currently on branch: {branch_name}\033[0m")
-        print(f"\033[1;32mIf you need to switch back to the original branch ({source_branch}), "
-              f"please run the following command first:\033[0m\033[1;31m git stash\033[0m")
-        print("*" * 70 + "\n")
-
-        # # ==========================================
-        # # 4. Return to Git root directory and execute git stash
-        # # ==========================================
-        # print(f"\n>>> Returning to Git root directory to execute git stash: {git_root_dir}")
-        # os.chdir(git_root_dir)
-        #
-        # # Use -u flag to ensure untracked files generated during instrumentation are also stashed
-        # success, msg = run_git_command(["git", "stash", "-u"])
-        # if success:
-        #     print(f"git stash successful:\n{msg}")
-        # else:
-        #     print(f"git stash failed: {msg}")
-
     finally:
-        # ==========================================
-        # 5. Ensure return to the original working directory
-        # ==========================================
         os.chdir(original_cwd)
         print(f"\n>>> Returned to original working directory: {original_cwd}")
-
 
 if __name__ == "__main__":
     main()
