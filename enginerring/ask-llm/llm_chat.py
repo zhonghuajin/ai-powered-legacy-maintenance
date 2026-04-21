@@ -402,7 +402,26 @@ def one_shot(client: LLMClient, file_path: str, stream: bool, output: str):
     print(f"\n{C.DIM}[*] Saved to {os.path.abspath(output)}{C.RESET}")
 
 
-def main():
+def run_chat_app(provider: str, model: Optional[str] = None, file_path: Optional[str] = None,
+                 reasoning: str = "off", system: Optional[str] = None,
+                 output: str = "output.md", stream: bool = True):
+    """供外部程序直接调用的接口"""
+    client = LLMClient(
+        provider=provider,
+        model=model,
+        reasoning=reasoning,
+        system=system,
+    )
+    if file_path:
+        one_shot(client, file_path, stream, output)
+    else:
+        interactive_loop(client, stream)
+
+
+def main(args_list=None):
+    """
+    修改后的 main 函数，支持传入 args_list 以供其他 Python 脚本调用
+    """
     parser = argparse.ArgumentParser(
         description="Multi-provider LLM CLI with streaming, multi-turn, "
                     "and reasoning support.",
@@ -422,22 +441,20 @@ def main():
                         help="Output file for one-shot mode.")
     parser.add_argument("--no-stream", action="store_true",
                         help="Disable streaming.")
-    args = parser.parse_args()
+    
+    # 如果 args_list 为 None，则默认解析 sys.argv
+    args = parser.parse_args(args_list)
 
     try:
-        client = LLMClient(
+        run_chat_app(
             provider=args.provider,
             model=args.model,
+            file_path=args.file,
             reasoning=args.reasoning,
             system=args.system,
+            output=args.output,
+            stream=not args.no_stream
         )
-        stream = not args.no_stream
-
-        if args.file:
-            one_shot(client, args.file, stream, args.output)
-        else:
-            interactive_loop(client, stream)
-
     except Exception as e:
         print(f"{C.RED}[Error] {e}{C.RESET}")
         sys.exit(1)
