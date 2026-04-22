@@ -4,6 +4,9 @@ import argparse
 import subprocess
 import shutil
 
+# 引入 utils.py 中的颜色打印工具
+from utils import print_color, Colors
+
 def run_instrumentation_flow(target_folders_file=None, target_folders_list=None):
     """
     Pure Python implementation of the instrumentation flow.
@@ -21,7 +24,7 @@ def run_instrumentation_flow(target_folders_file=None, target_folders_list=None)
             target_folders_file = os.path.join(".", "target-folders.txt")
             
         if not os.path.exists(target_folders_file):
-            print(f"Error: Target folders file does not exist: {target_folders_file}")
+            print_color(f"Error: Target folders file does not exist: {target_folders_file}", Colors.RED)
             return False
             
         with open(target_folders_file, 'r', encoding='utf-8') as f:
@@ -31,14 +34,20 @@ def run_instrumentation_flow(target_folders_file=None, target_folders_list=None)
                     target_folders.append(line)
                     
         if not target_folders:
-            print(f"Error: No target folders found in file: {target_folders_file}")
+            # 让 "No target folders found" 错误提示更加醒目
+            print()
+            print_color("=================================================================", Colors.RED)
+            print_color(f" ❌ ERROR: No target folders found in file: {target_folders_file}", Colors.RED)
+            print_color("    Please add at least one valid folder path to the file.", Colors.RED)
+            print_color("=================================================================", Colors.RED)
+            print()
             return False
             
         print(f"Loaded {len(target_folders)} target folder(s) from file: {target_folders_file}")
     
     for folder in target_folders:
         if not os.path.exists(folder):
-            print(f"Error: Target folder does not exist: {folder}")
+            print_color(f"Error: Target folder does not exist: {folder}", Colors.RED)
             return False
             
     print(f"Target folders: {', '.join(target_folders)}")
@@ -47,7 +56,7 @@ def run_instrumentation_flow(target_folders_file=None, target_folders_list=None)
     print("\nChecking Java environment variables...")
     java_home = os.environ.get("JAVA_HOME")
     if not java_home:
-        print("Error: JAVA_HOME Environment variable not configured. Please set JAVA_HOME to point to your JDK installation directory.")
+        print_color("Error: JAVA_HOME Environment variable not configured. Please set JAVA_HOME to point to your JDK installation directory.", Colors.RED)
         return False
         
     print(f"Using JAVA_HOME: {java_home}")
@@ -60,7 +69,7 @@ def run_instrumentation_flow(target_folders_file=None, target_folders_list=None)
     java_exe = shutil.which("java")
     
     if not java_exe:
-        print("Error: Java (java) not found in PATH.")
+        print_color("Error: Java (java) not found in PATH.", Colors.RED)
         return False
 
     # 3. Execute Instrumentor related Java commands
@@ -76,7 +85,7 @@ def run_instrumentation_flow(target_folders_file=None, target_folders_list=None)
         print(f"Running {step_name}...")
         java_cmd = [java_exe, "-jar", jar_path] + target_folders
         if subprocess.run(java_cmd).returncode != 0:
-            print(f"Warning: {step_name} step returned non-zero exit code.")
+            print_color(f"Warning: {step_name} step returned non-zero exit code.", Colors.YELLOW)
 
     print("\nInstrumentation phase completed. Please check the generated log file timestamp and use process-logs-demo.py for subsequent processing.")
     return True
