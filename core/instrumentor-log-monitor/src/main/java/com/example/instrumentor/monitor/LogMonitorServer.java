@@ -6,7 +6,6 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
 import java.io.*;
-import java.net.BindException;
 import java.net.InetSocketAddress;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -25,7 +24,6 @@ public class LogMonitorServer implements LogLifecycleHook {
     private static final String PROP_AUTO_FLUSH = "instrumentor.monitor.autoFlushOnShutdown";
     private static final DateTimeFormatter TS_FMT = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
 
-    /** 防止多次刷盘 */
     private static final AtomicBoolean FLUSHED = new AtomicBoolean(false);
 
     @Override
@@ -50,7 +48,7 @@ public class LogMonitorServer implements LogLifecycleHook {
     // ======================== Flush ========================
 
     /**
-     * 公开的静态刷盘方法。通过 AtomicBoolean 保证只执行一次。
+     * Public static flush method. Ensures it is executed only once using AtomicBoolean.
      */
     public static void flushNow(String source) {
         if (!FLUSHED.compareAndSet(false, true)) {
@@ -107,12 +105,14 @@ public class LogMonitorServer implements LogLifecycleHook {
         for (int i = 0; i < maxTries; i++) {
             try {
                 server = HttpServer.create(new InetSocketAddress(port), 0);
-                break;
-            } catch (BindException e) {
-                port++;
+                break; 
             } catch (IOException e) {
-                log("Exception occurred while starting HTTP service: %s", e.getMessage());
-                return;
+
+                if (i == maxTries - 1) {
+                    log("Exception occurred while starting HTTP service on port %d: %s", port, e.getMessage());
+                    return;
+                }
+                port++;
             }
         }
 
