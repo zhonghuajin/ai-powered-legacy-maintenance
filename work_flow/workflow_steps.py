@@ -8,8 +8,8 @@ import glob
 from .utils import Colors, print_color
 from .prechecks import setup_windows_proxy
 
-def step_0_1_instrument_code(work_dir):
-    print_color("\n>>> [Step 0 & 1] Setting up shadow branch and instrumenting code...", Colors.CYAN)
+def instrument_code(work_dir):
+    print_color("\n>>> Setting up shadow branch and instrumenting code...", Colors.CYAN)
 
     print()
     print_color("========================================", Colors.YELLOW)
@@ -64,8 +64,8 @@ def step_0_1_instrument_code(work_dir):
         print_color("Please ensure the script is placed in the correct directory. Exiting.", Colors.RED)
         sys.exit(1)
 
-def step_2_compile_and_run(instrumentor_test_path):
-    print_color("\n>>> [Step 2] Compiling and running instrumentor test...", Colors.CYAN)
+def compile_and_run(instrumentor_test_path):
+    print_color("\n>>> Compiling and running instrumentor test...", Colors.CYAN)
     os.chdir(instrumentor_test_path)
 
     mvn_cmd = "mvn.cmd" if platform.system() == "Windows" else "mvn"
@@ -81,8 +81,8 @@ def step_2_compile_and_run(instrumentor_test_path):
         Colors.GREEN
     )
 
-def step_3_analyze_logs(work_dir, instrumentor_test_path):
-    print_color("\n>>> [Step 3] Analyzing logs and extracting denoised data...", Colors.CYAN)
+def analyze_logs(work_dir, instrumentor_test_path):
+    print_color("\n>>> Analyzing logs and extracting denoised data...", Colors.CYAN)
     os.chdir(work_dir)
 
     log_files = sorted(
@@ -117,8 +117,8 @@ def step_3_analyze_logs(work_dir, instrumentor_test_path):
             Colors.RED
         )
 
-def step_4_generate_ai_prompt(work_dir):
-    print_color("\n>>> [Step 4] Generating AI Prompt...", Colors.CYAN)
+def generate_ai_prompt(work_dir):
+    print_color("\n>>> Generating AI Prompt...", Colors.CYAN)
     os.chdir(work_dir)
 
     ai_app_path = os.path.join(work_dir, "core", "denoised-data-ai-app")
@@ -130,8 +130,8 @@ def step_4_generate_ai_prompt(work_dir):
     else:
         print_color(f"AI prompt generation script not found at: {python_script_path}", Colors.RED)
 
-def step_5_ask_llm_for_localization(ask_llm_dir):
-    print_color("\n>>> [Step 5] Asking LLM for Bug Localization...", Colors.CYAN)
+def ask_llm_for_localization(ask_llm_dir):
+    print_color("\n>>> Asking LLM for Bug Localization...", Colors.CYAN)
     setup_windows_proxy()
     
     os.chdir(ask_llm_dir)
@@ -140,8 +140,8 @@ def step_5_ask_llm_for_localization(ask_llm_dir):
     else:
         print_color(f"run.py not found in {ask_llm_dir}", Colors.RED)
 
-def step_6_generate_fix_prompt(work_dir):
-    print_color("\n>>> [Step 6] Generating Fix Prompt...", Colors.CYAN)
+def generate_fix_prompt(work_dir):
+    print_color("\n>>> Generating Fix Prompt...", Colors.CYAN)
 
     fix_bug_dir = os.path.join(work_dir, "enginerring", "fix-bug")
     generate_fix_script = os.path.join(fix_bug_dir, "generate_fix_prompt.py")
@@ -151,16 +151,16 @@ def step_6_generate_fix_prompt(work_dir):
     else:
         print_color(f"generate_fix_prompt.py not found at: {generate_fix_script}", Colors.RED)
 
-def step_7_ask_llm_for_code_fix(ask_llm_dir):
-    print_color("\n>>> [Step 7] Asking LLM for Code Fix...", Colors.CYAN)
+def ask_llm_for_code_fix(ask_llm_dir):
+    print_color("\n>>> Asking LLM for Code Fix...", Colors.CYAN)
     os.chdir(ask_llm_dir)
     if os.path.exists("run.py"):
         subprocess.run([sys.executable, "run.py"])
     else:
         print_color(f"run.py not found in {ask_llm_dir}", Colors.RED)
 
-def step_8_apply_fix(work_dir):
-    print_color("\n>>> [Step 8] Applying Fix to Source Code...", Colors.CYAN)
+def apply_fix(work_dir):
+    print_color("\n>>> Applying Fix to Source Code...", Colors.CYAN)
 
     fix_bug_dir = os.path.join(work_dir, "enginerring", "fix-bug")
     apply_fix_script = os.path.join(fix_bug_dir, "apply_fix.py")

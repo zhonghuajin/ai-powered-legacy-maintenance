@@ -20,7 +20,7 @@ def main():
     mvn_cmd = "mvn.cmd" if os.name == "nt" else "mvn"
 
     try:
-        result = subprocess.run([mvn_cmd, "-f", pom_path, "clean", "package", "-DskipTests"])
+        result = subprocess.run([mvn_cmd, "-f", pom_path, "clean", "install", "-DskipTests"])
         if result.returncode != 0:
             print("Maven build failed", file=sys.stderr)
             sys.exit(1)
