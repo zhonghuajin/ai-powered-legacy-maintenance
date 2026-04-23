@@ -6,11 +6,14 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
 import java.io.*;
+import java.net.HttpURLConnection;
 import java.net.InetSocketAddress;
+import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -25,6 +28,10 @@ public class LogMonitorServer implements LogLifecycleHook {
     private static final DateTimeFormatter TS_FMT = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
 
     private static final AtomicBoolean FLUSHED = new AtomicBoolean(false);
+
+    // Manager info
+    private static String managerIp = null;
+    private static int managerPort = -1;
 
     @Override
     public void onFirstLog() {
@@ -47,9 +54,6 @@ public class LogMonitorServer implements LogLifecycleHook {
 
     // ======================== Flush ========================
 
-    /**
-     * Public static flush method. Ensures it is executed only once using AtomicBoolean.
-     */
     public static void flushNow(String source) {
         if (!FLUSHED.compareAndSet(false, true)) {
             log("flushNow(%s) skipped — already flushed.", source);
@@ -58,8 +62,8 @@ public class LogMonitorServer implements LogLifecycleHook {
 
         try {
             String ts = LocalDateTime.now().format(TS_FMT);
-            String logFilePath = "instrumentor-log-" + ts + "-" + source + ".txt";
-            String eventFilePath = "instrumentor-events-" + ts + "-" + source + ".txt";
+            String logFileName = "instrumentor-log-" + ts + "-" + source + ".txt";
+            String eventFileName = "instrumentor-events-" + ts + "-" + source + ".txt";
 
             LinkedHashMap<Long, List<Integer>> logSnapshot = InstrumentLog.getOrderedSnapshot();
             List<InstrumentLog.ThreadEventBuffer> buffers = InstrumentLog.getAllEventBuffers();
@@ -67,15 +71,13 @@ public class LogMonitorServer implements LogLifecycleHook {
 
             if (!logSnapshot.isEmpty()) {
                 String logContent = formatLogSnapshotStatic(logSnapshot);
-                Files.writeString(Path.of(logFilePath), logContent, StandardCharsets.UTF_8);
-                log("flushNow(%s): basic log written to %s", source, Path.of(logFilePath).toAbsolutePath());
+                handleFileOutput(logFileName, logContent, source);
             }
 
             if (totalEvents > 0) {
                 Map<Integer, String> dict = loadDictionaryStatic();
                 String eventContent = formatEventSnapshotStatic(buffers, dict);
-                Files.writeString(Path.of(eventFilePath), eventContent, StandardCharsets.UTF_8);
-                log("flushNow(%s): event log written to %s", source, Path.of(eventFilePath).toAbsolutePath());
+                handleFileOutput(eventFileName, eventContent, source);
             }
 
             if (logSnapshot.isEmpty() && totalEvents == 0) {
@@ -95,6 +97,61 @@ public class LogMonitorServer implements LogLifecycleHook {
         FLUSHED.set(false);
     }
 
+    // Send file to Manager's /upload endpoint
+    private static void handleFileOutput(String fileName, String content, String source) throws IOException {
+        if (managerIp != null && managerPort > 0) {
+            String targetUrl = "http://" + managerIp + ":" + managerPort + "/upload";
+            try {
+                URL url = new URL(targetUrl);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setDoOutput(true);
+                conn.setRequestMethod("POST");
+                
+                // Use multipart/form-data format to upload file
+                String boundary = "----WebKitFormBoundary" + System.currentTimeMillis();
+                conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
+
+                byte[] data = content.getBytes(StandardCharsets.UTF_8);
+
+                try (OutputStream os = conn.getOutputStream();
+                     PrintWriter writer = new PrintWriter(new OutputStreamWriter(os, StandardCharsets.UTF_8), true)) {
+                    
+                    // Write Boundary and Header
+                    writer.append("--").append(boundary).append("\r\n");
+                    writer.append("Content-Disposition: form-data; name=\"file\"; filename=\"").append(fileName).append("\"\r\n");
+                    writer.append("Content-Type: application/octet-stream\r\n\r\n");
+                    writer.flush();
+                    
+                    // Write file data
+                    os.write(data);
+                    os.flush();
+                    
+                    // Write ending Boundary
+                    writer.append("\r\n").append("--").append(boundary).append("--\r\n");
+                    writer.flush();
+                }
+
+                int responseCode = conn.getResponseCode();
+                if (responseCode == 200) {
+                    log("flushNow(%s): successfully sent %s to Manager at %s", source, fileName, targetUrl);
+                } else {
+                    log("flushNow(%s): failed to send %s to Manager. Response code: %d", source, fileName, responseCode);
+                    saveLocally(fileName, content, source);
+                }
+            } catch (Exception e) {
+                log("flushNow(%s): exception sending %s to Manager: %s", source, fileName, e.getMessage());
+                saveLocally(fileName, content, source);
+            }
+        } else {
+            saveLocally(fileName, content, source);
+        }
+    }
+
+    private static void saveLocally(String fileName, String content, String source) throws IOException {
+        Files.write(Paths.get(fileName), content.getBytes(StandardCharsets.UTF_8));
+        log("flushNow(%s): log written locally to %s", source, Paths.get(fileName).toAbsolutePath());
+    }
+
     // ======================== HTTP Server ========================
 
     private void startHttpServer(int initialPort) {
@@ -107,7 +164,6 @@ public class LogMonitorServer implements LogLifecycleHook {
                 server = HttpServer.create(new InetSocketAddress(port), 0);
                 break; 
             } catch (IOException e) {
-
                 if (i == maxTries - 1) {
                     log("Exception occurred while starting HTTP service on port %d: %s", port, e.getMessage());
                     return;
@@ -126,6 +182,7 @@ public class LogMonitorServer implements LogLifecycleHook {
             server.createContext("/clear", this::handleClear);
             server.createContext("/flush", this::handleFlush);
             server.createContext("/status", this::handleStatus);
+            server.createContext("/setManager", this::handleSetManager);
             server.setExecutor(null);
             server.start();
             log("Instrumentor monitoring service started: http://localhost:%d", port);
@@ -140,38 +197,9 @@ public class LogMonitorServer implements LogLifecycleHook {
     }
 
     private void handleFlush(HttpExchange exchange) throws IOException {
-        Map<String, String> params = parseQuery(exchange.getRequestURI().getRawQuery());
-        String customFile = params.get("file");
-
-        String logFilePath, eventFilePath;
-        if (customFile != null && !customFile.isEmpty()) {
-            logFilePath = customFile;
-            int dotIndex = customFile.lastIndexOf('.');
-            eventFilePath = dotIndex > 0
-                    ? customFile.substring(0, dotIndex) + "-events" + customFile.substring(dotIndex)
-                    : customFile + "-events";
-        } else {
-            String ts = LocalDateTime.now().format(TS_FMT);
-            logFilePath = "instrumentor-log-" + ts + ".txt";
-            eventFilePath = "instrumentor-events-" + ts + ".txt";
-        }
-
-        LinkedHashMap<Long, List<Integer>> logSnapshot = InstrumentLog.getOrderedSnapshot();
-        String logContent = formatLogSnapshotStatic(logSnapshot);
-        Path logPath = Path.of(logFilePath);
-        Files.writeString(logPath, logContent, StandardCharsets.UTF_8);
-
-        Map<Integer, String> dict = loadDictionaryStatic();
-        List<InstrumentLog.ThreadEventBuffer> buffers = InstrumentLog.getAllEventBuffers();
-        String eventContent = formatEventSnapshotStatic(buffers, dict);
-        Path eventPath = Path.of(eventFilePath);
-        Files.writeString(eventPath, eventContent, StandardCharsets.UTF_8);
-
-        StringBuilder resp = new StringBuilder();
-        resp.append("[LogMonitor] Logs successfully written to files.\n\n");
-        resp.append("[Basic Log File]: ").append(logPath.toAbsolutePath()).append("\n");
-        resp.append("[Event Log File (AI-Optimized)]: ").append(eventPath.toAbsolutePath()).append("\n");
-        sendTextResponse(exchange, 200, resp.toString());
+        resetFlushState();
+        flushNow("manual_http");
+        sendTextResponse(exchange, 200, "[LogMonitor] Flush triggered. Files sent to manager or saved locally.\n");
     }
 
     private void handleStatus(HttpExchange exchange) throws IOException {
@@ -186,7 +214,30 @@ public class LogMonitorServer implements LogLifecycleHook {
         sb.append("  Total Threads  : ").append(keyOrder.size()).append("\n");
         sb.append("  Total Basic Log Entries: ").append(totalLogs).append("\n");
         sb.append("  Total Event Log Entries: ").append(totalEvents).append("\n");
+        if (managerIp != null) {
+            sb.append("  Manager Address: http://").append(managerIp).append(":").append(managerPort).append("\n");
+        }
         sendTextResponse(exchange, 200, sb.toString());
+    }
+
+    private void handleSetManager(HttpExchange exchange) throws IOException {
+        Map<String, String> params = parseQuery(exchange.getRequestURI().getRawQuery());
+        String ip = params.get("ip");
+        String portStr = params.get("port");
+
+        if (ip != null && portStr != null) {
+            try {
+                managerIp = ip;
+                managerPort = Integer.parseInt(portStr);
+                String msg = String.format("[LogMonitor] Manager set to %s:%d\n", managerIp, managerPort);
+                log(msg.trim());
+                sendTextResponse(exchange, 200, msg);
+            } catch (NumberFormatException e) {
+                sendTextResponse(exchange, 400, "[LogMonitor] Invalid port number.\n");
+            }
+        } else {
+            sendTextResponse(exchange, 400, "[LogMonitor] Missing ip or port parameters.\n");
+        }
     }
 
     // ======================== Utility ========================
@@ -198,7 +249,7 @@ public class LogMonitorServer implements LogLifecycleHook {
     private static Map<Integer, String> loadDictionaryStatic() {
         Map<Integer, String> dict = new HashMap<>();
         try {
-            Path dictPath = Path.of("event_dictionary.txt");
+            Path dictPath = Paths.get("event_dictionary.txt");
             if (Files.exists(dictPath)) {
                 for (String line : Files.readAllLines(dictPath)) {
                     int idx = line.indexOf('=');
@@ -385,13 +436,13 @@ public class LogMonitorServer implements LogLifecycleHook {
         return total;
     }
 
-    private Map<String, String> parseQuery(String rawQuery) {
+    private Map<String, String> parseQuery(String rawQuery) throws UnsupportedEncodingException {
         Map<String, String> params = new LinkedHashMap<>();
         if (rawQuery == null || rawQuery.isEmpty()) return params;
         for (String pair : rawQuery.split("&")) {
             String[] kv = pair.split("=", 2);
-            params.put(URLDecoder.decode(kv[0], StandardCharsets.UTF_8),
-                    kv.length > 1 ? URLDecoder.decode(kv[1], StandardCharsets.UTF_8) : "");
+            params.put(URLDecoder.decode(kv[0], "UTF-8"),
+                    kv.length > 1 ? URLDecoder.decode(kv[1], "UTF-8") : "");
         }
         return params;
     }
