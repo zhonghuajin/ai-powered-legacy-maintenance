@@ -4,6 +4,7 @@ import logging
 import sys
 import socket
 import requests
+import concurrent.futures
 from flask import Flask, request, jsonify
 
 # Import color utility from attachment (assuming utils.py exists)
@@ -64,34 +65,73 @@ def get_local_ip():
     except Exception:
         return "127.0.0.1"
 
+def check_single_port(ip, port, local_ip, stop_event):
+    """Worker function to check a single port using fast socket connection first"""
+    # 如果其他线程已经找到了服务，直接退出
+    if stop_event.is_set():
+        return None
+
+    # 1. 使用原生 Socket 进行极速端口探测 (超时设为 0.1 秒)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.1)
+        try:
+            result = s.connect_ex((ip, port))
+            if result != 0:
+                return None  # 端口未开放，直接返回
+        except Exception:
+            return None
+
+    # 如果其他线程在我们探测期间找到了，退出
+    if stop_event.is_set():
+        return None
+
+    # 2. 端口开放，发送 HTTP 请求验证服务
+    try:
+        url = f"http://{ip}:{port}/status"
+        res = requests.get(url, timeout=0.5)
+        if res.status_code == 200:
+            # 标记已找到，通知其他线程停止
+            stop_event.set()
+            
+            print_color(f"Found service: {ip}:{port}", Colors.GREEN)
+            
+            # Send setManager request
+            set_mgr_url = f"http://{ip}:{port}/setManager?ip={local_ip}&port={PORT}"
+            mgr_res = requests.get(set_mgr_url, timeout=1)
+            if mgr_res.status_code == 200:
+                print_color(f"   -> Successfully registered Manager at {ip}:{port}", Colors.GREEN)
+            
+            return (ip, port)
+    except requests.RequestException:
+        pass
+    
+    return None
+
 def scan_ports():
-    """Scan ports on target IPs and register Manager"""
+    """Scan ports on target IPs concurrently and register Manager"""
     global active_endpoints
     active_endpoints = []
     local_ip = get_local_ip()
     
     print_color("\nStarting port scan (19898 - 19997)...", Colors.CYAN)
     for ip in target_ips:
-        found = False
-        for port in range(19898, 19898 + 100):
-            try:
-                url = f"http://{ip}:{port}/status"
-                res = requests.get(url, timeout=0.2)
-                if res.status_code == 200:
-                    active_endpoints.append((ip, port))
-                    print_color(f"Found service: {ip}:{port}", Colors.GREEN)
+        found_any = False
+        stop_event = threading.Event()
+        
+        # 使用 100 个线程并发，瞬间把所有端口的探测请求发出去
+        with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
+            futures = [
+                executor.submit(check_single_port, ip, port, local_ip, stop_event) 
+                for port in range(19898, 19898 + 100)
+            ]
+            
+            for future in concurrent.futures.as_completed(futures):
+                result = future.result()
+                if result:
+                    active_endpoints.append(result)
+                    found_any = True
                     
-                    # Send setManager request
-                    set_mgr_url = f"http://{ip}:{port}/setManager?ip={local_ip}&port={PORT}"
-                    mgr_res = requests.get(set_mgr_url, timeout=1)
-                    if mgr_res.status_code == 200:
-                        print_color(f"   -> Successfully registered Manager at {ip}:{port}", Colors.GREEN)
-                    
-                    found = True
-                    break  # Assume only one service per IP, stop scanning this IP once found
-            except requests.RequestException:
-                continue
-        if not found:
+        if not found_any:
             print_color(f"No available service port found on {ip}.", Colors.RED)
 
 def input_target_ips():
@@ -138,7 +178,7 @@ def print_endpoints_menu():
     print_color("      Command numbers: 1:status, 2:clear, 3:flush", Colors.GREEN)
     print_color("      Example input: '1 3' (execute flush on 1st IP in list)", Colors.DARKGRAY)
     print_color("  reip                  - Re-enter target IP addresses and scan", Colors.GREEN)
-    print_color("  exit                  - Exit the program", Colors.RED)
+    print_color("  exit                  - Exit the log manager server and go back to main flow", Colors.RED)
     print_color("=========================================\n", Colors.CYAN)
 
 def scan_and_manage():

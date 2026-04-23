@@ -33,14 +33,18 @@ def instrument_code(work_dir):
     print_color("========================================", Colors.CYAN)
     print_color("       Select Instrumentation Mode      ", Colors.CYAN)
     print_color("========================================", Colors.CYAN)
-    print("  1. Full Instrumentation\n  2. Incremental Instrumentation")
+    print("  1. Full Instrumentation\n  2. Incremental Instrumentation\n  3. Skip (if project is already instrumented)")
     print_color("========================================", Colors.CYAN)
 
     inst_mode_choice = ""
-    while not re.match(r"^[1-2]$", inst_mode_choice):
-        inst_mode_choice = input("Enter a number (1-2) for the instrumentation mode: ").strip()
-        if not re.match(r"^[1-2]$", inst_mode_choice):
-            print_color("[!] Invalid input. Please enter 1 or 2.", Colors.RED)
+    while not re.match(r"^[1-3]$", inst_mode_choice):
+        inst_mode_choice = input("Enter a number (1-3) for the instrumentation mode: ").strip()
+        if not re.match(r"^[1-3]$", inst_mode_choice):
+            print_color("[!] Invalid input. Please enter 1, 2, or 3.", Colors.RED)
+
+    if inst_mode_choice == "3":
+        print_color("[Mode Selection] Skipping instrumentation.", Colors.GREEN)
+        return
 
     mode_arg = "full" if inst_mode_choice == "1" else "incremental"
     print_color(f"[Mode Selection] Selected mode: {mode_arg}", Colors.GREEN)
@@ -80,6 +84,17 @@ def compile_and_run(instrumentor_test_path):
         f"Program execution finished. Please verify that instrumentor-events-*.txt and instrumentor-log-*.txt have been generated in {instrumentor_test_path}",
         Colors.GREEN
     )
+
+def startup_log_manager_server(work_dir):
+    print_color("\n>>> Starting Log Manager Server...", Colors.CYAN)
+    server_script = os.path.join(work_dir, "enginerring", "log-manager-server", "server.py")
+    
+    if os.path.exists(server_script):
+        print_color(f"Launching {server_script}...", Colors.GREEN)
+        # Changed from subprocess.Popen to subprocess.run to prevent stdin collision
+        subprocess.run([sys.executable, server_script])
+    else:
+        print_color(f"server.py not found at: {server_script}", Colors.RED)
 
 def analyze_logs(work_dir, instrumentor_test_path):
     print_color("\n>>> Analyzing logs and extracting denoised data...", Colors.CYAN)

@@ -17,6 +17,7 @@ from work_flow.prechecks import (
 )
 from work_flow.workflow_steps import (
     instrument_code,
+    startup_log_manager_server,
     analyze_logs,
     generate_ai_prompt,
     ask_llm_for_localization,
@@ -53,10 +54,13 @@ def main():
     print_color("  *** ATTENTION ***", Colors.YELLOW)
     print_color("  Instrumentation has been completed!", Colors.YELLOW)
     print_color("  Please recompile (if necessary) and execute the target project.", Colors.YELLOW)
-    print_color("  Trigger the scenario and /flush the logs before continuing.", Colors.YELLOW)
     print_color("=======================================================\n", Colors.YELLOW)
 
-    pause_for_next_step("Setup Shadow Branch & Instrumentation", "Analyze Logs and Extract Denoised Data")
+    pause_for_next_step("Setup Shadow Branch & Instrumentation", "Startup Log Manager Server")
+
+    startup_log_manager_server(work_dir)
+
+    pause_for_next_step("Startup Log Manager Server", "Analyze Logs and Extract Denoised Data")
 
     analyze_logs(work_dir, instrumentor_test_path)
     pause_for_next_step("Log Analysis", "Generate AI Prompt")
