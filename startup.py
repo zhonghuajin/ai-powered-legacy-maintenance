@@ -17,7 +17,6 @@ from work_flow.prechecks import (
     auto_select_llm_provider
 )
 from work_flow.workflow_steps import (
-    create_or_select_project,
     instrument_code,
     startup_log_manager_server,
     analyze_logs,
@@ -27,6 +26,8 @@ from work_flow.workflow_steps import (
     ask_llm_for_code_fix,
     apply_fix
 )
+# Import from the new project management module
+from work_flow.project_manager import create_or_select_project
 
 
 def main():
