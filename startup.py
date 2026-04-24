@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Instrumentor Test Bug Fix Workflow Quickstart Script
-This script guides you through the full process of code instrumentation, log denoising and analysis, AI prompt generation, and automated bug fixing.
+This script guides you through the full process of code instrumentation,
+log denoising and analysis, AI prompt generation, and automated bug fixing.
 """
 
 import os
@@ -16,6 +17,7 @@ from work_flow.prechecks import (
     auto_select_llm_provider
 )
 from work_flow.workflow_steps import (
+    create_or_select_project,
     instrument_code,
     startup_log_manager_server,
     analyze_logs,
@@ -25,6 +27,7 @@ from work_flow.workflow_steps import (
     ask_llm_for_code_fix,
     apply_fix
 )
+
 
 def main():
     work_dir = os.path.abspath(os.getcwd())
@@ -45,10 +48,13 @@ def main():
     env_file = check_llm_env(ask_llm_dir)
     auto_select_llm_provider(env_file)
 
-    pause_for_next_step("Environment Setup", "Setup Shadow Branch")
+    # Step: Create or select a project (returns the git root path)
+    root_path = create_or_select_project(work_dir)
+
+    pause_for_next_step("Project and Environment Setup", "Setup Shadow Branch")
 
     # Workflow Execution
-    instrument_code(work_dir)
+    instrument_code(work_dir, git_root=root_path)
 
     print_color("\n=======================================================", Colors.YELLOW)
     print_color("  *** ATTENTION ***", Colors.YELLOW)
@@ -85,6 +91,7 @@ def main():
     print_color("=======================================================", Colors.MAGENTA)
 
     os.chdir(work_dir)
+
 
 if __name__ == "__main__":
     try:
