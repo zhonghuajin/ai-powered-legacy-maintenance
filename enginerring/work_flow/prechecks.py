@@ -4,20 +4,28 @@ import sys
 import subprocess
 import re
 import platform
-from .utils import Colors, print_color
+from print_utils.utils import Colors, print_color
+
 
 def check_target_folders(work_dir):
-    target_folders_file = os.path.join(work_dir, "target-folders.txt")
-    if not os.path.exists(target_folders_file):
-        print_color("=======================================================", Colors.RED)
-        print_color(" [!] Fatal Error: target-folders.txt was not found in the current directory.", Colors.RED)
-        print_color("=======================================================", Colors.RED)
-        print_color(" Please create a file named 'target-folders.txt' in the current directory first.", Colors.YELLOW)
-        print_color(" This file is used to configure the absolute paths of source directories to be instrumented.", Colors.YELLOW)
-        print_color(" Format requirement: one absolute path per line, with no limit on the number of paths.", Colors.YELLOW)
-        print_color(" After creating and configuring this file, please run this script again.", Colors.YELLOW)
-        print_color("=======================================================\n", Colors.RED)
+    """
+    Verify that target-folders.txt under work_dir contains at least one valid target path.
+    If not found or empty, print an error and exit.
+    """
+    target_file = os.path.join(work_dir, "target-folders.txt")
+    if not os.path.exists(target_file):
+        print_color(f"Error: target-folders.txt not found in {work_dir}", Colors.RED)
+        print_color("Please run the project setup step first.", Colors.RED)
         sys.exit(1)
+
+    with open(target_file, 'r', encoding='utf-8') as f:
+        paths = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+
+    if not paths:
+        print_color(f"Error: target-folders.txt exists but contains no valid target paths.", Colors.RED)
+        print_color("Please add at least one folder/file path before proceeding.", Colors.RED)
+        sys.exit(1)
+
 
 def print_disclaimer():
     print_color("-------------------------------------------------------", Colors.YELLOW)
@@ -43,6 +51,7 @@ def print_disclaimer():
     print_color("   7. Ask LLM for Code Fix", Colors.YELLOW)
     print_color("   8. Apply Fix to Source Code", Colors.YELLOW)
     print_color("-------------------------------------------------------\n", Colors.YELLOW)
+
 
 def check_java_version():
     is_valid_jdk = False
@@ -87,6 +96,7 @@ def check_java_version():
         else:
             print_color("No path entered. Will attempt to use current environment; this may cause compilation or runtime failures.", Colors.RED)
 
+
 def check_llm_env(ask_llm_dir):
     env_file = os.path.join(ask_llm_dir, ".env")
 
@@ -112,6 +122,7 @@ ANTHROPIC_API_KEY=""
         print_color("[Environment Check] LLM .env file found.", Colors.GREEN)
     
     return env_file
+
 
 def auto_select_llm_provider(env_file):
     print()
@@ -150,6 +161,7 @@ def auto_select_llm_provider(env_file):
     else:
         print_color("[!] No valid API keys found in .env file. Please configure at least one API key.", Colors.RED)
         sys.exit(1)
+
 
 def setup_windows_proxy():
     if platform.system() == "Windows":

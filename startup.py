@@ -8,15 +8,15 @@ log denoising and analysis, AI prompt generation, and automated bug fixing.
 import os
 import sys
 
-from work_flow.utils import Colors, print_color, pause_for_next_step
-from work_flow.prechecks import (
+from print_utils.utils import Colors, print_color, pause_for_next_step
+from enginerring.work_flow.prechecks import (
     check_target_folders,
     print_disclaimer,
     check_java_version,
     check_llm_env,
     auto_select_llm_provider
 )
-from work_flow.workflow_steps import (
+from enginerring.work_flow.workflow_steps import (
     instrument_code,
     startup_log_manager_server,
     analyze_logs,
@@ -27,13 +27,13 @@ from work_flow.workflow_steps import (
     apply_fix
 )
 # Import from the new project management module
-from work_flow.project_manager import create_or_select_project
+from enginerring.project_manager.project_manager import create_or_select_project
 
 
 def main():
     work_dir = os.path.abspath(os.getcwd())
     instrumentor_test_path = os.path.join(work_dir, "core", "instrumentor-test")
-    ask_llm_dir = os.path.join(work_dir, "enginerring", "ask-llm")
+    ask_llm_dir = os.path.join(work_dir, "enginerring", "ask_llm")
 
     print_color("=======================================================", Colors.CYAN)
     print_color("      Enjoy the Convenience of LLMs.     ", Colors.CYAN)

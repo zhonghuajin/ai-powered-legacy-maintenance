@@ -2,7 +2,7 @@ import os
 import sys
 import json
 import subprocess
-from run_instrumentation_flow import run_instrumentation_flow
+from .run_instrumentation_flow import run_instrumentation_flow
 
 def run_git_command(command):
     try:
@@ -44,7 +44,7 @@ def run_full_instrumentation(git_root_dir, project_file_path, original_cwd):
             print(f"Failed to create branch: {msg}")
             return False
 
-    # 记录 project info
+    # Record project info
     os.chdir(original_cwd)
     os.makedirs(os.path.dirname(project_file_path), exist_ok=True)
     project_info = {
@@ -56,17 +56,17 @@ def run_full_instrumentation(git_root_dir, project_file_path, original_cwd):
     
     print(f"\nSuccessfully wrote project information to file: {project_file_path}")
 
-    # 执行全量插桩
+    # Execute full instrumentation
     target_folders_file = os.path.join(original_cwd, "target-folders.txt")
     success = run_instrumentation_flow(target_folders_file=target_folders_file)
     
     if success:
-        # 插桩完成后，在影子分支进行 commit
+        # After instrumentation, commit on the shadow branch
         os.chdir(git_root_dir)
         print("\nCommitting instrumentation changes to the shadow branch...")
         run_git_command(["git", "add", "."])
         
-        # 检查最后一次 commit 是否是我们的插桩 commit
+        # Check if the last commit is our instrumentation commit
         _, last_commit_msg = run_git_command(["git", "log", "-1", "--pretty=%B"])
         if "Auto-commit: Code instrumentation" in last_commit_msg:
             print("Amending previous instrumentation commit...")
@@ -76,7 +76,7 @@ def run_full_instrumentation(git_root_dir, project_file_path, original_cwd):
             run_git_command(["git", "commit", "-m", "Auto-commit: Code instrumentation"])
 
         print("\n" + "*" * 70)
-        print("\033[1;31m" + "【 IMPORTANT NOTICE 】".center(64) + "\033[0m")
+        print("\033[1;31m" + "[ IMPORTANT NOTICE ]".center(64) + "\033[0m")
         print(f"\033[1;33mFor the Git project at: {git_root_dir}\033[0m")
         print(f"\033[1;33mYou are currently on branch: {branch_name}\033[0m")
         print(f"\033[1;32mAll instrumentation changes have been committed to this shadow branch.\033[0m")

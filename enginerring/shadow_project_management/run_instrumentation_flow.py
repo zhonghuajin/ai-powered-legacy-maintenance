@@ -1,11 +1,10 @@
 import os
 import sys
-import argparse
 import subprocess
 import shutil
 
-# 引入 utils.py 中的颜色打印工具
-from utils import print_color, Colors
+from print_utils.utils import print_color, Colors
+
 
 def run_instrumentation_flow(target_folders_file=None, target_folders_list=None):
     """
@@ -34,11 +33,10 @@ def run_instrumentation_flow(target_folders_file=None, target_folders_list=None)
                     target_folders.append(line)
                     
         if not target_folders:
-            # 让 "No target folders found" 错误提示更加醒目
             print()
             print_color("=================================================================", Colors.RED)
-            print_color(f" ❌ ERROR: No target folders found in file: {target_folders_file}", Colors.RED)
-            print_color("    Please add at least one valid folder path to the file.", Colors.RED)
+            print_color(f"ERROR: No target folders found in file: {target_folders_file}", Colors.RED)
+            print_color("      Please add at least one valid folder path to the file.", Colors.RED)
             print_color("=================================================================", Colors.RED)
             print()
             return False
@@ -61,13 +59,10 @@ def run_instrumentation_flow(target_folders_file=None, target_folders_list=None)
         
     print(f"Using JAVA_HOME: {java_home}")
     
-    # Update PATH for the current process to ensure the correct Java is used
     java_bin = os.path.join(java_home, "bin")
     os.environ["PATH"] = f"{java_bin}{os.pathsep}{os.environ.get('PATH', '')}"
 
-    # Find executables dynamically (handles .exe/.cmd on Windows automatically)
     java_exe = shutil.which("java")
-    
     if not java_exe:
         print_color("Error: Java (java) not found in PATH.", Colors.RED)
         return False
@@ -89,21 +84,3 @@ def run_instrumentation_flow(target_folders_file=None, target_folders_list=None)
 
     print("\nInstrumentation phase completed. Please check the generated log file timestamp and use process-logs-demo.py for subsequent processing.")
     return True
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Executes the instrumentation process.")
-    parser.add_argument("-f", "--target-folders-file", default=os.path.join(".", "target-folders.txt"), 
-                        help="Specify a file containing target folder paths (one per line)")
-    parser.add_argument("-t", "--target-folders", nargs='+', 
-                        help="Specify one or more target folder paths for instrumentation (space-separated)")
-    
-    args = parser.parse_args()
-    
-    success = run_instrumentation_flow(
-        target_folders_file=args.target_folders_file,
-        target_folders_list=args.target_folders
-    )
-    
-    if not success:
-        sys.exit(1)
