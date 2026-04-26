@@ -148,8 +148,7 @@ def _create_new_project(work_dir, projects_dir):
 def _manage_target_folders(proj_path):
     """
     Prompt the user to specify target folders/files for the project.
-    Saves results to target-folders.txt in the project directory.
-    If the file already has entries, the user can keep, replace, or edit them.
+    Saves results to target-folders.txt and syncs them to config.json.
     """
     target_file = os.path.join(proj_path, "target-folders.txt")
     existing_paths = _read_target_folders(target_file)
@@ -166,9 +165,13 @@ def _manage_target_folders(proj_path):
         print("  r - Replace with new targets")
         print("  a - Append more targets")
         choice = input("Choose an action [k]: ").strip().lower() or "k"
+
         if choice == "k":
             print_color("Keeping existing target paths.", Colors.GREEN)
+            # ✨ [NEW] Sync existing paths to config.json
+            _sync_target_folders_to_config(proj_path)
             return
+
         elif choice == "a":
             new_paths = _prompt_target_input(target_file)
             if new_paths:
@@ -179,7 +182,10 @@ def _manage_target_folders(proj_path):
                 )
             else:
                 print_color("No new paths added. Keeping existing targets.", Colors.YELLOW)
+            # ✨ [NEW] Sync combined (or original) paths to config.json
+            _sync_target_folders_to_config(proj_path)
             return
+
         # choice == "r" falls through to fresh input below
 
     # Fresh input (no existing entries, or user chose to replace)
@@ -190,6 +196,34 @@ def _manage_target_folders(proj_path):
     else:
         print_color("No target paths specified. You can edit the file later:", Colors.YELLOW)
         print_color(f"  {target_file}", Colors.YELLOW)
+
+    # ✨ [NEW] Sync final paths (even if empty) to config.json
+    _sync_target_folders_to_config(proj_path)
+
+
+def _sync_target_folders_to_config(proj_path):
+    """
+    Read target-folders.txt and write the paths into config.json under 'target-folders'.
+    """
+    target_file = os.path.join(proj_path, "target-folders.txt")
+    paths = _read_target_folders(target_file)
+    config_path = os.path.join(proj_path, "config.json")
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+    except FileNotFoundError:
+        config = {}
+    except json.JSONDecodeError:
+        print_color(f"Warning: config.json is corrupted, resetting it.", Colors.YELLOW)
+        config = {}
+
+    config["target-folders"] = paths
+
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=4, ensure_ascii=False)
+
+    print_color(f"Synced {len(paths)} target path(s) to config.json", Colors.GREEN)
 
 
 def _prompt_target_input(target_file):
