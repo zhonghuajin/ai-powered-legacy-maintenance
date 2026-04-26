@@ -14,7 +14,7 @@ def create_or_select_project(work_dir):
     """
     Step: Create or select an existing project.
     After selection/creation, prompt the user to specify target folders/files.
-    Returns the git repository root directory (root_path) for the selected project.
+    Returns the project directory (proj_path) and git repository root directory (root_path).
     """
     projects_dir = os.path.join(work_dir, "projects")
     os.makedirs(projects_dir, exist_ok=True)
@@ -48,7 +48,7 @@ def create_or_select_project(work_dir):
     # Manage target folders for the selected/created project
     _manage_target_folders(proj_path)
 
-    return root_path
+    return proj_path, root_path
 
 
 def _select_or_create_project(work_dir, projects_dir, existing_projects):

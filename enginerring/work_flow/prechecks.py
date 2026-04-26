@@ -7,26 +7,6 @@ import platform
 from print_utils.utils import Colors, print_color
 
 
-def check_target_folders(work_dir):
-    """
-    Verify that target-folders.txt under work_dir contains at least one valid target path.
-    If not found or empty, print an error and exit.
-    """
-    target_file = os.path.join(work_dir, "target-folders.txt")
-    if not os.path.exists(target_file):
-        print_color(f"Error: target-folders.txt not found in {work_dir}", Colors.RED)
-        print_color("Please run the project setup step first.", Colors.RED)
-        sys.exit(1)
-
-    with open(target_file, 'r', encoding='utf-8') as f:
-        paths = [line.strip() for line in f if line.strip() and not line.startswith('#')]
-
-    if not paths:
-        print_color(f"Error: target-folders.txt exists but contains no valid target paths.", Colors.RED)
-        print_color("Please add at least one folder/file path before proceeding.", Colors.RED)
-        sys.exit(1)
-
-
 def print_disclaimer():
     print_color("-------------------------------------------------------", Colors.YELLOW)
     print_color(" BUG DEMONSTRATION INFO & DISCLAIMER:", Colors.YELLOW)

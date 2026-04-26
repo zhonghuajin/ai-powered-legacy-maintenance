@@ -10,7 +10,6 @@ import sys
 
 from print_utils.utils import Colors, print_color, pause_for_next_step
 from enginerring.work_flow.prechecks import (
-    check_target_folders,
     print_disclaimer,
     check_java_version,
     check_llm_env,
@@ -43,19 +42,18 @@ def main():
     print_color("=======================================================\n", Colors.CYAN)
 
     # Pre-checks
-    check_target_folders(work_dir)
     print_disclaimer()
     check_java_version()
     env_file = check_llm_env(ask_llm_dir)
     auto_select_llm_provider(env_file)
 
-    # Step: Create or select a project (returns the git root path)
-    root_path = create_or_select_project(work_dir)
+    # Step: Create or select a project (returns the project path and git root path)
+    proj_path, root_path = create_or_select_project(work_dir)
 
     pause_for_next_step("Project and Environment Setup", "Setup Shadow Branch")
 
     # Workflow Execution
-    instrument_code(work_dir, git_root=root_path)
+    instrument_code(work_dir, proj_path=proj_path, git_root=root_path)
 
     print_color("\n=======================================================", Colors.YELLOW)
     print_color("  *** ATTENTION ***", Colors.YELLOW)
@@ -69,7 +67,7 @@ def main():
 
     pause_for_next_step("Startup Log Manager Server", "Analyze Logs and Extract Denoised Data")
 
-    analyze_logs(work_dir, instrumentor_test_path)
+    analyze_logs(work_dir, instrumentor_test_path, proj_path=proj_path)
     pause_for_next_step("Log Analysis", "Generate AI Prompt")
 
     generate_ai_prompt(work_dir)

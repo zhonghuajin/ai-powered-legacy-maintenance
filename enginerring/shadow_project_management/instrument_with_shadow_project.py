@@ -6,7 +6,7 @@ from .sync_modified_files import sync_files
 
 
 def run_instrumentation_mode(git_root, mode="full", project_file="current_project",
-                             original_cwd=None):
+                             original_cwd=None, proj_path=None):
     """
     Execute instrumentation task (full or incremental).
 
@@ -20,6 +20,8 @@ def run_instrumentation_mode(git_root, mode="full", project_file="current_projec
         Path to the project info JSON file.
     original_cwd : str, optional
         Original working directory, needed for incremental mode.
+    proj_path : str, optional
+        Path to the isolated project directory containing target-folders.txt.
     """
     git_root_dir = os.path.abspath(git_root)
     project_file_path = os.path.abspath(project_file)
@@ -35,14 +37,16 @@ def run_instrumentation_mode(git_root, mode="full", project_file="current_projec
         print(f"\n>>> Starting code instrumentation in '{mode}' mode...")
 
         if mode == "full":
-            success = run_full_instrumentation(git_root_dir, project_file_path, original_cwd)
+            success = run_full_instrumentation(git_root_dir, project_file_path, original_cwd, proj_path)
             if not success:
                 print("Error: Full instrumentation flow failed.")
         elif mode == "incremental":
             print("Notice: Incremental instrumentation is selected.")
             try:
+                # Modified: pass proj_path so target-folders.txt is placed in the project directory
                 success = sync_files(project_file_path=project_file_path,
-                                     original_cwd=original_cwd)
+                                     original_cwd=original_cwd,
+                                     proj_path=proj_path)
             except Exception as e:
                 print(f"Error: Incremental sync failed with exception: {e}")
                 success = False

@@ -10,7 +10,7 @@ from .prechecks import setup_windows_proxy
 from enginerring.shadow_project_management.instrument_with_shadow_project import run_instrumentation_mode
 
 
-def instrument_code(work_dir, git_root=None):
+def instrument_code(work_dir, proj_path=None, git_root=None):
     print_color(
         "\n>>> Setting up shadow branch and instrumenting code...", Colors.CYAN)
 
@@ -70,7 +70,8 @@ def instrument_code(work_dir, git_root=None):
         git_root=git_root_dir,
         mode=mode_arg,
         project_file=project_file_path,
-        original_cwd=os.getcwd()
+        original_cwd=os.getcwd(),
+        proj_path=proj_path
     )
 
     if not success:
@@ -110,7 +111,7 @@ def startup_log_manager_server(work_dir):
         print_color(f"server.py not found at: {server_script}", Colors.RED)
 
 
-def analyze_logs(work_dir, instrumentor_test_path):
+def analyze_logs(work_dir, instrumentor_test_path, proj_path=None):
     print_color(
         "\n>>> Analyzing logs and extracting denoised data...", Colors.CYAN)
     os.chdir(work_dir)
@@ -139,10 +140,12 @@ def analyze_logs(work_dir, instrumentor_test_path):
         print(f"Found log file: {log_file}")
         print(f"Found events file: {events_file}")
 
+        target_folders_file = os.path.join(proj_path, "target-folders.txt") if proj_path else ".\\target-folders.txt"
+
         ps_exe = "powershell" if platform.system() == "Windows" else "pwsh"
         ps_cmd = [
             ps_exe, "-ExecutionPolicy", "Bypass", "-File", ".\\process-logs-demo.ps1",
-            "-TargetFoldersFile", ".\\target-folders.txt",
+            "-TargetFoldersFile", target_folders_file,
             "-LogFile", log_file,
             "-CommentMappingFile", ".\\comment-mapping.txt",
             "-EventsFile", events_file

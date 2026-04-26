@@ -16,9 +16,19 @@ def run_cmd(cmd, check=True):
     return result.stdout.strip()
 
 
-def sync_files(project_file_path, original_cwd):
+def sync_files(project_file_path, original_cwd, proj_path=None):
     """
     Synchronize modified files based on the project configuration.
+
+    Parameters
+    ----------
+    project_file_path : str
+        Path to the current_project JSON file.
+    original_cwd : str
+        Original working directory before changing to git root.
+    proj_path : str, optional
+        Path to the isolated project directory. If provided,
+        target-folders.txt will be written there instead of original_cwd.
     """
     if project_file_path is None:
         print("Error: project_file_path cannot be None.")
@@ -116,8 +126,12 @@ def sync_files(project_file_path, original_cwd):
         synced_absolute_paths.append(str(dst_file.resolve()))
         print(f"Restored: {src_file} -> {dst_file}")
 
-    # 7. Save absolute paths to target-folders.txt in original_cwd
-    target_folders_file = os.path.join(original_cwd, "target-folders.txt")
+    # 7. Save absolute paths to target-folders.txt
+    # Modified: use proj_path if provided, matching full instrumentation behavior
+    if proj_path:
+        target_folders_file = os.path.join(proj_path, "target-folders.txt")
+    else:
+        target_folders_file = os.path.join(original_cwd, "target-folders.txt")
     with open(target_folders_file, 'w', encoding='utf-8') as f:
         for path in synced_absolute_paths:
             f.write(path + '\n')

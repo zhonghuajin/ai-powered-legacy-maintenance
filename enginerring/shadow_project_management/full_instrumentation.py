@@ -11,7 +11,7 @@ def run_git_command(command):
     except subprocess.CalledProcessError as e:
         return False, e.stderr.strip()
 
-def run_full_instrumentation(git_root_dir, project_file_path, original_cwd):
+def run_full_instrumentation(git_root_dir, project_file_path, original_cwd, proj_path=None):
     branch_name = "shadow-project-for-instrumention"
     print(f"Entering directory: {git_root_dir}")
     os.chdir(git_root_dir)
@@ -57,7 +57,11 @@ def run_full_instrumentation(git_root_dir, project_file_path, original_cwd):
     print(f"\nSuccessfully wrote project information to file: {project_file_path}")
 
     # Execute full instrumentation
-    target_folders_file = os.path.join(original_cwd, "target-folders.txt")
+    if proj_path:
+        target_folders_file = os.path.join(proj_path, "target-folders.txt")
+    else:
+        target_folders_file = os.path.join(original_cwd, "target-folders.txt")
+        
     success = run_instrumentation_flow(target_folders_file=target_folders_file)
     
     if success:
