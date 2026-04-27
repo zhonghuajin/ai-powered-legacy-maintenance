@@ -30,7 +30,7 @@ def create_or_select_project(work_dir):
                     try:
                         with open(config_file, "r", encoding="utf-8") as f:
                             cfg = json.load(f)
-                        root_path = cfg.get("root_path", "")
+                        root_path = cfg.get("original_git_root", "")
                         existing_projects.append((entry, root_path, proj_path))
                     except Exception:
                         # Ignore invalid config files
@@ -38,7 +38,8 @@ def create_or_select_project(work_dir):
 
     # If no projects exist, force creation of a new one
     if not existing_projects:
-        print_color("No existing projects found. Let's create a new one.", Colors.CYAN)
+        print_color(
+            "No existing projects found. Let's create a new one.", Colors.CYAN)
         proj_path, root_path = _create_new_project(work_dir, projects_dir)
     else:
         proj_path, root_path = _select_or_create_project(
@@ -63,7 +64,8 @@ def _select_or_create_project(work_dir, projects_dir, existing_projects):
 
     while True:
         try:
-            choice = input("Select a project number or choose to create a new one: ").strip()
+            choice = input(
+                "Select a project number or choose to create a new one: ").strip()
             if choice.isdigit():
                 num = int(choice)
                 if 1 <= num <= len(existing_projects):
@@ -100,7 +102,8 @@ def _create_new_project(work_dir, projects_dir):
             continue
         # Check for Unicode range - rejected with English message
         if re.search(r'[\u4e00-\u9fff]', name):
-            print_color("Non-English characters are not allowed. Please use English.", Colors.RED)
+            print_color(
+                "Non-English characters are not allowed. Please use English.", Colors.RED)
             continue
         if not re.match(r'^[a-zA-Z0-9_\-\.]+$', name):
             print_color(
@@ -118,7 +121,8 @@ def _create_new_project(work_dir, projects_dir):
 
     git_root = ""
     while not git_root:
-        git_root = input("Please enter the Git repository root directory of the project: ").strip()
+        git_root = input(
+            "Please enter the Git repository root directory of the project: ").strip()
         if not git_root:
             print_color("Path cannot be empty.", Colors.RED)
         elif not os.path.isdir(git_root):
@@ -132,12 +136,13 @@ def _create_new_project(work_dir, projects_dir):
     # Create project folder and config.json
     proj_path = os.path.join(projects_dir, name)
     os.makedirs(proj_path, exist_ok=True)
-    config = {"root_path": git_root}
+    config = {"original_git_root": git_root}
     config_path = os.path.join(proj_path, "config.json")
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=4)
 
-    print_color(f"Project '{name}' created successfully with root: {git_root}", Colors.GREEN)
+    print_color(
+        f"Project '{name}' created successfully with root: {git_root}", Colors.GREEN)
     return proj_path, git_root
 
 
@@ -154,13 +159,14 @@ def _sync_config_original_targets(proj_path, paths):
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 config_data = json.load(f)
-            
+
             config_data["original-target-folders"] = paths
-            
+
             with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(config_data, f, indent=4)
         except Exception as e:
-            print_color(f"Failed to update config.json with original-target-folders: {e}", Colors.RED)
+            print_color(
+                f"Failed to update config.json with original-target-folders: {e}", Colors.RED)
 
 
 def _manage_target_folders(proj_path):
@@ -198,7 +204,8 @@ def _manage_target_folders(proj_path):
                     f"Saved {len(combined)} target path(s) to: {target_file}", Colors.GREEN
                 )
             else:
-                print_color("No new paths added. Keeping existing targets.", Colors.YELLOW)
+                print_color(
+                    "No new paths added. Keeping existing targets.", Colors.YELLOW)
                 _sync_config_original_targets(proj_path, existing_paths)
             return
         # choice == "r" falls through to fresh input below
@@ -208,9 +215,11 @@ def _manage_target_folders(proj_path):
     if paths:
         _write_target_folders(target_file, paths)
         _sync_config_original_targets(proj_path, paths)
-        print_color(f"Saved {len(paths)} target path(s) to: {target_file}", Colors.GREEN)
+        print_color(
+            f"Saved {len(paths)} target path(s) to: {target_file}", Colors.GREEN)
     else:
-        print_color("No target paths specified. You can edit the file later:", Colors.YELLOW)
+        print_color(
+            "No target paths specified. You can edit the file later:", Colors.YELLOW)
         print_color(f"  {target_file}", Colors.YELLOW)
 
 
@@ -219,7 +228,8 @@ def _prompt_target_input(target_file):
     Let the user choose between interactive input or opening an editor,
     then collect and return a list of paths.
     """
-    print_color("\nHow would you like to specify target folders/files?", Colors.CYAN)
+    print_color(
+        "\nHow would you like to specify target folders/files?", Colors.CYAN)
     print("  1. Type or drag-and-drop paths in terminal (recommended)")
     print("  2. Open in a text editor")
     method = input("Choose method [1]: ").strip() or "1"
@@ -238,8 +248,10 @@ def _collect_paths_multiline():
     Returns a list of validated absolute paths.
     """
     print_color("\nEnter target file/folder paths, one per line.", Colors.CYAN)
-    print_color("  Tip: You can drag files/folders from your file manager into the terminal.", Colors.YELLOW)
-    print_color("  Press Enter on an empty line to finish. Type 'q' to cancel.\n", Colors.YELLOW)
+    print_color(
+        "  Tip: You can drag files/folders from your file manager into the terminal.", Colors.YELLOW)
+    print_color(
+        "  Press Enter on an empty line to finish. Type 'q' to cancel.\n", Colors.YELLOW)
 
     paths = []
     while True:
@@ -255,7 +267,8 @@ def _collect_paths_multiline():
         if not line:
             if paths:
                 break
-            print_color("  Please enter at least one path (or 'q' to cancel).", Colors.RED)
+            print_color(
+                "  Please enter at least one path (or 'q' to cancel).", Colors.RED)
             continue
 
         if line.lower() == "q":
@@ -304,25 +317,34 @@ def _collect_paths_editor(target_file):
     editor = _detect_editor()
 
     # Important instructions before opening the editor
-    print_color("\n*****************************************************************", Colors.YELLOW)
+    print_color(
+        "\n*****************************************************************", Colors.YELLOW)
     print_color("  IMPORTANT: Please read before editing!", Colors.RED)
-    print_color("*****************************************************************", Colors.YELLOW)
+    print_color(
+        "*****************************************************************", Colors.YELLOW)
     print_color("  - Enter one file or folder path per line.", Colors.CYAN)
-    print_color("  - Lines starting with '#' are comments and will be IGNORED.", Colors.CYAN)
+    print_color(
+        "  - Lines starting with '#' are comments and will be IGNORED.", Colors.CYAN)
     print_color("  - Blank lines will also be ignored.", Colors.CYAN)
-    print_color("  - Only plain path lines will be saved as targets.", Colors.CYAN)
-    print_color("*****************************************************************", Colors.YELLOW)
+    print_color(
+        "  - Only plain path lines will be saved as targets.", Colors.CYAN)
+    print_color(
+        "*****************************************************************", Colors.YELLOW)
     print_color(f"  Editor : {editor}", Colors.GREEN)
     print_color(f"  File   : {target_file}", Colors.GREEN)
-    print_color("*****************************************************************", Colors.YELLOW)
-    print_color("  Save the file and close the editor to continue.", Colors.YELLOW)
-    print_color("*****************************************************************\n", Colors.YELLOW)
+    print_color(
+        "*****************************************************************", Colors.YELLOW)
+    print_color(
+        "  Save the file and close the editor to continue.", Colors.YELLOW)
+    print_color(
+        "*****************************************************************\n", Colors.YELLOW)
 
     try:
         subprocess.call(f'{editor} "{target_file}"', shell=True)
     except Exception as e:
         print_color(f"Failed to open editor: {e}", Colors.RED)
-        print_color(f"Please edit the file manually and re-run:\n  {target_file}", Colors.YELLOW)
+        print_color(
+            f"Please edit the file manually and re-run:\n  {target_file}", Colors.YELLOW)
         return []
 
     return _read_target_folders(target_file)
