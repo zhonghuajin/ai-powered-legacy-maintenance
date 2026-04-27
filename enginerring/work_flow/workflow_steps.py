@@ -5,6 +5,7 @@ import subprocess
 import re
 import platform
 import glob
+import shutil
 from print_utils.utils import Colors, print_color
 from .prechecks import setup_windows_proxy
 from enginerring.shadow_project_management.instrument_with_shadow_project import run_instrumentation_mode
@@ -28,7 +29,6 @@ def instrument_code(work_dir, proj_path=None, git_root=None):
         " The path entered below must be the top-level Git repository root that contains those folders.", Colors.YELLOW)
     print_color("========================================", Colors.YELLOW)
 
-    # Use provided git_root if available, otherwise ask
     if git_root:
         git_root_dir = git_root
         print_color(
@@ -79,6 +79,23 @@ def instrument_code(work_dir, proj_path=None, git_root=None):
             "Error: Failed to setup shadow branch and instrument code. Exiting.", Colors.RED)
         sys.exit(1)
 
+    # Move instrumentation output files to project directory after success
+    if proj_path:
+        _move_instrumentation_outputs_to_project(work_dir, proj_path)
+
+
+def _move_instrumentation_outputs_to_project(work_dir, proj_path):
+    """Move event_dictionary.txt and comment-mapping.txt from work_dir to proj_path."""
+    files_to_move = ["event_dictionary.txt", "comment-mapping.txt"]
+    for filename in files_to_move:
+        src = os.path.join(work_dir, filename)
+        dst = os.path.join(proj_path, filename)
+        if os.path.isfile(src):
+            shutil.move(src, dst)
+            print_color(f"[Move] {filename} -> {proj_path}", Colors.GREEN)
+        else:
+            print_color(f"[WARN] {filename} not found in working directory, skip.", Colors.YELLOW)
+
 
 def compile_and_run(instrumentor_test_path):
     print_color("\n>>> Compiling and running instrumentor test...", Colors.CYAN)
@@ -116,7 +133,7 @@ def analyze_logs(work_dir, instrumentor_test_path, proj_path=None):
         "\n>>> Analyzing logs and extracting denoised data...", Colors.CYAN)
     os.chdir(work_dir)
 
-    # NEW: adapt to the new save path under scenario_data
+    # Adapt to the new save path under scenario_data
     scenario_dir = os.path.join(work_dir, 'scenario_data')
     if os.path.isdir(scenario_dir):
         search_dir = scenario_dir
@@ -142,17 +159,31 @@ def analyze_logs(work_dir, instrumentor_test_path, proj_path=None):
 
         target_folders_file = os.path.join(proj_path, "target-folders.txt") if proj_path else ".\\target-folders.txt"
 
+        # Use project directory for mapping files if available, otherwise fall back to work_dir
+        if proj_path:
+            comment_mapping_file = os.path.join(proj_path, "comment-mapping.txt")
+            event_dict_file = os.path.join(proj_path, "event_dictionary.txt")
+        else:
+            comment_mapping_file = ".\\comment-mapping.txt"
+            event_dict_file = ".\\event_dictionary.txt"
+
+        # Safety check: ensure required files exist
+        if not os.path.exists(comment_mapping_file):
+            print_color(f"[WARN] comment-mapping.txt not found at {comment_mapping_file}", Colors.YELLOW)
+        if not os.path.exists(event_dict_file):
+            print_color(f"[WARN] event_dictionary.txt not found at {event_dict_file}", Colors.YELLOW)
+
         ps_exe = "powershell" if platform.system() == "Windows" else "pwsh"
         ps_cmd = [
             ps_exe, "-ExecutionPolicy", "Bypass", "-File", ".\\process-logs-demo.ps1",
             "-TargetFoldersFile", target_folders_file,
             "-LogFile", log_file,
-            "-CommentMappingFile", ".\\comment-mapping.txt",
+            "-CommentMappingFile", comment_mapping_file,
+            "-EventDictionaryFile", event_dict_file,
             "-EventsFile", events_file
         ]
         subprocess.run(ps_cmd)
     else:
-        # Enhanced error message includes the actual search directory
         print_color(
             f"Could not find generated log or events file in: {search_dir}. "
             "Please check whether Step 2 executed successfully and generated the logs.",
