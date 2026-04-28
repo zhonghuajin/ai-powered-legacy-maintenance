@@ -17,6 +17,7 @@ from enginerring.work_flow.prechecks import (
 )
 from enginerring.work_flow.workflow_steps import (
     instrument_code,
+    handle_instrumentation_dependencies,
     startup_log_manager_server,
     analyze_logs,
     generate_ai_prompt,
@@ -54,10 +55,13 @@ def main():
 
     # Workflow Execution
     instrument_code(work_dir, proj_path=proj_path, git_root=root_path)
+    
+    # 新增步骤：处理插桩后的依赖注入
+    handle_instrumentation_dependencies(work_dir, proj_path, root_path, ask_llm_dir)
 
     print_color("\n=======================================================", Colors.YELLOW)
     print_color("  *** ATTENTION ***", Colors.YELLOW)
-    print_color("  Instrumentation has been completed!", Colors.YELLOW)
+    print_color("  Instrumentation and Dependency Injection have been completed!", Colors.YELLOW)
     print_color("  Please recompile (if necessary) and execute the target project.", Colors.YELLOW)
     print_color("=======================================================\n", Colors.YELLOW)
 

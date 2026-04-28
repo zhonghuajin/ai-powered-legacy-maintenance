@@ -110,16 +110,18 @@ def auto_select_llm_provider(env_file):
     print_color("      Auto-Selecting LLM Provider       ", Colors.CYAN)
     print_color("========================================", Colors.CYAN)
 
+    # Map API keys to a tuple of (Display Name, Internal Provider ID)
     llm_providers = {
-        "DEEPSEEK_API_KEY": "DeepSeek",
-        "ANTHROPIC_API_KEY": "Claude (Anthropic)",
-        "OPENAI_API_KEY": "GPT (OpenAI)",
-        "ZHIPU_API_KEY": "GLM (Zhipu)",
-        "MOONSHOT_API_KEY": "Kimi (Moonshot)",
-        "DASHSCOPE_API_KEY": "Qwen (DashScope)"
+        "DEEPSEEK_API_KEY": ("DeepSeek", "deepseek"),
+        "ANTHROPIC_API_KEY": ("Claude (Anthropic)", "claude"),
+        "OPENAI_API_KEY": ("GPT (OpenAI)", "gpt"),
+        "ZHIPU_API_KEY": ("GLM (Zhipu)", "glm"),
+        "MOONSHOT_API_KEY": ("Kimi (Moonshot)", "kimi"),
+        "DASHSCOPE_API_KEY": ("Qwen (DashScope)", "qwen")
     }
 
-    selected_provider = None
+    selected_provider_name = None
+    selected_provider_id = None
 
     with open(env_file, 'r', encoding='utf-8') as f:
         for line in f:
@@ -133,11 +135,13 @@ def auto_select_llm_provider(env_file):
                 val = val.strip().strip('"').strip("'")
 
                 if val and key in llm_providers:
-                    selected_provider = llm_providers[key]
+                    selected_provider_name, selected_provider_id = llm_providers[key]
                     break 
 
-    if selected_provider:
-        print_color(f"[Environment Check] LLM Provider auto-selected: {selected_provider}", Colors.GREEN)
+    if selected_provider_id:
+        # Inject the selected provider ID into the environment variables for downstream usage
+        os.environ['AUTO_SELECTED_LLM_PROVIDER'] = selected_provider_id
+        print_color(f"[Environment Check] LLM Provider auto-selected: {selected_provider_name}", Colors.GREEN)
     else:
         print_color("[!] No valid API keys found in .env file. Please configure at least one API key.", Colors.RED)
         sys.exit(1)

@@ -6,9 +6,15 @@ import re
 import platform
 import glob
 import shutil
+import json
 from print_utils.utils import Colors, print_color
 from .prechecks import setup_windows_proxy
 from enginerring.shadow_project_management.instrument_with_shadow_project import run_instrumentation_mode
+
+# 导入依赖处理相关的模块
+from enginerring.dependency_handler.scan_deps import find_project_files
+from enginerring.dependency_handler.prompt_organizer import generate_prompt
+from enginerring.dependency_handler.dependency_injector import run_injection
 
 
 def instrument_code(work_dir, proj_path=None, git_root=None):
@@ -94,7 +100,95 @@ def _move_instrumentation_outputs_to_project(work_dir, proj_path):
             shutil.move(src, dst)
             print_color(f"[Move] {filename} -> {proj_path}", Colors.GREEN)
         else:
-            print_color(f"[WARN] {filename} not found in working directory, skip.", Colors.YELLOW)
+            print_color(
+                f"[WARN] {filename} not found in working directory, skip.", Colors.YELLOW)
+
+
+def handle_instrumentation_dependencies(work_dir, proj_path, git_root, ask_llm_dir):
+    """
+    处理插桩后的依赖添加：
+    1. 扫描依赖文件
+    2. 获取白名单
+    3. 生成 Prompt 并请求 LLM
+    4. 解析 LLM 响应并注入依赖
+    """
+    print_color("\n>>> Handling Instrumentation Dependencies...", Colors.CYAN)
+
+    # 1. 获取 files_input
+    files_input = find_project_files(git_root)
+    if not files_input:
+        print_color("[-] No dependency management files found.", Colors.YELLOW)
+        return
+
+    # 2. 获取 whitelist_input
+    config_path = os.path.join(proj_path, "config.json")
+    whitelist_input = []
+    if os.path.exists(config_path):
+        with open(config_path, "r", encoding="utf-8") as f:
+            config_data = json.load(f)
+            whitelist_input = config_data.get("original-target-folders", [])
+
+    # 3. 获取 dependency_input
+    snippets_json_path = os.path.join(
+        work_dir, "enginerring", "dependency_handler", "dependency_snippets.json")
+    dependency_input = ""
+    if os.path.exists(snippets_json_path):
+        with open(snippets_json_path, "r", encoding="utf-8") as f:
+            snippets = json.load(f)
+            # 默认用 pom.xml 的片段作为 prompt 示例供大模型参考
+            dependency_input = snippets.get(
+                "pom.xml", "<dependency>...</dependency>")
+
+    # 4. 生成 Prompt
+    prompt = generate_prompt(files_input, whitelist_input, dependency_input)
+
+    # 将 Prompt 写入 ask_llm 目录供 LLM 读取
+    prompt_file = os.path.join(ask_llm_dir, "dependency_prompt.txt")
+    with open(prompt_file, "w", encoding="utf-8") as f:
+        f.write(prompt)
+
+    print_color(
+        f"[+] Dependency prompt generated at {prompt_file}", Colors.GREEN)
+
+    # 5. 调用 LLM (通过直接导入模块同进程调用，方便打断点)
+    llm_response_file = os.path.join(
+        ask_llm_dir, "dependency_llm_response.txt")
+
+    print_color(
+        ">>> Asking LLM to identify target dependency files...", Colors.CYAN)
+
+    # 将 ask_llm 目录加入 sys.path 以便导入
+    if ask_llm_dir not in sys.path:
+        sys.path.insert(0, ask_llm_dir)
+
+    try:
+        import run as ask_llm_run
+
+        # 切换到 ask_llm 目录执行，确保 .env 文件能被正确读取
+        original_cwd = os.getcwd()
+        os.chdir(ask_llm_dir)
+
+        # 直接调用暴露的 API 接口
+        ask_llm_run.run_api(
+            file_path="dependency_prompt.txt",
+            output_path="dependency_llm_response.txt"
+        )
+
+        # 切回工作目录
+        os.chdir(original_cwd)
+
+    except ImportError as e:
+        print_color(
+            f"[!] Failed to import run.py from {ask_llm_dir}: {e}", Colors.RED)
+        return
+
+    # 切回工作目录
+    os.chdir(original_cwd)
+
+    # 6. 注入依赖
+    print_color(
+        "\n>>> Parsing LLM response and injecting dependencies...", Colors.CYAN)
+    run_injection(llm_response_file, snippets_json_path)
 
 
 def compile_and_run(instrumentor_test_path):
@@ -157,11 +251,13 @@ def analyze_logs(work_dir, instrumentor_test_path, proj_path=None):
         print(f"Found log file: {log_file}")
         print(f"Found events file: {events_file}")
 
-        target_folders_file = os.path.join(proj_path, "target-folders.txt") if proj_path else ".\\target-folders.txt"
+        target_folders_file = os.path.join(
+            proj_path, "target-folders.txt") if proj_path else ".\\target-folders.txt"
 
         # Use project directory for mapping files if available, otherwise fall back to work_dir
         if proj_path:
-            comment_mapping_file = os.path.join(proj_path, "comment-mapping.txt")
+            comment_mapping_file = os.path.join(
+                proj_path, "comment-mapping.txt")
             event_dict_file = os.path.join(proj_path, "event_dictionary.txt")
         else:
             comment_mapping_file = ".\\comment-mapping.txt"
@@ -169,9 +265,11 @@ def analyze_logs(work_dir, instrumentor_test_path, proj_path=None):
 
         # Safety check: ensure required files exist
         if not os.path.exists(comment_mapping_file):
-            print_color(f"[WARN] comment-mapping.txt not found at {comment_mapping_file}", Colors.YELLOW)
+            print_color(
+                f"[WARN] comment-mapping.txt not found at {comment_mapping_file}", Colors.YELLOW)
         if not os.path.exists(event_dict_file):
-            print_color(f"[WARN] event_dictionary.txt not found at {event_dict_file}", Colors.YELLOW)
+            print_color(
+                f"[WARN] event_dictionary.txt not found at {event_dict_file}", Colors.YELLOW)
 
         ps_exe = "powershell" if platform.system() == "Windows" else "pwsh"
         ps_cmd = [

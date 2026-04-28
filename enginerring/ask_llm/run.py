@@ -76,6 +76,57 @@ def check_dependencies():
             print(f"{sys.executable} -m pip install --upgrade pip")
             sys.exit(1)
 
+
+def run_api(file_path: str, output_path: str, provider: str = None, reasoning: str = "off", stream: bool = True):
+    """
+    Exposed interface for direct external calls, facilitating breakpoint debugging in the same process.
+    """
+    if sys.platform == "win32":
+        sys.stdout.reconfigure(encoding='utf-8')
+
+    check_env()
+    check_dependencies()
+
+    import llm_chat
+
+    # Attempt to load provider from environment variable if not explicitly passed
+    if not provider:
+        provider = os.environ.get('AUTO_SELECTED_LLM_PROVIDER')
+
+    if not provider:
+        print("\n\033[36m========================================")
+        print("          Select an LLM Provider        ")
+        print("========================================")
+        print("  1. DeepSeek")
+        print("  2. Claude (Anthropic)")
+        print("  3. GPT (OpenAI)")
+        print("  4. GLM (Zhipu)")
+        print("  5. Kimi (Moonshot)")
+        print("  6. Qwen (DashScope)")
+        print("========================================\033[0m")
+
+        provider_map = {
+            "1": "deepseek", "2": "claude", "3": "gpt",
+            "4": "glm", "5": "kimi", "6": "qwen"
+        }
+
+        while not provider:
+            choice = input("Enter a number (1-6): ").strip()
+            if choice in provider_map:
+                provider = provider_map[choice]
+            else:
+                print("\033[31m[!] Invalid input. Please enter a number between 1 and 6.\033[0m")
+
+    print("\n\033[36m[*] Starting request via API...\033[0m")
+    llm_chat.run_chat_app(
+        provider=provider,
+        file_path=file_path,
+        output=output_path,
+        reasoning=reasoning,
+        stream=stream
+    )
+
+
 def main():
     # Set console encoding to UTF-8
     if sys.platform == "win32":
@@ -90,34 +141,36 @@ def main():
     # Import llm_chat after dependencies are guaranteed to be installed
     import llm_chat
 
-    # 3. Interactive Provider Selection
-    print("\n\033[36m========================================")
-    print("          Select an LLM Provider        ")
-    print("========================================")
-    print("  1. DeepSeek")
-    print("  2. Claude (Anthropic)")
-    print("  3. GPT (OpenAI)")
-    print("  4. GLM (Zhipu)")
-    print("  5. Kimi (Moonshot)")
-    print("  6. Qwen (DashScope)")
-    print("========================================\033[0m")
+    # 3. Provider Selection
+    provider = os.environ.get('AUTO_SELECTED_LLM_PROVIDER')
+    
+    if not provider:
+        print("\n\033[36m========================================")
+        print("          Select an LLM Provider        ")
+        print("========================================")
+        print("  1. DeepSeek")
+        print("  2. Claude (Anthropic)")
+        print("  3. GPT (OpenAI)")
+        print("  4. GLM (Zhipu)")
+        print("  5. Kimi (Moonshot)")
+        print("  6. Qwen (DashScope)")
+        print("========================================\033[0m")
 
-    provider_map = {
-        "1": "deepseek",
-        "2": "claude",
-        "3": "gpt",
-        "4": "glm",
-        "5": "kimi",
-        "6": "qwen"
-    }
+        provider_map = {
+            "1": "deepseek",
+            "2": "claude",
+            "3": "gpt",
+            "4": "glm",
+            "5": "kimi",
+            "6": "qwen"
+        }
 
-    provider = ""
-    while not provider:
-        choice = input("Enter a number (1-6): ").strip()
-        if choice in provider_map:
-            provider = provider_map[choice]
-        else:
-            print("\033[31m[!] Invalid input. Please enter a number between 1 and 6.\033[0m")
+        while not provider:
+            choice = input("Enter a number (1-6): ").strip()
+            if choice in provider_map:
+                provider = provider_map[choice]
+            else:
+                print("\033[31m[!] Invalid input. Please enter a number between 1 and 6.\033[0m")
 
     # 4. Process arguments (filter out user-provided -p if any, check for file)
     args = sys.argv[1:]
