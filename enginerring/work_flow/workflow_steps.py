@@ -11,7 +11,7 @@ from print_utils.utils import Colors, print_color
 from .prechecks import setup_windows_proxy
 from enginerring.shadow_project_management.instrument_with_shadow_project import run_instrumentation_mode
 
-# 导入依赖处理相关的模块
+# Import dependency handling modules
 from enginerring.dependency_handler.scan_deps import find_project_files
 from enginerring.dependency_handler.prompt_organizer import generate_prompt
 from enginerring.dependency_handler.dependency_injector import run_injection
@@ -65,17 +65,14 @@ def instrument_code(work_dir, proj_path=None, git_root=None):
 
     if inst_mode_choice == "3":
         print_color("[Mode Selection] Skipping instrumentation.", Colors.GREEN)
-        return
+        return "skip"
 
     mode_arg = "full" if inst_mode_choice == "1" else "incremental"
     print_color(f"[Mode Selection] Selected mode: {mode_arg}", Colors.GREEN)
 
-    project_file_path = os.path.join(work_dir, "current_project")
-
     success = run_instrumentation_mode(
         git_root=git_root_dir,
         mode=mode_arg,
-        project_file=project_file_path,
         original_cwd=os.getcwd(),
         proj_path=proj_path
     )
@@ -88,6 +85,8 @@ def instrument_code(work_dir, proj_path=None, git_root=None):
     # Move instrumentation output files to project directory after success
     if proj_path:
         _move_instrumentation_outputs_to_project(work_dir, proj_path)
+
+    return mode_arg
 
 
 def _move_instrumentation_outputs_to_project(work_dir, proj_path):
@@ -106,21 +105,21 @@ def _move_instrumentation_outputs_to_project(work_dir, proj_path):
 
 def handle_instrumentation_dependencies(work_dir, proj_path, git_root, ask_llm_dir):
     """
-    处理插桩后的依赖添加：
-    1. 扫描依赖文件
-    2. 获取白名单
-    3. 生成 Prompt 并请求 LLM
-    4. 解析 LLM 响应并注入依赖
+    Handle dependency addition after instrumentation:
+    1. Scan dependency files
+    2. Get whitelist
+    3. Generate prompt and request LLM
+    4. Parse LLM response and inject dependencies
     """
     print_color("\n>>> Handling Instrumentation Dependencies...", Colors.CYAN)
 
-    # 1. 获取 files_input
+    # 1. Get files_input
     files_input = find_project_files(git_root)
     if not files_input:
         print_color("[-] No dependency management files found.", Colors.YELLOW)
         return
 
-    # 2. 获取 whitelist_input
+    # 2. Get whitelist_input
     config_path = os.path.join(proj_path, "config.json")
     whitelist_input = []
     if os.path.exists(config_path):
@@ -128,21 +127,21 @@ def handle_instrumentation_dependencies(work_dir, proj_path, git_root, ask_llm_d
             config_data = json.load(f)
             whitelist_input = config_data.get("original-target-folders", [])
 
-    # 3. 获取 dependency_input
+    # 3. Get dependency_input
     snippets_json_path = os.path.join(
         work_dir, "enginerring", "dependency_handler", "dependency_snippets.json")
     dependency_input = ""
     if os.path.exists(snippets_json_path):
         with open(snippets_json_path, "r", encoding="utf-8") as f:
             snippets = json.load(f)
-            # 默认用 pom.xml 的片段作为 prompt 示例供大模型参考
+            # Use pom.xml snippet as an example for the prompt
             dependency_input = snippets.get(
                 "pom.xml", "<dependency>...</dependency>")
 
-    # 4. 生成 Prompt
+    # 4. Generate Prompt
     prompt = generate_prompt(files_input, whitelist_input, dependency_input)
 
-    # 将 Prompt 写入 ask_llm 目录供 LLM 读取
+    # Write prompt for LLM
     prompt_file = os.path.join(ask_llm_dir, "dependency_prompt.txt")
     with open(prompt_file, "w", encoding="utf-8") as f:
         f.write(prompt)
@@ -150,31 +149,31 @@ def handle_instrumentation_dependencies(work_dir, proj_path, git_root, ask_llm_d
     print_color(
         f"[+] Dependency prompt generated at {prompt_file}", Colors.GREEN)
 
-    # 5. 调用 LLM (通过直接导入模块同进程调用，方便打断点)
+    # 5. Invoke LLM (import module directly for easier debugging)
     llm_response_file = os.path.join(
         ask_llm_dir, "dependency_llm_response.txt")
 
     print_color(
         ">>> Asking LLM to identify target dependency files...", Colors.CYAN)
 
-    # 将 ask_llm 目录加入 sys.path 以便导入
+    # Add ask_llm directory to sys.path for importing
     if ask_llm_dir not in sys.path:
         sys.path.insert(0, ask_llm_dir)
 
     try:
         import run as ask_llm_run
 
-        # 切换到 ask_llm 目录执行，确保 .env 文件能被正确读取
+        # Switch to ask_llm directory so .env file can be read correctly
         original_cwd = os.getcwd()
         os.chdir(ask_llm_dir)
 
-        # 直接调用暴露的 API 接口
+        # Call the exposed API interface
         ask_llm_run.run_api(
             file_path="dependency_prompt.txt",
             output_path="dependency_llm_response.txt"
         )
 
-        # 切回工作目录
+        # Return to original working directory
         os.chdir(original_cwd)
 
     except ImportError as e:
@@ -182,10 +181,10 @@ def handle_instrumentation_dependencies(work_dir, proj_path, git_root, ask_llm_d
             f"[!] Failed to import run.py from {ask_llm_dir}: {e}", Colors.RED)
         return
 
-    # 切回工作目录
+    # Return to original working directory
     os.chdir(original_cwd)
 
-    # 6. 注入依赖
+    # 6. Inject dependencies
     print_color(
         "\n>>> Parsing LLM response and injecting dependencies...", Colors.CYAN)
     run_injection(llm_response_file, snippets_json_path)

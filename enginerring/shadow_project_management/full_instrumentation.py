@@ -11,7 +11,7 @@ def run_git_command(command):
     except subprocess.CalledProcessError as e:
         return False, e.stderr.strip()
 
-def run_full_instrumentation(git_root_dir, project_file_path, original_cwd, proj_path=None):
+def run_full_instrumentation(git_root_dir, original_cwd, proj_path=None):
     branch_name = "shadow-project-for-instrumention"
     print(f"Entering directory: {git_root_dir}")
     os.chdir(git_root_dir)
@@ -44,17 +44,25 @@ def run_full_instrumentation(git_root_dir, project_file_path, original_cwd, proj
             print(f"Failed to create branch: {msg}")
             return False
 
-    # Record project info
+    # Record project info into config.json instead of a separate file
     os.chdir(original_cwd)
-    os.makedirs(os.path.dirname(project_file_path), exist_ok=True)
-    project_info = {
-        "original_git_root": git_root_dir,
-        "source_branch": source_branch
-    }
-    with open(project_file_path, "w", encoding="utf-8") as f:
-        json.dump(project_info, f, indent=4, ensure_ascii=False)
-    
-    print(f"\nSuccessfully wrote project information to file: {project_file_path}")
+    if proj_path:
+        config_path = os.path.join(proj_path, "config.json")
+        config = {}
+        if os.path.exists(config_path):
+            with open(config_path, "r", encoding="utf-8") as f:
+                try:
+                    config = json.load(f)
+                except json.JSONDecodeError:
+                    print(f"Warning: failed to parse {config_path}, overwriting.")
+        config["original_git_root"] = git_root_dir
+        config["source_branch"] = source_branch
+        os.makedirs(proj_path, exist_ok=True)
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=4)
+        print(f"Project info updated in: {config_path}")
+    else:
+        print("Warning: proj_path not provided, unable to save project info.")
 
     # Execute full instrumentation
     if proj_path:

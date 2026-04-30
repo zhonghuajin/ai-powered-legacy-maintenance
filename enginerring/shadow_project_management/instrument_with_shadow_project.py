@@ -5,8 +5,7 @@ from .full_instrumentation import run_full_instrumentation
 from .sync_modified_files import sync_files
 
 
-def run_instrumentation_mode(git_root, mode="full", project_file="current_project",
-                             original_cwd=None, proj_path=None):
+def run_instrumentation_mode(git_root, mode="full", original_cwd=None, proj_path=None):
     """
     Execute instrumentation task (full or incremental).
 
@@ -16,15 +15,12 @@ def run_instrumentation_mode(git_root, mode="full", project_file="current_projec
         Root directory of the target Git repository.
     mode : str
         "full" or "incremental".
-    project_file : str
-        Path to the project info JSON file.
     original_cwd : str, optional
         Original working directory, needed for incremental mode.
     proj_path : str, optional
-        Path to the isolated project directory containing target-folders.txt.
+        Path to the isolated project directory containing target-folders.txt and config.json.
     """
     git_root_dir = os.path.abspath(git_root)
-    project_file_path = os.path.abspath(project_file)
     if original_cwd is None:
         original_cwd = os.getcwd()
 
@@ -37,16 +33,14 @@ def run_instrumentation_mode(git_root, mode="full", project_file="current_projec
         print(f"\n>>> Starting code instrumentation in '{mode}' mode...")
 
         if mode == "full":
-            success = run_full_instrumentation(git_root_dir, project_file_path, original_cwd, proj_path)
+            success = run_full_instrumentation(git_root_dir, original_cwd, proj_path)
             if not success:
                 print("Error: Full instrumentation flow failed.")
         elif mode == "incremental":
             print("Notice: Incremental instrumentation is selected.")
             try:
-                # Modified: pass proj_path so target-folders.txt is placed in the project directory
-                success = sync_files(project_file_path=project_file_path,
-                                     original_cwd=original_cwd,
-                                     proj_path=proj_path)
+                # Modified: pass proj_path so target-folders.txt and config.json are used from the project directory
+                success = sync_files(original_cwd=original_cwd, proj_path=proj_path)
             except Exception as e:
                 print(f"Error: Incremental sync failed with exception: {e}")
                 success = False
@@ -71,11 +65,10 @@ def main():
     parser.add_argument("git_root", help="Path to the root directory of the target Git project")
     parser.add_argument("--mode", choices=["full", "incremental"], default="full",
                         help="Instrumentation mode: full or incremental")
-    parser.add_argument("--project-file", default="current_project",
-                        help="Path to the project info JSON file (default: current_project)")
+    # The --project-file argument has been removed because project info is now stored in config.json
 
     args = parser.parse_args()
-    run_instrumentation_mode(args.git_root, args.mode, args.project_file)
+    run_instrumentation_mode(args.git_root, args.mode)
 
 
 if __name__ == "__main__":

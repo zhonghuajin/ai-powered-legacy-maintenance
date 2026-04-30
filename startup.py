@@ -53,17 +53,27 @@ def main():
 
     pause_for_next_step("Project and Environment Setup", "Setup Shadow Branch")
 
-    # Workflow Execution
-    instrument_code(work_dir, proj_path=proj_path, git_root=root_path)
-    
-    # 新增步骤：处理插桩后的依赖注入
-    handle_instrumentation_dependencies(work_dir, proj_path, root_path, ask_llm_dir)
+    # Workflow Execution: Instrumentation
+    instrument_mode = instrument_code(work_dir, proj_path=proj_path, git_root=root_path)
 
-    print_color("\n=======================================================", Colors.YELLOW)
-    print_color("  *** ATTENTION ***", Colors.YELLOW)
-    print_color("  Instrumentation and Dependency Injection have been completed!", Colors.YELLOW)
-    print_color("  Please recompile (if necessary) and execute the target project.", Colors.YELLOW)
-    print_color("=======================================================\n", Colors.YELLOW)
+    # Handle dependency injection based on selected instrumentation mode
+    if instrument_mode == "incremental":
+        print_color("\n=======================================================", Colors.YELLOW)
+        print_color("  Incremental instrumentation completed.", Colors.YELLOW)
+        print_color("  Dependency injection step skipped (not needed for incremental mode).", Colors.YELLOW)
+        print_color("=======================================================\n", Colors.YELLOW)
+    elif instrument_mode == "full":
+        handle_instrumentation_dependencies(work_dir, proj_path, root_path, ask_llm_dir)
+        print_color("\n=======================================================", Colors.YELLOW)
+        print_color("  *** ATTENTION ***", Colors.YELLOW)
+        print_color("  Instrumentation and Dependency Injection have been completed!", Colors.YELLOW)
+        print_color("  Please recompile (if necessary) and execute the target project.", Colors.YELLOW)
+        print_color("=======================================================\n", Colors.YELLOW)
+    else:  # "skip" or any other value
+        print_color("\n=======================================================", Colors.YELLOW)
+        print_color("  Instrumentation skipped.", Colors.YELLOW)
+        print_color("  Dependency injection step also skipped.", Colors.YELLOW)
+        print_color("=======================================================\n", Colors.YELLOW)
 
     pause_for_next_step("Setup Shadow Branch & Instrumentation", "Startup Log Manager Server")
 

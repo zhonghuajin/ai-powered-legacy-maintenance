@@ -57,37 +57,35 @@ def _finalize_incremental_run(proj_path):
         print("[Post-process] Warning: config.json not found, cannot restore target-folders.txt.")
 
 
-def sync_files(project_file_path, original_cwd, proj_path=None):
+def sync_files(original_cwd, proj_path=None):
     """
     Synchronize modified files based on the project configuration.
 
     Parameters
     ----------
-    project_file_path : str
-        Path to the current_project JSON file.
     original_cwd : str
         Original working directory before changing to git root.
     proj_path : str, optional
         Path to the isolated project directory. If provided,
-        target-folders.txt will be written there instead of original_cwd.
+        the configuration file (config.json) and target-folders.txt
+        will be read/written there; otherwise original_cwd is used.
     """
-    if project_file_path is None:
-        print("Error: project_file_path cannot be None.")
+    # Determine location of config.json
+    base_dir = proj_path if proj_path else original_cwd
+    config_file = Path(base_dir) / "config.json"
+
+    if not config_file.exists():
+        print(f"Error: Configuration file not found: {config_file}")
         return False
 
-    current_project_file = Path(project_file_path)
-    if not current_project_file.exists():
-        print(f"Error: File not found: {current_project_file}")
-        return False
-
-    with open(current_project_file, 'r', encoding='utf-8') as f:
+    with open(config_file, 'r', encoding='utf-8') as f:
         config = json.load(f)
 
     original_git_root = config.get("original_git_root")
     source_branch = config.get("source_branch")
 
     if not original_git_root or not source_branch:
-        print("Error: Missing original_git_root or source_branch in current_project file")
+        print("Error: Missing original_git_root or source_branch in config.json")
         return False
 
     print(f"Retrieved Git root: {original_git_root}")
@@ -168,7 +166,6 @@ def sync_files(project_file_path, original_cwd, proj_path=None):
         print(f"Restored: {src_file} -> {dst_file}")
 
     # 7. Save absolute paths to target-folders.txt
-    # Modified: use proj_path if provided, matching full instrumentation behavior
     if proj_path:
         target_folders_file = os.path.join(proj_path, "target-folders.txt")
     else:
@@ -194,7 +191,7 @@ def sync_files(project_file_path, original_cwd, proj_path=None):
         run_cmd(['git', 'reset', '--soft', source_branch])
         run_cmd(['git', 'commit', '-m', 'Auto-commit: Code instrumentation'])
         
-        # NEW: Post-processing after successful incremental instrumentation
+        # Post-processing after successful incremental instrumentation
         if proj_path:
             _finalize_incremental_run(proj_path)
 
