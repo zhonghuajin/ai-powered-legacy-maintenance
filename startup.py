@@ -26,7 +26,8 @@ from enginerring.work_flow.workflow_steps import (
     ask_llm_for_code_fix,
     apply_fix
 )
-# Import from the new project management module
+# Import the delayed commit function
+from enginerring.shadow_project_management.full_instrumentation import commit_instrumentation
 from enginerring.project_manager.project_manager import create_or_select_project
 
 
@@ -48,7 +49,7 @@ def main():
     env_file = check_llm_env(ask_llm_dir)
     auto_select_llm_provider(env_file)
 
-    # Step: Create or select a project (returns the project path and git root path)
+    # Step: Create or select a project
     proj_path, root_path = create_or_select_project(work_dir)
 
     pause_for_next_step("Project and Environment Setup", "Setup Shadow Branch")
@@ -56,7 +57,7 @@ def main():
     # Workflow Execution: Instrumentation
     instrument_mode = instrument_code(work_dir, proj_path=proj_path, git_root=root_path)
 
-    # Handle dependency injection based on selected instrumentation mode
+    # Handle dependency injection and commit for full mode
     if instrument_mode == "incremental":
         print_color("\n=======================================================", Colors.YELLOW)
         print_color("  Incremental instrumentation completed.", Colors.YELLOW)
@@ -64,6 +65,8 @@ def main():
         print_color("=======================================================\n", Colors.YELLOW)
     elif instrument_mode == "full":
         handle_instrumentation_dependencies(work_dir, proj_path, root_path, ask_llm_dir)
+        # Commit only after dependencies have been processed
+        commit_instrumentation(root_path)
         print_color("\n=======================================================", Colors.YELLOW)
         print_color("  *** ATTENTION ***", Colors.YELLOW)
         print_color("  Instrumentation and Dependency Injection have been completed!", Colors.YELLOW)

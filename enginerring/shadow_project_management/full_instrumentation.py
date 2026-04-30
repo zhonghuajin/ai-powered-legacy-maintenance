@@ -1,8 +1,8 @@
 import os
-import sys
 import json
 import subprocess
 from .run_instrumentation_flow import run_instrumentation_flow
+
 
 def run_git_command(command):
     try:
@@ -10,6 +10,7 @@ def run_git_command(command):
         return True, result.stdout.strip()
     except subprocess.CalledProcessError as e:
         return False, e.stderr.strip()
+
 
 def run_full_instrumentation(git_root_dir, original_cwd, proj_path=None):
     branch_name = "shadow-project-for-instrumention"
@@ -44,7 +45,7 @@ def run_full_instrumentation(git_root_dir, original_cwd, proj_path=None):
             print(f"Failed to create branch: {msg}")
             return False
 
-    # Record project info into config.json instead of a separate file
+    # Record project info into config.json
     os.chdir(original_cwd)
     if proj_path:
         config_path = os.path.join(proj_path, "config.json")
@@ -69,30 +70,42 @@ def run_full_instrumentation(git_root_dir, original_cwd, proj_path=None):
         target_folders_file = os.path.join(proj_path, "target-folders.txt")
     else:
         target_folders_file = os.path.join(original_cwd, "target-folders.txt")
-        
+
     success = run_instrumentation_flow(target_folders_file=target_folders_file)
-    
+
     if success:
-        # After instrumentation, commit on the shadow branch
+        # Commit is delayed until dependencies are injected.
+        # Display branch status without committing.
+        print("\n" + "*" * 70)
+        print("\033[1;31m" + "[ IMPORTANT NOTICE ]".center(64) + "\033[0m")
+        print(f"\033[1;33mFor the Git project at: {git_root_dir}\033[0m")
+        print(f"\033[1;33mYou are currently on branch: {branch_name}\033[0m")
+        print(f"\033[1;32mInstrumentation changes are staged but NOT yet committed.\033[0m")
+        print(f"\033[1;32mDependencies will be handled next, then a unified commit will be made.\033[0m")
+        print("*" * 70 + "\n")
+
+    return success
+
+
+def commit_instrumentation(git_root_dir):
+    """
+    Commit all staged changes (instrumentation + dependency injection) on the shadow branch.
+    If the previous commit is an auto-commit, amend it; otherwise create a new commit.
+    """
+    original_dir = os.getcwd()
+    try:
         os.chdir(git_root_dir)
-        print("\nCommitting instrumentation changes to the shadow branch...")
+        print("\n>>> Committing instrumentation and dependency changes to shadow branch...")
         run_git_command(["git", "add", "."])
-        
-        # Check if the last commit is our instrumentation commit
+
         _, last_commit_msg = run_git_command(["git", "log", "-1", "--pretty=%B"])
         if "Auto-commit: Code instrumentation" in last_commit_msg:
             print("Amending previous instrumentation commit...")
             run_git_command(["git", "commit", "--amend", "--no-edit"])
         else:
-            print("Creating new instrumentation commit...")
-            run_git_command(["git", "commit", "-m", "Auto-commit: Code instrumentation"])
+            print("Creating new unified instrumentation commit...")
+            run_git_command(["git", "commit", "-m", "Auto-commit: Code instrumentation (incl. dependencies)"])
 
-        print("\n" + "*" * 70)
-        print("\033[1;31m" + "[ IMPORTANT NOTICE ]".center(64) + "\033[0m")
-        print(f"\033[1;33mFor the Git project at: {git_root_dir}\033[0m")
-        print(f"\033[1;33mYou are currently on branch: {branch_name}\033[0m")
-        print(f"\033[1;32mAll instrumentation changes have been committed to this shadow branch.\033[0m")
-        print(f"\033[1;32mYou can safely switch back to ({source_branch}) anytime.\033[0m")
-        print("*" * 70 + "\n")
-        
-    return success
+        print("[+] Commit completed.")
+    finally:
+        os.chdir(original_dir)
