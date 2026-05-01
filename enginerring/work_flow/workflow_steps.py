@@ -212,6 +212,19 @@ def compile_and_run(instrumentor_test_path):
 def startup_log_manager_server(work_dir, proj_path=None):
     print_color("\n>>> Starting Log Manager Server...", Colors.CYAN)
     
+    # NEW: Added interactive prompt to skip log manager startup
+    print()
+    print_color("========================================", Colors.CYAN)
+    print_color("       Log Manager Server Options       ", Colors.CYAN)
+    print_color("========================================", Colors.CYAN)
+    print("  1. Start Server (Default)\n  2. Skip (if logs are already collected)")
+    print_color("========================================", Colors.CYAN)
+    
+    choice = input("Enter a number (1-2) or press Enter to start [1]: ").strip()
+    if choice == "2":
+        print_color("[Log Manager] Skipping log manager server startup.", Colors.GREEN)
+        return
+    
     server_dir = os.path.join(work_dir, "enginerring", "log_manager_server")
     
     # Add server directory to sys.path for importing
@@ -240,7 +253,7 @@ def analyze_logs(work_dir, instrumentor_test_path, proj_path=None):
     os.chdir(work_dir)
 
     # ============================================================
-    # ✨ NEW: Clear the 'pruned' folder under work_dir before analysis
+    # NEW: Clear the 'pruned' folder under work_dir before analysis
     # ============================================================
     pruned_dir = os.path.join(work_dir, 'pruned')
     if os.path.exists(pruned_dir):
