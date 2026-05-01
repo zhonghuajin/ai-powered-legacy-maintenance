@@ -37,6 +37,8 @@ def switch_to_source_branch(proj_path):
     """
     Read the project config.json and checkout the original_git_root
     repository to its configured source_branch.
+    Before switching, if there are any uncommitted changes, add them
+    and amend the last commit (git add . && git commit --amend --no-edit).
     
     Args:
         proj_path: Path to the project directory containing config.json
@@ -55,6 +57,48 @@ def switch_to_source_branch(proj_path):
     if not git_root:
         print_color('[Branch Switch] original_git_root is empty, skipping branch switch.', Colors.YELLOW)
         return
+
+    # --- NEW: Check for uncommitted changes before switching ---
+    try:
+        status_result = subprocess.run(
+            ['git', '-C', git_root, 'status', '--porcelain'],
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        if status_result.stdout.strip():
+            print_color(
+                '[Branch Switch] Detected uncommitted changes. Adding and amending last commit...',
+                Colors.CYAN
+            )
+            # git add .
+            subprocess.run(
+                ['git', '-C', git_root, 'add', '.'],
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            # git commit --amend --no-edit
+            subprocess.run(
+                ['git', '-C', git_root, 'commit', '--amend', '--no-edit'],
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            print_color(
+                '[Branch Switch] Changes committed via amend.',
+                Colors.GREEN
+            )
+    except subprocess.CalledProcessError as e:
+        print_color(
+            f'[Branch Switch] Failed to handle uncommitted changes: {e.stderr.strip()}',
+            Colors.RED
+        )
+        print_color(
+            '[Branch Switch] Continuing with the workflow despite the error.',
+            Colors.YELLOW
+        )
+    # -----------------------------------------------------------
 
     print_color(
         f'[Branch Switch] Switching {git_root} to branch "{source_branch}" ...',
@@ -141,7 +185,7 @@ def main():
 
     pause_for_next_step("Startup Log Manager Server", "Analyze Logs and Extract Denoised Data")
 
-    # --- NEW: Switch back to the source branch before log analysis ---
+    # --- Switch back to the source branch before log analysis ---
     switch_to_source_branch(proj_path)
 
     analyze_logs(work_dir, instrumentor_test_path, proj_path=proj_path)
