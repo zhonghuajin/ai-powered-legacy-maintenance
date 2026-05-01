@@ -32,6 +32,9 @@ def run_instrumentation_mode(git_root, mode="full", original_cwd=None, proj_path
     try:
         print(f"\n>>> Starting code instrumentation in '{mode}' mode...")
 
+        # Prepare common path for mapping file (may be used by both modes)
+        mapping_file = os.path.join(proj_path, "comment-mapping.txt") if proj_path else None
+
         if mode == "full":
             success = run_full_instrumentation(git_root_dir, original_cwd, proj_path)
             if not success:
@@ -39,7 +42,8 @@ def run_instrumentation_mode(git_root, mode="full", original_cwd=None, proj_path
         elif mode == "incremental":
             print("Notice: Incremental instrumentation is selected.")
             try:
-                # Modified: pass proj_path so target-folders.txt and config.json are used from the project directory
+                # The sync_files function now handles incremental mode and mapping file
+                # internally (see its updated implementation). No extra args needed here.
                 success = sync_files(original_cwd=original_cwd, proj_path=proj_path)
             except Exception as e:
                 print(f"Error: Incremental sync failed with exception: {e}")

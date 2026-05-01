@@ -1,0 +1,60 @@
+{
+  "processId": "String, unique identifier (e.g., sync_test_suite_001)",
+  "name": "String, short name (e.g., Multi-threaded Concurrency and Synchronization Mechanism Comprehensive Test Suite)",
+  "description": "String, natural language description of the overall process purpose and flow",
+  "category": "String, macro classification (e.g., Concurrency-Testing)",
+  "tags": ["Tag array, e.g., concurrency-demo, pipeline, caching, risk-calculation"],
+  "overallConcurrencyModel": "Overview of the top-level concurrency model; describe if it is a composite process",
+
+  "subProcesses": [
+    {
+      "subProcessId": "String (e.g., test_8_event_driven)",
+      "name": "Sub-process name (e.g., Event-Driven Aggregation)",
+      "description": "What this sub-process does and what problem it solves",
+      "sourceRef": {
+        "file": "com/example/instrumentor/happens/before/SyncTest.java",
+        "method": "testEventDrivenAggregation"
+      },
+      "concurrencyModel": "Specific concurrency model name, e.g., Pub/Sub + CountDownLatch",
+      "synchronizationPrimitives": ["EventBus", "CountDownLatch", "CopyOnWriteArrayList"],
+      "sharedState": [
+        "BatchAggregator.results (array)",
+        "AuditLog.entries (collection)"
+      ],
+      "threads": [
+        {
+          "threadId": "Corresponds to Thread-N in Trace",
+          "name": "Thread name (e.g., main, Coordinator-Worker)",
+          "role": "writer / reader / coordinator / worker / dispatcher",
+          "summary": "Main operation steps of this thread"
+        }
+      ],
+      "components": [
+        {
+          "name": "Custom component class name (e.g., WorkerCoordinator)",
+          "role": "Coordinator / Aggregator / Event Bus / Cache / Logger ...",
+          "keyMethods": ["executeWithNotification", "wrapExecution"]
+        }
+      ],
+      "interactions": [
+        {
+          "type": "happens-before / data-flow / signal / publish-subscribe / barrier",
+          "from": "Source thread/component (e.g., Thread-56 / Worker)",
+          "to": "Target thread/component (e.g., Thread-60 / EventBus Dispatcher)",
+          "detail": "Interaction detail, e.g., publish worker.result.computed event via EventBus, triggering async callback"
+        }
+      ],
+      "input": "Input of the sub-process (if any, e.g., 3 concurrent computation tasks)",
+      "output": "Output or observable effect of the sub-process (e.g., aggregated result array and audit log)",
+      "preconditions": ["Precondition 1 (e.g., EventBus must be configured for async dispatch mode)"],
+      "postconditions": ["Postcondition 1 (e.g., all task results must be written to Aggregator, and the main thread is unblocked)"],
+      "tags": ["Sub-process specific tags, e.g., async-dispatch, batching"]
+    }
+  ],
+
+  "metadata": {
+    "source": "com/example/instrumentor/happens/before/SyncTest.java",
+    "traceFormat": "call-tree",
+    "recordedAt": "2026-05-01T07:29:47Z"
+  }
+}

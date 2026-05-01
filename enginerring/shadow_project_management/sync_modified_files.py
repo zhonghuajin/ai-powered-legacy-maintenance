@@ -181,8 +181,23 @@ def sync_files(original_cwd, proj_path=None):
 
     # 8. Execute incremental instrumentation
     print("Running instrumentation flow for synchronized files...")
-    success = run_instrumentation_flow(target_folders_file=target_folders_file)
     
+    # --- Modification for passing incremental mode and mapping file ---
+    # Determine the mapping file path based on the project directory.
+    # comment-mapping.txt is expected to be placed under proj_path by a prior
+    # instrumentation step. If it doesn't exist yet, None is passed safely.
+    mapping_file = os.path.join(proj_path, "comment-mapping.txt") if proj_path else None
+    if mapping_file and not os.path.isfile(mapping_file):
+        print(f"Warning: Mapping file not found at {mapping_file}, continuing without it.")
+        mapping_file = None
+
+    success = run_instrumentation_flow(
+        target_folders_file=target_folders_file,
+        incremental=True,            # Mark as incremental mode
+        mapping_file=mapping_file   # Pass mapping file path
+    )
+    # -----------------------------------------------------------------
+
     if success:
         print("\nCommitting incremental instrumentation changes to the shadow branch...")
         os.chdir(original_git_root)
