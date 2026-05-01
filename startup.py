@@ -7,6 +7,8 @@ log denoising and analysis, AI prompt generation, and automated bug fixing.
 
 import os
 import sys
+import json
+import subprocess
 
 from print_utils.utils import Colors, print_color, pause_for_next_step
 from enginerring.work_flow.prechecks import (
@@ -29,6 +31,60 @@ from enginerring.work_flow.workflow_steps import (
 # Import the delayed commit function
 from enginerring.shadow_project_management.full_instrumentation import commit_instrumentation
 from enginerring.project_manager.project_manager import create_or_select_project
+
+
+def switch_to_source_branch(proj_path):
+    """
+    Read the project config.json and checkout the original_git_root
+    repository to its configured source_branch.
+    
+    Args:
+        proj_path: Path to the project directory containing config.json
+    """
+    config_path = os.path.join(proj_path, 'config.json')
+    if not os.path.exists(config_path):
+        print_color('[Branch Switch] config.json not found, skipping branch switch.', Colors.YELLOW)
+        return
+
+    with open(config_path, 'r', encoding='utf-8') as f:
+        config = json.load(f)
+
+    git_root = config.get('original_git_root', '')
+    source_branch = config.get('source_branch', 'master')  # fallback to 'master'
+
+    if not git_root:
+        print_color('[Branch Switch] original_git_root is empty, skipping branch switch.', Colors.YELLOW)
+        return
+
+    print_color(
+        f'[Branch Switch] Switching {git_root} to branch "{source_branch}" ...',
+        Colors.CYAN
+    )
+    try:
+        result = subprocess.run(
+            ['git', '-C', git_root, 'checkout', source_branch],
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        print_color(
+            f'[Branch Switch] Successfully switched to {source_branch}.',
+            Colors.GREEN
+        )
+    except subprocess.CalledProcessError as e:
+        print_color(
+            f'[Branch Switch] Failed to switch branch: {e.stderr.strip()}',
+            Colors.RED
+        )
+        print_color(
+            '[Branch Switch] You may have uncommitted changes or the branch does not exist.',
+            Colors.RED
+        )
+        # Do not abort the whole workflow; the user may manually inspect and continue.
+        print_color(
+            '[Branch Switch] Continuing with the workflow despite the branch switch failure.',
+            Colors.YELLOW
+        )
 
 
 def main():
@@ -84,6 +140,9 @@ def main():
     startup_log_manager_server(work_dir, proj_path=proj_path)
 
     pause_for_next_step("Startup Log Manager Server", "Analyze Logs and Extract Denoised Data")
+
+    # --- NEW: Switch back to the source branch before log analysis ---
+    switch_to_source_branch(proj_path)
 
     analyze_logs(work_dir, instrumentor_test_path, proj_path=proj_path)
     pause_for_next_step("Log Analysis", "Generate AI Prompt")
