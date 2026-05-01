@@ -12,6 +12,23 @@ def run_git_command(command):
         return False, e.stderr.strip()
 
 
+def _remove_gitignore_if_exists(repo_root: str):
+    """
+    Remove .gitignore from the repository root if it exists.
+    This is only called inside the shadow branch context to ensure
+    instrumentation is not blocked by ignore rules.
+    """
+    gitignore_path = os.path.join(repo_root, '.gitignore')
+    if os.path.isfile(gitignore_path):
+        try:
+            os.remove(gitignore_path)
+            print(f'[Shadow Branch] Removed .gitignore: {gitignore_path}')
+        except OSError as e:
+            print(f'[Shadow Branch] Failed to remove .gitignore: {e}')
+    else:
+        print('[Shadow Branch] .gitignore not found, no action needed.')
+
+
 def run_full_instrumentation(git_root_dir, original_cwd, proj_path=None):
     branch_name = "shadow-project-for-instrumention"
     print(f"Entering directory: {git_root_dir}")
@@ -44,6 +61,9 @@ def run_full_instrumentation(git_root_dir, original_cwd, proj_path=None):
         if not success:
             print(f"Failed to create branch: {msg}")
             return False
+
+    # At this point we are inside the shadow branch. Remove .gitignore if present.
+    _remove_gitignore_if_exists(git_root_dir)
 
     # Record project info into config.json
     os.chdir(original_cwd)
