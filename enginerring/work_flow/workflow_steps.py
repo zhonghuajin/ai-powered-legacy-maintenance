@@ -239,6 +239,16 @@ def analyze_logs(work_dir, instrumentor_test_path, proj_path=None):
         "\n>>> Analyzing logs and extracting denoised data...", Colors.CYAN)
     os.chdir(work_dir)
 
+    # ============================================================
+    # ✨ NEW: Clear the 'pruned' folder under work_dir before analysis
+    # ============================================================
+    pruned_dir = os.path.join(work_dir, 'pruned')
+    if os.path.exists(pruned_dir):
+        shutil.rmtree(pruned_dir)
+        print_color(f"[CLEAN] Removed existing pruned directory: {pruned_dir}", Colors.GREEN)
+    os.makedirs(pruned_dir, exist_ok=True)
+    print_color(f"[CLEAN] Ensured fresh pruned directory: {pruned_dir}", Colors.GREEN)
+
     # Determine the scenario_data directory based on project context
     if proj_path and os.path.isdir(proj_path):
         scenario_dir = os.path.join(proj_path, 'scenario_data')
