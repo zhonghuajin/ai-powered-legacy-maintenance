@@ -59,30 +59,30 @@ def get_local_ip():
 
 def check_single_port(ip, port, local_ip, stop_event):
     """Worker function to check a single port using fast socket connection first"""
-    # 如果其他线程已经找到了服务，直接退出
+    # If other threads have already found the service, exit directly
     if stop_event.is_set():
         return None
 
-    # 1. 使用原生 Socket 进行极速端口探测 (超时设为 0.1 秒)
+    # 1. Use native Socket for fast port scanning (timeout set to 0.1 seconds)
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(0.1)
         try:
             result = s.connect_ex((ip, port))
             if result != 0:
-                return None  # 端口未开放，直接返回
+                return None  # Port is not open, return directly
         except Exception:
             return None
 
-    # 如果其他线程在我们探测期间找到了，退出
+    # If other threads found it during our scan, exit
     if stop_event.is_set():
         return None
 
-    # 2. 端口开放，发送 HTTP 请求验证服务
+    # 2. Port is open, send HTTP request to verify service
     try:
         url = f"http://{ip}:{port}/status"
         res = requests.get(url, timeout=0.5)
         if res.status_code == 200:
-            # 标记已找到，通知其他线程停止
+            # Mark as found, notify other threads to stop
             stop_event.set()
 
             print_color(f"Found service: {ip}:{port}", Colors.GREEN)
@@ -112,7 +112,7 @@ def scan_ports():
         found_any = False
         stop_event = threading.Event()
 
-        # 使用 100 个线程并发，瞬间把所有端口的探测请求发出去
+        # Use 100 concurrent threads to send all port scan requests instantly
         with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
             futures = [
                 executor.submit(check_single_port, ip,
@@ -139,8 +139,8 @@ def input_target_ips():
     try:
         ip_str = input(prompt_msg)
     except (KeyboardInterrupt, EOFError):
-        print_color("\nInterrupt signal detected, exiting...", Colors.RED)
-        os._exit(0)
+        print_color("\nInterrupt signal detected, returning...", Colors.RED)
+        return False
 
     if ip_str.strip():
         target_ips = [ip.strip() for ip in ip_str.split(';') if ip.strip()]
@@ -156,6 +156,7 @@ def input_target_ips():
 
     # Scan immediately after entering IPs
     scan_ports()
+    return True
 
 
 def print_endpoints_menu():
@@ -193,7 +194,8 @@ def scan_and_manage():
     """CLI thread main loop"""
     if not target_ips:
         print_color("target_points not found.", Colors.YELLOW)
-        input_target_ips()
+        if not input_target_ips():
+            return
 
     while True:
         print_endpoints_menu()
@@ -202,8 +204,8 @@ def scan_and_manage():
                 f"{Colors.CYAN}CLI > {Colors.RESET}").strip().lower()
 
             if cmd_input == 'exit':
-                print_color("Shutting down service and exiting...", Colors.RED)
-                os._exit(0)
+                print_color("Exiting log manager CLI and returning to main flow...", Colors.RED)
+                return
             elif cmd_input == 'reip':
                 input_target_ips()
                 continue
@@ -241,17 +243,12 @@ def scan_and_manage():
                     "Invalid input format. See [Available Commands] above for help.", Colors.DARKGRAY)
 
         except (KeyboardInterrupt, EOFError):
-            print_color("\nInterrupt signal detected, exiting...", Colors.RED)
-            os._exit(0)
+            print_color("\nInterrupt signal detected, exiting CLI...", Colors.RED)
+            return
 
 
-# ==========================================
-# Main Entry Point
-# ==========================================
-if __name__ == '__main__':
-    cli_thread = threading.Thread(target=scan_and_manage, daemon=True)
-    cli_thread.start()
-
+def run_flask_app():
+    """Run the Flask application with suppressed logging"""
     log = logging.getLogger('werkzeug')
     log.disabled = True
     try:
@@ -259,8 +256,25 @@ if __name__ == '__main__':
         flask.cli.show_server_banner = lambda *args: None
     except Exception:
         pass
-
+    
     try:
         app.run(host='0.0.0.0', port=PORT)
     except (KeyboardInterrupt, SystemExit):
         pass
+
+
+def run_manager():
+    """Exposed API to start the server in the background and run the CLI in the foreground"""
+    flask_thread = threading.Thread(target=run_flask_app, daemon=True)
+    flask_thread.start()
+    
+    # Run the CLI loop in the main thread. It will return when the user types 'exit'.
+    scan_and_manage()
+
+
+# ==========================================
+# Main Entry Point
+# ==========================================
+if __name__ == '__main__':
+    # When executed directly, run the manager interface
+    run_manager()

@@ -1,4 +1,4 @@
-# workflow_steps.py
+import importlib
 import os
 import sys
 import subprocess
@@ -211,14 +211,19 @@ def compile_and_run(instrumentor_test_path):
 
 def startup_log_manager_server(work_dir):
     print_color("\n>>> Starting Log Manager Server...", Colors.CYAN)
-    server_script = os.path.join(
-        work_dir, "enginerring", "log_manager_server", "server.py")
-
-    if os.path.exists(server_script):
-        print_color(f"Launching {server_script}...", Colors.GREEN)
-        subprocess.run([sys.executable, server_script])
-    else:
-        print_color(f"server.py not found at: {server_script}", Colors.RED)
+    
+    server_dir = os.path.join(work_dir, "enginerring", "log_manager_server")
+    
+    # Add server directory to sys.path for importing
+    if server_dir not in sys.path:
+        sys.path.insert(0, server_dir)
+        
+    try:
+        import server as log_server
+        print_color(f"Launching log manager server interface...", Colors.GREEN)
+        log_server.run_manager()
+    except ImportError as e:
+        print_color(f"Failed to import server module from {server_dir}: {e}", Colors.RED)
 
 
 def analyze_logs(work_dir, instrumentor_test_path, proj_path=None):
@@ -226,12 +231,24 @@ def analyze_logs(work_dir, instrumentor_test_path, proj_path=None):
         "\n>>> Analyzing logs and extracting denoised data...", Colors.CYAN)
     os.chdir(work_dir)
 
-    # Adapt to the new save path under scenario_data
-    scenario_dir = os.path.join(work_dir, 'scenario_data')
+    # Determine the scenario_data directory based on project context
+    if proj_path and os.path.isdir(proj_path):
+        scenario_dir = os.path.join(proj_path, 'scenario_data')
+    else:
+        scenario_dir = os.path.join(work_dir, 'scenario_data')
+        print_color(
+            "[WARNING] proj_path not provided, falling back to global scenario_data directory.",
+            Colors.YELLOW
+        )
+
     if os.path.isdir(scenario_dir):
         search_dir = scenario_dir
     else:
-        search_dir = instrumentor_test_path   # fallback for backward compatibility
+        search_dir = instrumentor_test_path
+        print_color(
+            f"[WARNING] scenario_data not found at {scenario_dir}, trying instrumentor test path.",
+            Colors.YELLOW
+        )
 
     log_files = sorted(
         glob.glob(os.path.join(search_dir, "instrumentor-log-*.txt")),
@@ -244,49 +261,57 @@ def analyze_logs(work_dir, instrumentor_test_path, proj_path=None):
         reverse=True
     )
 
-    if log_files and events_files:
-        log_file = log_files[0]
-        events_file = events_files[0]
-        print(f"Found log file: {log_file}")
-        print(f"Found events file: {events_file}")
-
-        target_folders_file = os.path.join(
-            proj_path, "target-folders.txt") if proj_path else ".\\target-folders.txt"
-
-        # Use project directory for mapping files if available, otherwise fall back to work_dir
-        if proj_path:
-            comment_mapping_file = os.path.join(
-                proj_path, "comment-mapping.txt")
-            event_dict_file = os.path.join(proj_path, "event_dictionary.txt")
-        else:
-            comment_mapping_file = ".\\comment-mapping.txt"
-            event_dict_file = ".\\event_dictionary.txt"
-
-        # Safety check: ensure required files exist
-        if not os.path.exists(comment_mapping_file):
-            print_color(
-                f"[WARN] comment-mapping.txt not found at {comment_mapping_file}", Colors.YELLOW)
-        if not os.path.exists(event_dict_file):
-            print_color(
-                f"[WARN] event_dictionary.txt not found at {event_dict_file}", Colors.YELLOW)
-
-        ps_exe = "powershell" if platform.system() == "Windows" else "pwsh"
-        ps_cmd = [
-            ps_exe, "-ExecutionPolicy", "Bypass", "-File", ".\\process-logs-demo.ps1",
-            "-TargetFoldersFile", target_folders_file,
-            "-LogFile", log_file,
-            "-CommentMappingFile", comment_mapping_file,
-            "-EventDictionaryFile", event_dict_file,
-            "-EventsFile", events_file
-        ]
-        subprocess.run(ps_cmd)
-    else:
+    if not log_files or not events_files:
         print_color(
             f"Could not find generated log or events file in: {search_dir}. "
             "Please check whether Step 2 executed successfully and generated the logs.",
             Colors.RED
         )
+        return
 
+    log_file = log_files[0]
+    events_file = events_files[0]
+    print(f"Found log file: {log_file}")
+    print(f"Found events file: {events_file}")
+
+    target_folders_file = os.path.join(
+        proj_path, "target-folders.txt") if proj_path else ".\\target-folders.txt"
+
+    if proj_path:
+        comment_mapping_file = os.path.join(proj_path, "comment-mapping.txt")
+        event_dict_file = os.path.join(proj_path, "event_dictionary.txt")
+    else:
+        comment_mapping_file = ".\\comment-mapping.txt"
+        event_dict_file = ".\\event_dictionary.txt"
+
+    # Safety check: ensure required files exist
+    if not os.path.exists(comment_mapping_file):
+        print_color(
+            f"[WARN] comment-mapping.txt not found at {comment_mapping_file}", Colors.YELLOW)
+    if not os.path.exists(event_dict_file):
+        print_color(
+            f"[WARN] event_dictionary.txt not found at {event_dict_file}", Colors.YELLOW)
+
+    # --- Replace subprocess call with direct function invocation ---
+    # Add work_dir to path so that we can import process_logs_demo
+    if work_dir not in sys.path:
+        sys.path.insert(0, work_dir)
+    try:
+        import process_logs
+    except ImportError as e:
+        print_color(f"Failed to import process_logs_demo: {e}", Colors.RED)
+        return
+
+    try:
+        process_logs.process_logs(
+            target_folders_file=target_folders_file,
+            log_file=log_file,
+            comment_mapping_file=comment_mapping_file,
+            events_file=events_file,
+            event_dictionary_file=event_dict_file,
+        )
+    except Exception as e:
+        print_color(f"Log processing failed: {e}", Colors.RED)
 
 def generate_ai_prompt(work_dir):
     print_color("\n>>> Generating AI Prompt...", Colors.CYAN)
