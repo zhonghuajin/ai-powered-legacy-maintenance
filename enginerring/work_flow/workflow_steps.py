@@ -209,7 +209,7 @@ def compile_and_run(instrumentor_test_path):
     )
 
 
-def startup_log_manager_server(work_dir):
+def startup_log_manager_server(work_dir, proj_path=None):
     print_color("\n>>> Starting Log Manager Server...", Colors.CYAN)
     
     server_dir = os.path.join(work_dir, "enginerring", "log_manager_server")
@@ -219,11 +219,19 @@ def startup_log_manager_server(work_dir):
         sys.path.insert(0, server_dir)
         
     try:
-        import server as log_server
+        # Clear any cached module to avoid conflicts
+        if 'log_manager' in sys.modules:
+            del sys.modules['log_manager']
+            
+        import log_manager as log_server
+        
+        # Set the save root to the selected project directory
+        log_server.SCENARIO_SAVE_ROOT = proj_path if proj_path else os.getcwd()
+        
         print_color(f"Launching log manager server interface...", Colors.GREEN)
         log_server.run_manager()
     except ImportError as e:
-        print_color(f"Failed to import server module from {server_dir}: {e}", Colors.RED)
+        print_color(f"Failed to import log_manager module from {server_dir}: {e}", Colors.RED)
 
 
 def analyze_logs(work_dir, instrumentor_test_path, proj_path=None):
@@ -312,6 +320,7 @@ def analyze_logs(work_dir, instrumentor_test_path, proj_path=None):
         )
     except Exception as e:
         print_color(f"Log processing failed: {e}", Colors.RED)
+
 
 def generate_ai_prompt(work_dir):
     print_color("\n>>> Generating AI Prompt...", Colors.CYAN)

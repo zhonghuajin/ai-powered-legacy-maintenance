@@ -15,15 +15,17 @@ PORT = 5000
 target_ips = []
 active_endpoints = []  # Stores scanned (ip, port) pairs
 
+# Default scenario save root; will be overwritten by the workflow step
+SCENARIO_SAVE_ROOT = os.getcwd()
+
+
 # ==========================================
 # Flask Web Service Routes
 # ==========================================
-
-
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    """Receive file and save to scenario_data folder in current working directory"""
-    save_dir = os.path.join(os.getcwd(), 'scenario_data')
+    """Receive file and save to scenario_data folder under the selected project path"""
+    save_dir = os.path.join(SCENARIO_SAVE_ROOT, 'scenario_data')
     os.makedirs(save_dir, exist_ok=True)
 
     if 'file' not in request.files:
@@ -40,11 +42,10 @@ def upload_file():
 
     return jsonify({"status": "success", "message": f"File {file.filename} received"})
 
+
 # ==========================================
 # Command Line Interface (CLI) Logic
 # ==========================================
-
-
 def get_local_ip():
     """Get local LAN IP to inform LogMonitorServer"""
     try:

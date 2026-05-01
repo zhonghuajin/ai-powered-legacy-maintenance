@@ -80,7 +80,8 @@ def main():
 
     pause_for_next_step("Setup Shadow Branch & Instrumentation", "Startup Log Manager Server")
 
-    startup_log_manager_server(work_dir)
+    # Pass proj_path so that uploaded files are saved under the project
+    startup_log_manager_server(work_dir, proj_path=proj_path)
 
     pause_for_next_step("Startup Log Manager Server", "Analyze Logs and Extract Denoised Data")
 
