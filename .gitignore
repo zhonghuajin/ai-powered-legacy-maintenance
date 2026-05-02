@@ -26,3 +26,6 @@ projects/
 denosied_data/
 enginerring/ask_llm/dependency_prompt.txt
 scenario_schema_output.json
+instrumented.txt
+AI_Apply_Fix_Prompt.md
+output.md

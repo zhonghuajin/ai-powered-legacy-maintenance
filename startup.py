@@ -227,13 +227,15 @@ def main():
     ask_llm_for_localization(ask_llm_dir)
     pause_for_next_step("Ask LLM for Bug Localization", "Generate Fix Prompt")
 
-    generate_fix_prompt(work_dir)
+    # Pass proj_path to generate_fix_prompt to automatically load target folders
+    generate_fix_prompt(work_dir, proj_path)
     pause_for_next_step("Generate Fix Prompt", "Ask LLM for Code Fix")
 
     ask_llm_for_code_fix(ask_llm_dir)
     pause_for_next_step("Ask LLM for Code Fix", "Apply Fix to Source Code")
 
-    apply_fix(work_dir)
+    # MODIFIED: Pass proj_path to apply_fix to enable automatic configuration loading
+    apply_fix(work_dir, proj_path)
 
     print_color(
         "\n=======================================================", Colors.MAGENTA)

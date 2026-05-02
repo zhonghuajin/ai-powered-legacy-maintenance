@@ -353,56 +353,204 @@ def generate_ai_prompt(work_dir):
     python_script_path = os.path.join(
         ai_app_path, "generate_bug_localization_prompt.py")
 
-    if os.path.exists(python_script_path):
-        print_color(
-            f"Running Python script from {work_dir} to generate the prompt...", Colors.GREEN)
-        subprocess.run([sys.executable, python_script_path])
-    else:
+    if not os.path.exists(python_script_path):
         print_color(
             f"AI prompt generation script not found at: {python_script_path}", Colors.RED)
+        return
+
+    # Scan for final-output-calltree.md files in the projects directory
+    projects_dir = os.path.join(work_dir, "projects")
+    search_pattern = os.path.join(projects_dir, "**", "final-output-calltree.md")
+    calltree_files = glob.glob(search_pattern, recursive=True)
+
+    selected_calltree_path = None
+
+    if not calltree_files:
+        print_color("[Warning] No final-output-calltree.md found in projects directory.", Colors.YELLOW)
+    else:
+        print_color("\n=== Select Call Tree File ===", Colors.CYAN)
+        options = []
+        for idx, file_path in enumerate(calltree_files, start=1):
+            rel_path = os.path.relpath(file_path, projects_dir)
+            project_name = rel_path.split(os.sep)[0] if os.sep in rel_path else rel_path
+            options.append((project_name, os.path.abspath(file_path)))
+            print(f"  {idx}. {project_name} ({rel_path})")
+            
+        while True:
+            choice = input(f"Select a project number [1-{len(options)}] or press Enter to skip: ").strip()
+            if not choice:
+                break
+            if choice.isdigit():
+                num = int(choice)
+                if 1 <= num <= len(options):
+                    selected_project_name, selected_calltree_path = options[num - 1]
+                    print_color(f"Selected project: {selected_project_name}", Colors.GREEN)
+                    break
+            print_color("Invalid selection, please try again.", Colors.RED)
+
+    print_color(
+        f"Running Python script from {work_dir} to generate the prompt...", Colors.GREEN)
+    
+    # Dynamically import generate_bug_localization_prompt and call exposed interface
+    if ai_app_path not in sys.path:
+        sys.path.insert(0, ai_app_path)
+        
+    try:
+        import generate_bug_localization_prompt as prompt_gen
+        
+        importlib.reload(prompt_gen)
+        
+        prompt_gen.generate_prompt(selected_calltree_path)
+    except ImportError as e:
+        print_color(f"[!] Failed to import generate_bug_localization_prompt: {e}", Colors.RED)
+    except Exception as e:
+        print_color(f"[!] Error generating prompt: {e}", Colors.RED)
 
 
 def ask_llm_for_localization(ask_llm_dir):
     print_color("\n>>> Asking LLM for Bug Localization...", Colors.CYAN)
     setup_windows_proxy()
 
-    os.chdir(ask_llm_dir)
-    if os.path.exists("run.py"):
-        subprocess.run([sys.executable, "run.py"])
-    else:
-        print_color(f"run.py not found in {ask_llm_dir}", Colors.RED)
+    if ask_llm_dir not in sys.path:
+        sys.path.insert(0, ask_llm_dir)
+
+    try:
+        import run as ask_llm_run
+        
+        original_cwd = os.getcwd()
+        
+        file_path = os.path.join(original_cwd, "AI_Bug_Localization_Prompt.md")
+        output_path = os.path.join(original_cwd, "output.md")
+        
+        os.chdir(ask_llm_dir)
+
+        ask_llm_run.run_api(
+            file_path=file_path,
+            output_path=output_path
+        )
+        
+        os.chdir(original_cwd)
+        print_color(f"[+] LLM response saved to {output_path}", Colors.GREEN)
+        
+    except ImportError as e:
+        print_color(f"[!] Failed to import run.py from {ask_llm_dir}: {e}", Colors.RED)
+    except Exception as e:
+        print_color(f"[!] Error during LLM API call: {e}", Colors.RED)
+        if 'original_cwd' in locals():
+            os.chdir(original_cwd)
 
 
-def generate_fix_prompt(work_dir):
+def generate_fix_prompt(work_dir, proj_path=None):
     print_color("\n>>> Generating Fix Prompt...", Colors.CYAN)
 
     fix_bug_dir = os.path.join(work_dir, "enginerring", "fix_bug")
-    generate_fix_script = os.path.join(fix_bug_dir, "generate_fix_prompt.py")
-
-    if os.path.exists(generate_fix_script):
-        subprocess.run([sys.executable, generate_fix_script])
-    else:
-        print_color(
-            f"generate_fix_prompt.py not found at: {generate_fix_script}", Colors.RED)
+    
+    # Dynamically import generate_fix_prompt and call the exposed interface
+    if fix_bug_dir not in sys.path:
+        sys.path.insert(0, fix_bug_dir)
+        
+    try:
+        import generate_fix_prompt as fix_prompt_gen
+        
+        # Reload to ensure we have the latest version if modified
+        importlib.reload(fix_prompt_gen)
+        
+        original_cwd = os.getcwd()
+        os.chdir(work_dir)
+        
+        # Automatically determine the report path based on localization output
+        report_path = os.path.join(work_dir, "output.md")
+        
+        # Call the exposed interface with proj_path and report_path
+        fix_prompt_gen.generate_prompt(proj_path=proj_path, report_path=report_path)
+        
+        os.chdir(original_cwd)
+    except ImportError as e:
+        print_color(f"[!] Failed to import generate_fix_prompt from {fix_bug_dir}: {e}", Colors.RED)
+    except Exception as e:
+        print_color(f"[!] Error generating fix prompt: {e}", Colors.RED)
+        if 'original_cwd' in locals():
+            os.chdir(original_cwd)
 
 
 def ask_llm_for_code_fix(ask_llm_dir):
     print_color("\n>>> Asking LLM for Code Fix...", Colors.CYAN)
-    os.chdir(ask_llm_dir)
-    if os.path.exists("run.py"):
-        subprocess.run([sys.executable, "run.py"])
-    else:
-        print_color(f"run.py not found in {ask_llm_dir}", Colors.RED)
+    
+    if ask_llm_dir not in sys.path:
+        sys.path.insert(0, ask_llm_dir)
+
+    try:
+        import run as ask_llm_run
+        
+        original_cwd = os.getcwd()
+        
+        # Automatically set paths based on the current working directory
+        file_path = os.path.join(original_cwd, "AI_Apply_Fix_Prompt.md")
+        output_path = os.path.join(original_cwd, "output.md")
+        
+        # Change directory to ensure environment variables and context are correct for LLM module
+        os.chdir(ask_llm_dir)
+        
+        print_color(f"[+] Using prompt file: {file_path}", Colors.GREEN)
+
+        ask_llm_run.run_api(
+            file_path=file_path,
+            output_path=output_path
+        )
+        
+        # Restore the original working directory
+        os.chdir(original_cwd)
+        print_color(f"[+] LLM response saved to {output_path}", Colors.GREEN)
+        
+    except ImportError as e:
+        print_color(f"[!] Failed to import run.py from {ask_llm_dir}: {e}", Colors.RED)
+    except Exception as e:
+        print_color(f"[!] Error during LLM API call: {e}", Colors.RED)
+        if 'original_cwd' in locals():
+            os.chdir(original_cwd)
 
 
-def apply_fix(work_dir):
+# MODIFIED: Added proj_path parameter to allow automatic configuration loading
+def apply_fix(work_dir, proj_path=None):
     print_color("\n>>> Applying Fix to Source Code...", Colors.CYAN)
 
     fix_bug_dir = os.path.join(work_dir, "enginerring", "fix_bug")
-    apply_fix_script = os.path.join(fix_bug_dir, "apply_fix.py")
-
-    if os.path.exists(apply_fix_script):
-        subprocess.run([sys.executable, apply_fix_script])
-    else:
-        print_color(
-            f"apply_fix.py not found at: {apply_fix_script}", Colors.RED)
+    
+    if fix_bug_dir not in sys.path:
+        sys.path.insert(0, fix_bug_dir)
+        
+    try:
+        import apply_fix as fix_applier
+        
+        # Reload to ensure we have the latest version if modified
+        importlib.reload(fix_applier)
+        
+        original_cwd = os.getcwd()
+        os.chdir(work_dir)
+        
+        # MODIFIED: Automatically determine fixed code path and base directories
+        fixed_code_path = os.path.join(work_dir, "output.md")
+        
+        base_dirs = []
+        if proj_path:
+            config_path = os.path.join(proj_path, "config.json")
+            if os.path.exists(config_path):
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config_data = json.load(f)
+                    base_dirs = config_data.get("original-target-folders", [])
+        
+        if not base_dirs:
+            base_dirs = ["."]
+            print_color("[Warning] No original-target-folders found in config.json, using current directory.", Colors.YELLOW)
+        
+        # Call the exposed interface with the new parameters
+        # Note: Ensure that run_apply_fix in apply_fix.py is updated to accept these parameters
+        fix_applier.run_apply_fix(fixed_code_path=fixed_code_path, base_dirs=base_dirs)
+        
+        os.chdir(original_cwd)
+    except ImportError as e:
+        print_color(f"[!] Failed to import apply_fix from {fix_bug_dir}: {e}", Colors.RED)
+    except Exception as e:
+        print_color(f"[!] Error applying fix: {e}", Colors.RED)
+        if 'original_cwd' in locals():
+            os.chdir(original_cwd)

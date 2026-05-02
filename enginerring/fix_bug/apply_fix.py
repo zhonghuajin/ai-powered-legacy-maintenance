@@ -6,13 +6,13 @@ import sys
 import re
 
 # ==========================================
-# 1. Path resolution logic (refer to generate_fix_prompt.py)
+# 1. Path resolution logic
 # ==========================================
 
 def load_base_dirs(dirs_file_path):
     """Load the list of base directories from the configuration file."""
     if not os.path.exists(dirs_file_path):
-        print(f"⚠️ Warning: Base directory file '{dirs_file_path}' not found. Using current directory as fallback.")
+        print(f"Warning: Base directory file '{dirs_file_path}' not found. Using current directory as fallback.")
         return ["."]
         
     base_dirs = []
@@ -23,7 +23,7 @@ def load_base_dirs(dirs_file_path):
                 if line and not line.startswith('#'):
                     base_dirs.append(line)
     except Exception as e:
-        print(f"❌ Failed to read base directory file: {e}")
+        print(f"Failed to read base directory file: {e}")
         return ["."]
         
     if not base_dirs:
@@ -98,36 +98,43 @@ def parse_output_md(content):
 # 3. Main program logic
 # ==========================================
 
-def main():
+def run_apply_fix(fixed_code_path=None, base_dirs=None):
+    """
+    Exposed interface to run the fix application logic.
+    """
     print("="*50)
-    print("🚀 AI Code Fix Auto-Apply Tool")
+    print(" AI Code Fix Auto-Apply Tool")
     print("="*50)
     
-    output_file = input("📁 1. Please enter the file path containing the fixed code [Default: output.md]:\n> ").strip() or "output.md"
-    if not os.path.exists(output_file):
-        print(f"❌ Error: File '{output_file}' not found.")
-        sys.exit(1)
+    if not fixed_code_path:
+        fixed_code_path = input("1. Please enter the file path containing the fixed code [Default: output.md]:\n> ").strip() or "output.md"
         
-    dirs_file = input("\n📁 2. Please enter the file path containing the base search directories [Default: target-folders.txt]:\n> ").strip() or "target-folders.txt"
-    base_dirs = load_base_dirs(dirs_file)
-    print(f"✅ Loaded {len(base_dirs)} base search directories.")
+    if not os.path.exists(fixed_code_path):
+        print(f"Error: File '{fixed_code_path}' not found.")
+        return False
+        
+    if base_dirs is None:
+        dirs_file = input("\n2. Please enter the file path containing the base search directories [Default: target-folders.txt]:\n> ").strip() or "target-folders.txt"
+        base_dirs = load_base_dirs(dirs_file)
+        
+    print(f"Loaded {len(base_dirs)} base search directories.")
 
     # Read output.md
     try:
-        with open(output_file, 'r', encoding='utf-8') as f:
+        with open(fixed_code_path, 'r', encoding='utf-8') as f:
             output_content = f.read()
     except Exception as e:
-        print(f"❌ Failed to read {output_file}: {e}")
-        sys.exit(1)
+        print(f"Failed to read {fixed_code_path}: {e}")
+        return False
         
     # Parse file content
     files_to_update = parse_output_md(output_content)
     
     if not files_to_update:
-        print("❌ Failed to parse any valid code blocks or file paths in the file.")
-        sys.exit(1)
+        print("Failed to parse any valid code blocks or file paths in the file.")
+        return False
         
-    print(f"\n🔍 Successfully parsed {len(files_to_update)} files, preparing to replace...")
+    print(f"\nSuccessfully parsed {len(files_to_update)} files, preparing to replace...")
     
     # Find and replace local files
     success_count = 0
@@ -136,24 +143,27 @@ def main():
         abs_path = resolve_file_path(rel_path, base_dirs)
         
         if not abs_path:
-            print(f"   ❌ Failed: Could not find the file in local directories.")
+            print(f"   Failed: Could not find the file in local directories.")
             continue
             
         try:
             with open(abs_path, 'w', encoding='utf-8') as f:
                 f.write(new_content)
-            print(f"   ✅ Success: Overwrote file -> {abs_path}")
+            print(f"   Success: Overwrote file -> {abs_path}")
             success_count += 1
         except Exception as e:
-            print(f"   ❌ Failed to write file {abs_path}: {e}")
+            print(f"   Failed to write file {abs_path}: {e}")
             
     print("\n" + "="*50)
-    print(f"🎉 Execution completed! Successfully updated {success_count}/{len(files_to_update)} files.")
+    print(f"Execution completed! Successfully updated {success_count}/{len(files_to_update)} files.")
     print("="*50)
+    return True
 
 if __name__ == "__main__":
     try:
-        main()
+        success = run_apply_fix()
+        if not success:
+            sys.exit(1)
     except KeyboardInterrupt:
-        print("\n\n🛑 Operation cancelled by user.")
+        print("\n\nOperation cancelled by user.")
         sys.exit(0)

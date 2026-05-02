@@ -207,8 +207,10 @@ path/to/second/file.ext
 # 2. Interactive Guidance Logic
 # ==========================================
 
-
-def main():
+def generate_prompt(cli_file_path=None):
+    """
+    Exposed interface to generate the bug localization prompt.
+    """
     print("="*50)
     print("🕵️  AI Bug Localization Prompt Auto Generator")
     print("="*50)
@@ -248,17 +250,24 @@ def main():
 
     # 4. Read trace data file
     trace_data = ""
+    
     while True:
-        # Mode-specific file hint
-        if mode == "2":
-            file_hint = "Call Tree File With Concurrency (e.g., ../../final-output-combined.md)"
+        if cli_file_path:
+            file_path = cli_file_path
+            print(f"\n📁 4. Using Call Tree File from arguments: {file_path}")
+            # Reset the variable so if it fails, it will fall back to manual input
+            cli_file_path = None
         else:
-            file_hint = "Call Tree File (e.g., ../../final-output-calltree.md)"
+            # Mode-specific file hint
+            if mode == "2":
+                file_hint = "Call Tree File With Concurrency (e.g., ../../final-output-combined.md)"
+            else:
+                file_hint = "Call Tree File (e.g., ../../final-output-calltree.md)"
 
-        file_path = input(
-            f"\n📁 4. Please enter the path to the [{file_hint}]:\n> ").strip()
-        # Remove possible quotes (common when dragging a file into the terminal)
-        file_path = file_path.strip('\'"')
+            file_path = input(
+                f"\n📁 4. Please enter the path to the [{file_hint}]:\n> ").strip()
+            # Remove possible quotes (common when dragging a file into the terminal)
+            file_path = file_path.strip('\'"')
 
         if not file_path:
             print("❌ File path cannot be empty. Please enter it again!")
@@ -298,6 +307,11 @@ def main():
         print("="*50)
     except Exception as e:
         print(f"\n❌ Failed to save file: {e}")
+
+
+def main():
+    cli_file_path = sys.argv[1] if len(sys.argv) > 1 else None
+    generate_prompt(cli_file_path)
 
 
 if __name__ == "__main__":
