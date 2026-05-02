@@ -2,10 +2,11 @@
 llm_chat.py  —  Multi-provider LLM CLI (2026 edition)
 
 Usage:
-    python llm_chat.py -p claude                        # 进入交互式多轮对话
-    python llm_chat.py -p gpt -f prompt.md              # 单轮：读文件作为 prompt
-    python llm_chat.py -p deepseek -r high              # 指定 reasoning 强度
-    python llm_chat.py -p qwen -m qwen3-max --no-stream # 关闭流式
+    python llm_chat.py -p claude                        # Interactive multi-turn chat
+    python llm_chat.py -p gpt -f prompt.md              # Single turn: read file as prompt
+    python llm_chat.py -p deepseek -r high              # Specify reasoning level
+    python llm_chat.py -p deepseek-v4pro                # Use DeepSeek V4 Pro
+    python llm_chat.py -p qwen -m qwen3-max --no-stream # Disable streaming
 """
 
 import os
@@ -24,14 +25,14 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 # Provider registry
 # ---------------------------------------------------------------------------
-# `sdk`:  "openai" (兼容 OpenAI SDK) 或 "anthropic"
+# `sdk`:  "openai" (compatible with OpenAI SDK) or "anthropic"
 # `reasoning_style`:
-#     - "none"           : 不支持思考链
-#     - "openai_effort"  : OpenAI GPT-5.x 风格，使用 reasoning_effort
-#     - "anthropic"      : Claude extended thinking，使用 thinking={"type":"enabled","budget_tokens":N}
-#     - "deepseek"       : deepseek-reasoner，返回流里带 reasoning_content delta
-#     - "qwen"           : enable_thinking + thinking_budget（通过 extra_body 传递）
-#     - "glm"            : thinking={"type":"enabled"}（通过 extra_body 传递）
+#     - "none"           : No chain-of-thought support
+#     - "openai_effort"  : OpenAI GPT-5.x style, uses reasoning_effort
+#     - "anthropic"      : Claude extended thinking, uses thinking={"type":"enabled","budget_tokens":N}
+#     - "deepseek"       : deepseek-reasoner, returns reasoning_content delta in stream
+#     - "qwen"           : enable_thinking + thinking_budget (via extra_body)
+#     - "glm"            : thinking={"type":"enabled"} (via extra_body)
 PROVIDERS = {
     "gpt": {
         "sdk": "openai",
@@ -45,9 +46,9 @@ PROVIDERS = {
         "sdk": "openai",
         "env_key": "DEEPSEEK_API_KEY",
         "base_url": "https://api.deepseek.com",
-        "default_model": "deepseek-reasoner",
-        "reasoning_style": "deepseek",
-        "max_tokens": 8192,
+        "default_model": "deepseek-v4-pro",
+        "reasoning_style": "none",
+        "max_tokens": 16384,
     },
     "glm": {
         "sdk": "openai",
@@ -61,7 +62,7 @@ PROVIDERS = {
         "sdk": "openai",
         "env_key": "MOONSHOT_API_KEY",
         "base_url": "https://api.moonshot.cn/v1",
-        "default_model": "kimi-k2",           # 按官方文档调整
+        "default_model": "kimi-k2",
         "reasoning_style": "none",
         "max_tokens": 8192,
     },
@@ -83,14 +84,14 @@ PROVIDERS = {
     },
 }
 
-REASONING_BUDGETS = {      # 映射 low/medium/high 到 token 预算
+REASONING_BUDGETS = {
     "low":    2048,
     "medium": 8192,
     "high":   24576,
 }
 
 # ---------------------------------------------------------------------------
-# ANSI colors (简单版，不引入额外依赖)
+# ANSI colors (lightweight, no extra dependencies)
 # ---------------------------------------------------------------------------
 class C:
     RESET  = "\033[0m"
@@ -113,9 +114,9 @@ class LLMClient:
         self.provider = provider
         self.cfg = PROVIDERS[provider]
         self.model = model or self.cfg["default_model"]
-        self.reasoning = reasoning     # "off" | "low" | "medium" | "high"
+        self.reasoning = reasoning
         self.system = system
-        self.history: list[dict] = []  # 存 user/assistant 轮次（不含 system）
+        self.history: list[dict] = []
 
         api_key = os.environ.get(self.cfg["env_key"], "").strip()
         if not api_key:
@@ -131,7 +132,7 @@ class LLMClient:
 
     # --------------------------- public API --------------------------------
     def chat(self, user_msg: str, stream: bool = True) -> str:
-        """发送一条用户消息，返回最终 assistant 文本，并更新 history。"""
+        """Send a user message, return the final assistant text, and update history."""
         self.history.append({"role": "user", "content": user_msg})
 
         if self.cfg["sdk"] == "anthropic":
@@ -182,7 +183,7 @@ class LLMClient:
         # reasoning enabled
         budget = REASONING_BUDGETS.get(self.reasoning, REASONING_BUDGETS["medium"])
         if style == "openai_effort":
-            kwargs["reasoning_effort"] = self.reasoning   # low/medium/high
+            kwargs["reasoning_effort"] = self.reasoning
         elif style == "qwen":
             kwargs.setdefault("extra_body", {})
             kwargs["extra_body"]["enable_thinking"] = True
@@ -190,13 +191,14 @@ class LLMClient:
         elif style == "glm":
             kwargs.setdefault("extra_body", {})
             kwargs["extra_body"]["thinking"] = {"type": "enabled"}
-        # deepseek-reasoner 不需要额外参数；模型本身就思考
+        # deepseek-reasoner does not require extra parameters; the model handles reasoning natively
+        # "none" style: no reasoning parameters added, keep as-is
         return kwargs
 
     def _openai_once(self) -> str:
         resp = self.client.chat.completions.create(**self._openai_kwargs())
         msg = resp.choices[0].message
-        # DeepSeek-reasoner: message 里会带 reasoning_content
+        # DeepSeek-reasoner: message may contain reasoning_content
         rc = getattr(msg, "reasoning_content", None)
         if rc:
             print(f"{C.DIM}--- reasoning ---\n{rc}\n--- answer ---{C.RESET}")
@@ -214,7 +216,7 @@ class LLMClient:
             if not chunk.choices:
                 continue
             delta = chunk.choices[0].delta
-            # DeepSeek & 部分兼容 provider 会有 reasoning_content 字段
+            # DeepSeek and some compatible providers may have reasoning_content
             rc = getattr(delta, "reasoning_content", None)
             if rc:
                 if not in_thinking_block:
@@ -228,7 +230,7 @@ class LLMClient:
                     in_thinking_block = False
                 print(delta.content, end="", flush=True)
                 answer_parts.append(delta.content)
-        print()  # newline
+        print()
         return "".join(answer_parts)
 
     # --------------------------- Anthropic --------------------------------
@@ -243,9 +245,9 @@ class LLMClient:
         if self.reasoning != "off":
             budget = REASONING_BUDGETS.get(self.reasoning, REASONING_BUDGETS["medium"])
             kwargs["thinking"] = {"type": "enabled", "budget_tokens": budget}
-            # 启用 thinking 时 max_tokens 必须 > budget
+            # max_tokens must exceed budget when thinking is enabled
             kwargs["max_tokens"] = max(kwargs["max_tokens"], budget + 4096)
-            # 官方要求 thinking 开启时 temperature 为默认
+            # Official requirement: temperature is default when thinking is enabled
         return kwargs
 
     def _anthropic_once(self) -> str:
@@ -280,7 +282,7 @@ class LLMClient:
                         print(d.text, end="", flush=True)
                         answer_parts.append(d.text)
                 elif et == "content_block_stop":
-                    print()    # newline per block
+                    print()
         return "".join(answer_parts)
 
 
@@ -289,15 +291,15 @@ class LLMClient:
 # ---------------------------------------------------------------------------
 HELP_TEXT = f"""
 {C.BOLD}Commands{C.RESET}
-  /help                   显示帮助
-  /reset                  清空对话历史
-  /history                查看历史消息
-  /save [path]            保存对话为 JSON（默认 chat_<time>.json）
-  /system <text>          设置 system prompt（会清空历史）
-  /reasoning off|low|medium|high   切换推理强度
-  /model <name>           切换模型（保留历史）
-  /file <path>            把文件内容作为下一条 user message 发送
-  /exit  或  /quit        退出
+  /help                   Show this help
+  /reset                  Clear conversation history
+  /history                Show message history
+  /save [path]            Save conversation to JSON (default: chat_<time>.json)
+  /system <text>          Set system prompt (clears history)
+  /reasoning off|low|medium|high   Switch reasoning level
+  /model <name>           Switch model (preserves history)
+  /file <path>            Send file content as the next user message
+  /exit  or  /quit        Exit
 """
 
 def interactive_loop(client: LLMClient, stream: bool):
@@ -377,7 +379,7 @@ def _do_turn(client: LLMClient, user_msg: str, stream: bool):
         client.chat(user_msg, stream=stream)
     except KeyboardInterrupt:
         print(f"\n{C.YELLOW}[interrupted]{C.RESET}")
-        # 回滚最后的 user 消息（因为没得到完整回复）
+        # Rollback the last user message (incomplete response)
         if client.history and client.history[-1]["role"] == "user":
             client.history.pop()
     except Exception as e:
@@ -405,7 +407,7 @@ def one_shot(client: LLMClient, file_path: str, stream: bool, output: str):
 def run_chat_app(provider: str, model: Optional[str] = None, file_path: Optional[str] = None,
                  reasoning: str = "off", system: Optional[str] = None,
                  output: str = "output.md", stream: bool = True):
-    """供外部程序直接调用的接口"""
+    """Public interface for external programs to call directly."""
     client = LLMClient(
         provider=provider,
         model=model,
@@ -420,7 +422,7 @@ def run_chat_app(provider: str, model: Optional[str] = None, file_path: Optional
 
 def main(args_list=None):
     """
-    修改后的 main 函数，支持传入 args_list 以供其他 Python 脚本调用
+    Modified main function that supports passing args_list for use by other Python scripts.
     """
     parser = argparse.ArgumentParser(
         description="Multi-provider LLM CLI with streaming, multi-turn, "
@@ -442,7 +444,6 @@ def main(args_list=None):
     parser.add_argument("--no-stream", action="store_true",
                         help="Disable streaming.")
     
-    # 如果 args_list 为 None，则默认解析 sys.argv
     args = parser.parse_args(args_list)
 
     try:

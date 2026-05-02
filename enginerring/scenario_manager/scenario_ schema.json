@@ -1,60 +1,96 @@
 {
-  "processId": "String, unique identifier (e.g., sync_test_suite_001)",
-  "name": "String, short name (e.g., Multi-threaded Concurrency and Synchronization Mechanism Comprehensive Test Suite)",
-  "description": "String, natural language description of the overall process purpose and flow",
-  "category": "String, macro classification (e.g., Concurrency-Testing)",
-  "tags": ["Tag array, e.g., concurrency-demo, pipeline, caching, risk-calculation"],
-  "overallConcurrencyModel": "Overview of the top-level concurrency model; describe if it is a composite process",
-
-  "subProcesses": [
-    {
-      "subProcessId": "String (e.g., test_8_event_driven)",
-      "name": "Sub-process name (e.g., Event-Driven Aggregation)",
-      "description": "What this sub-process does and what problem it solves",
-      "sourceRef": {
-        "file": "com/example/instrumentor/happens/before/SyncTest.java",
-        "method": "testEventDrivenAggregation"
-      },
-      "concurrencyModel": "Specific concurrency model name, e.g., Pub/Sub + CountDownLatch",
-      "synchronizationPrimitives": ["EventBus", "CountDownLatch", "CopyOnWriteArrayList"],
-      "sharedState": [
-        "BatchAggregator.results (array)",
-        "AuditLog.entries (collection)"
-      ],
-      "threads": [
-        {
-          "threadId": "Corresponds to Thread-N in Trace",
-          "name": "Thread name (e.g., main, Coordinator-Worker)",
-          "role": "writer / reader / coordinator / worker / dispatcher",
-          "summary": "Main operation steps of this thread"
-        }
-      ],
-      "components": [
-        {
-          "name": "Custom component class name (e.g., WorkerCoordinator)",
-          "role": "Coordinator / Aggregator / Event Bus / Cache / Logger ...",
-          "keyMethods": ["executeWithNotification", "wrapExecution"]
-        }
-      ],
-      "interactions": [
-        {
-          "type": "happens-before / data-flow / signal / publish-subscribe / barrier",
-          "from": "Source thread/component (e.g., Thread-56 / Worker)",
-          "to": "Target thread/component (e.g., Thread-60 / EventBus Dispatcher)",
-          "detail": "Interaction detail, e.g., publish worker.result.computed event via EventBus, triggering async callback"
-        }
-      ],
-      "input": "Input of the sub-process (if any, e.g., 3 concurrent computation tasks)",
-      "output": "Output or observable effect of the sub-process (e.g., aggregated result array and audit log)",
-      "preconditions": ["Precondition 1 (e.g., EventBus must be configured for async dispatch mode)"],
-      "postconditions": ["Postcondition 1 (e.g., all task results must be written to Aggregator, and the main thread is unblocked)"],
-      "tags": ["Sub-process specific tags, e.g., async-dispatch, batching"]
-    }
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ScenarioExecutionDescription",
+  "description": "Structured data describing a complete scenario from external stimulus to system response, along with its internal sub-scenarios, designed to help AI understand business logic and perform secondary development.",
+  "type": "object",
+  "required": [
+    "scenario_id",
+    "scenario_name",
+    "summary",
+    "tags",
+    "sub_scenarios"
   ],
-
-  "metadata": {
-    "source": "com/example/instrumentor/happens/before/SyncTest.java",
-    "traceFormat": "call-tree",
-    "recordedAt": "2026-05-01T07:29:47Z"
+  "properties": {
+    "scenario_id": {
+      "type": "string",
+      "description": "Unique identifier for the entire response scenario (from external stimulus to final response)."
+    },
+    "scenario_name": {
+      "type": "string",
+      "description": "Descriptive name of the complete scenario."
+    },
+    "summary": {
+      "type": "string",
+      "description": "High-level summary of the scenario processing, explaining how the system responds to the external stimulus and the core business logic involved."
+    },
+    "tags": {
+      "type": "array",
+      "description": "Keyword tags for vector retrieval and classification (e.g., 'async-pipeline', 'event-driven', 'batch-processing').",
+      "items": {
+        "type": "string"
+      }
+    },
+    "sub_scenarios": {
+      "type": "array",
+      "description": "List of independent sub-scenarios or specific execution flows decomposed from the overall scenario.",
+      "items": {
+        "type": "object",
+        "required": [
+          "sub_scenario_id",
+          "sub_scenario_name",
+          "intent",
+          "participating_threads",
+          "execution_flow"
+        ],
+        "properties": {
+          "sub_scenario_id": {
+            "type": "string",
+            "description": "Unique identifier for the current sub-scenario / execution flow (e.g., 'test_pipeline')."
+          },
+          "sub_scenario_name": {
+            "type": "string",
+            "description": "Name of the sub-scenario."
+          },
+          "intent": {
+            "type": "string",
+            "description": "Core business purpose or design intent of this sub-scenario. During secondary development, AI will use this field to determine whether the logic block meets development requirements."
+          },
+          "participating_threads": {
+            "type": "array",
+            "description": "Threads participating in this sub-scenario and their logical role mappings.",
+            "items": {
+              "type": "object",
+              "required": [
+                "thread_id",
+                "role",
+                "description"
+              ],
+              "properties": {
+                "thread_id": {
+                  "type": "string",
+                  "description": "Thread ID from the original call stack (e.g., 'Thread-3')."
+                },
+                "role": {
+                  "type": "string",
+                  "description": "Role that this thread plays in the business logic (e.g., 'Coordinator', 'Worker', 'Event-Dispatcher')."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Brief description of the specific work this thread is responsible for within the sub-scenario."
+                }
+              }
+            }
+          },
+          "execution_flow": {
+            "type": "array",
+            "description": "Execution steps described in chronological order. Should explain the interactions between components, data flow, and thread collaboration process.",
+            "items": {
+              "type": "string",
+              "description": "Description of a single execution step."
+            }
+          }
+        }
+      }
+    }
   }
 }

@@ -84,7 +84,6 @@ def run_api(file_path: str, output_path: str, provider: str = None, reasoning: s
     if sys.platform == "win32":
         sys.stdout.reconfigure(encoding='utf-8')
 
-    check_env()
     check_dependencies()
 
     import llm_chat

@@ -31,6 +31,8 @@ from enginerring.work_flow.workflow_steps import (
 # Import the delayed commit function
 from enginerring.shadow_project_management.full_instrumentation import commit_instrumentation
 from enginerring.project_manager.project_manager import create_or_select_project
+# New import for scenario schema generation
+from enginerring.scenario_manager.generate_scenario_schema import generate_scenario_schema
 
 
 def switch_to_source_branch(proj_path):
@@ -39,7 +41,7 @@ def switch_to_source_branch(proj_path):
     repository to its configured source_branch.
     Before switching, if there are any uncommitted changes, add them
     and amend the last commit (git add . && git commit --amend --no-edit).
-    
+
     Args:
         proj_path: Path to the project directory containing config.json
     """
@@ -52,13 +54,13 @@ def switch_to_source_branch(proj_path):
         config = json.load(f)
 
     git_root = config.get('original_git_root', '')
-    source_branch = config.get('source_branch', 'master')  # fallback to 'master'
+    source_branch = config.get('source_branch', 'master')
 
     if not git_root:
         print_color('[Branch Switch] original_git_root is empty, skipping branch switch.', Colors.YELLOW)
         return
 
-    # --- NEW: Check for uncommitted changes before switching ---
+    # --- Check for uncommitted changes before switching ---
     try:
         status_result = subprocess.run(
             ['git', '-C', git_root, 'status', '--porcelain'],
@@ -71,14 +73,12 @@ def switch_to_source_branch(proj_path):
                 '[Branch Switch] Detected uncommitted changes. Adding and amending last commit...',
                 Colors.CYAN
             )
-            # git add .
             subprocess.run(
                 ['git', '-C', git_root, 'add', '.'],
                 check=True,
                 capture_output=True,
                 text=True
             )
-            # git commit --amend --no-edit
             subprocess.run(
                 ['git', '-C', git_root, 'commit', '--amend', '--no-edit'],
                 check=True,
@@ -124,7 +124,6 @@ def switch_to_source_branch(proj_path):
             '[Branch Switch] You may have uncommitted changes or the branch does not exist.',
             Colors.RED
         )
-        # Do not abort the whole workflow; the user may manually inspect and continue.
         print_color(
             '[Branch Switch] Continuing with the workflow despite the branch switch failure.',
             Colors.YELLOW
@@ -165,7 +164,6 @@ def main():
         print_color("=======================================================\n", Colors.YELLOW)
     elif instrument_mode == "full":
         handle_instrumentation_dependencies(work_dir, proj_path, root_path, ask_llm_dir)
-        # Commit only after dependencies have been processed
         commit_instrumentation(root_path)
         print_color("\n=======================================================", Colors.YELLOW)
         print_color("  *** ATTENTION ***", Colors.YELLOW)
@@ -189,6 +187,10 @@ def main():
     switch_to_source_branch(proj_path)
 
     analyze_logs(work_dir, instrumentor_test_path, proj_path=proj_path)
+
+    # New step: generate scenario schema from the denoised call tree
+    generate_scenario_schema(work_dir)
+
     pause_for_next_step("Log Analysis", "Generate AI Prompt")
 
     generate_ai_prompt(work_dir)
