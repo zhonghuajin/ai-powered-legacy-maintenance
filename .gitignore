@@ -25,3 +25,4 @@ __pycache__/
 projects/
 denosied_data/
 enginerring/ask_llm/dependency_prompt.txt
+scenario_schema_output.json

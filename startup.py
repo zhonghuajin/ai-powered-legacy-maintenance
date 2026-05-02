@@ -32,7 +32,7 @@ from enginerring.work_flow.workflow_steps import (
 from enginerring.shadow_project_management.full_instrumentation import commit_instrumentation
 from enginerring.project_manager.project_manager import create_or_select_project
 # New import for scenario schema generation
-from enginerring.scenario_manager.generate_scenario_schema import generate_scenario_schema
+from enginerring.scenario_manager.generate_scenario_description import generate_scenario_description
 
 
 def switch_to_source_branch(proj_path):
@@ -47,7 +47,8 @@ def switch_to_source_branch(proj_path):
     """
     config_path = os.path.join(proj_path, 'config.json')
     if not os.path.exists(config_path):
-        print_color('[Branch Switch] config.json not found, skipping branch switch.', Colors.YELLOW)
+        print_color(
+            '[Branch Switch] config.json not found, skipping branch switch.', Colors.YELLOW)
         return
 
     with open(config_path, 'r', encoding='utf-8') as f:
@@ -57,7 +58,8 @@ def switch_to_source_branch(proj_path):
     source_branch = config.get('source_branch', 'master')
 
     if not git_root:
-        print_color('[Branch Switch] original_git_root is empty, skipping branch switch.', Colors.YELLOW)
+        print_color(
+            '[Branch Switch] original_git_root is empty, skipping branch switch.', Colors.YELLOW)
         return
 
     # --- Check for uncommitted changes before switching ---
@@ -132,15 +134,19 @@ def switch_to_source_branch(proj_path):
 
 def main():
     work_dir = os.path.abspath(os.getcwd())
-    instrumentor_test_path = os.path.join(work_dir, "core", "instrumentor-test")
+    instrumentor_test_path = os.path.join(
+        work_dir, "core", "instrumentor-test")
     ask_llm_dir = os.path.join(work_dir, "enginerring", "ask_llm")
 
-    print_color("=======================================================", Colors.CYAN)
+    print_color(
+        "=======================================================", Colors.CYAN)
     print_color("      Enjoy the Convenience of LLMs.     ", Colors.CYAN)
-    print_color("=======================================================", Colors.CYAN)
+    print_color(
+        "=======================================================", Colors.CYAN)
     print(f"Current working directory: {work_dir}")
     print(f"Source and runtime path: {instrumentor_test_path}")
-    print_color("=======================================================\n", Colors.CYAN)
+    print_color(
+        "=======================================================\n", Colors.CYAN)
 
     # Pre-checks
     print_disclaimer()
@@ -154,42 +160,64 @@ def main():
     pause_for_next_step("Project and Environment Setup", "Setup Shadow Branch")
 
     # Workflow Execution: Instrumentation
-    instrument_mode = instrument_code(work_dir, proj_path=proj_path, git_root=root_path)
+    instrument_mode = instrument_code(
+        work_dir, proj_path=proj_path, git_root=root_path)
 
     # Handle dependency injection and commit for full mode
     if instrument_mode == "incremental":
-        print_color("\n=======================================================", Colors.YELLOW)
+        print_color(
+            "\n=======================================================", Colors.YELLOW)
         print_color("  Incremental instrumentation completed.", Colors.YELLOW)
-        print_color("  Dependency injection step skipped (not needed for incremental mode).", Colors.YELLOW)
-        print_color("=======================================================\n", Colors.YELLOW)
+        print_color(
+            "  Dependency injection step skipped (not needed for incremental mode).", Colors.YELLOW)
+        print_color(
+            "=======================================================\n", Colors.YELLOW)
     elif instrument_mode == "full":
-        handle_instrumentation_dependencies(work_dir, proj_path, root_path, ask_llm_dir)
+        handle_instrumentation_dependencies(
+            work_dir, proj_path, root_path, ask_llm_dir)
         commit_instrumentation(root_path)
-        print_color("\n=======================================================", Colors.YELLOW)
+        print_color(
+            "\n=======================================================", Colors.YELLOW)
         print_color("  *** ATTENTION ***", Colors.YELLOW)
-        print_color("  Instrumentation and Dependency Injection have been completed!", Colors.YELLOW)
-        print_color("  Please recompile (if necessary) and execute the target project.", Colors.YELLOW)
-        print_color("=======================================================\n", Colors.YELLOW)
+        print_color(
+            "  Instrumentation and Dependency Injection have been completed!", Colors.YELLOW)
+        print_color(
+            "  Please recompile (if necessary) and execute the target project.", Colors.YELLOW)
+        print_color(
+            "=======================================================\n", Colors.YELLOW)
     else:  # "skip" or any other value
-        print_color("\n=======================================================", Colors.YELLOW)
+        print_color(
+            "\n=======================================================", Colors.YELLOW)
         print_color("  Instrumentation skipped.", Colors.YELLOW)
         print_color("  Dependency injection step also skipped.", Colors.YELLOW)
-        print_color("=======================================================\n", Colors.YELLOW)
+        print_color(
+            "=======================================================\n", Colors.YELLOW)
 
-    pause_for_next_step("Setup Shadow Branch & Instrumentation", "Startup Log Manager Server")
+    pause_for_next_step("Setup Shadow Branch & Instrumentation",
+                        "Startup Log Manager Server")
 
     # Pass proj_path so that uploaded files are saved under the project
     startup_log_manager_server(work_dir, proj_path=proj_path)
 
-    pause_for_next_step("Startup Log Manager Server", "Analyze Logs and Extract Denoised Data")
+    pause_for_next_step("Startup Log Manager Server",
+                        "Analyze Logs and Extract Denoised Data")
 
     # --- Switch back to the source branch before log analysis ---
     switch_to_source_branch(proj_path)
 
     analyze_logs(work_dir, instrumentor_test_path, proj_path=proj_path)
 
-    # New step: generate scenario schema from the denoised call tree
-    generate_scenario_schema(work_dir)
+    # ---------------------------------------------------------------
+    # Scenario description generation (with automatic output move)
+    # ---------------------------------------------------------------
+    print_color('\n[Scenario Schema] Choose action:', Colors.CYAN)
+    print('  1. Skip generate_scenario_description (Default)')
+    print('  2. Execute generate_scenario_description')
+    choice = input('Enter your choice [1]: ').strip() or '1'
+    if choice == '2':
+        generate_scenario_description(work_dir, proj_path)
+    else:
+        print_color('[Scenario Schema] Skipped by user.', Colors.YELLOW)
 
     pause_for_next_step("Log Analysis", "Generate AI Prompt")
 
@@ -207,10 +235,14 @@ def main():
 
     apply_fix(work_dir)
 
-    print_color("\n=======================================================", Colors.MAGENTA)
-    print_color("  Workflow execution completed successfully. The bug has been fixed.", Colors.GREEN)
-    print_color("  You can now re-run the tests to verify the fix.", Colors.GREEN)
-    print_color("=======================================================", Colors.MAGENTA)
+    print_color(
+        "\n=======================================================", Colors.MAGENTA)
+    print_color(
+        "  Workflow execution completed successfully. The bug has been fixed.", Colors.GREEN)
+    print_color(
+        "  You can now re-run the tests to verify the fix.", Colors.GREEN)
+    print_color(
+        "=======================================================", Colors.MAGENTA)
 
     os.chdir(work_dir)
 
