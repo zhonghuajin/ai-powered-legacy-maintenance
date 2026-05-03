@@ -250,6 +250,23 @@ def startup_log_manager_server(work_dir, proj_path=None):
 def analyze_logs(work_dir, instrumentor_test_path, proj_path=None):
     print_color(
         "\n>>> Analyzing logs and extracting denoised data...", Colors.CYAN)
+        
+    # ============================================================
+    # NEW: Interactive prompt to skip log analysis
+    # ============================================================
+    print()
+    print_color("========================================", Colors.CYAN)
+    print_color("       Analyze Logs Options             ", Colors.CYAN)
+    print_color("========================================", Colors.CYAN)
+    print("  1. Skip (Default)\n  2. Execute Log Analysis")
+    print_color("========================================", Colors.CYAN)
+    
+    choice = input("Enter a number (1-2) or press Enter to skip [1]: ").strip() or "1"
+    
+    if choice == "1":
+        print_color("[Log Analysis] Skipping log analysis and denoising.", Colors.GREEN)
+        return
+        
     os.chdir(work_dir)
 
     # ============================================================
