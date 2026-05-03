@@ -1,4 +1,3 @@
-# project_manager.py
 """Project creation and selection logic, including target folder management."""
 
 import os
@@ -173,44 +172,23 @@ def _manage_target_folders(proj_path):
     """
     Prompt the user to specify target folders/files for the project.
     Saves results to target-folders.txt in the project directory.
-    If the file already has entries, the user can keep, replace, or edit them.
+    If the file already has entries, it automatically keeps them.
     """
     target_file = os.path.join(proj_path, "target-folders.txt")
     existing_paths = _read_target_folders(target_file)
 
-    # If entries already exist, ask the user what to do
+    # If entries already exist, automatically keep them
     if existing_paths:
         print_color(
             f"\nCurrent target paths ({len(existing_paths)} entries):", Colors.CYAN
         )
         for p in existing_paths:
             print(f"  - {p}")
-        print()
-        print("  k - Keep current targets and continue")
-        print("  r - Replace with new targets")
-        print("  a - Append more targets")
-        choice = input("Choose an action [k]: ").strip().lower() or "k"
-        if choice == "k":
-            print_color("Keeping existing target paths.", Colors.GREEN)
-            _sync_config_original_targets(proj_path, existing_paths)
-            return
-        elif choice == "a":
-            new_paths = _prompt_target_input(target_file)
-            if new_paths:
-                combined = existing_paths + new_paths
-                _write_target_folders(target_file, combined)
-                _sync_config_original_targets(proj_path, combined)
-                print_color(
-                    f"Saved {len(combined)} target path(s) to: {target_file}", Colors.GREEN
-                )
-            else:
-                print_color(
-                    "No new paths added. Keeping existing targets.", Colors.YELLOW)
-                _sync_config_original_targets(proj_path, existing_paths)
-            return
-        # choice == "r" falls through to fresh input below
+        print_color("\nAutomatically keeping existing target paths.", Colors.GREEN)
+        _sync_config_original_targets(proj_path, existing_paths)
+        return
 
-    # Fresh input (no existing entries, or user chose to replace)
+    # Fresh input (no existing entries)
     paths = _prompt_target_input(target_file)
     if paths:
         _write_target_folders(target_file, paths)
