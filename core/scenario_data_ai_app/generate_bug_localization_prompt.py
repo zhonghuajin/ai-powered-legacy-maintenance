@@ -85,7 +85,7 @@ Please strictly follow the template below when providing your diagnostic report:
 - **The Flaw**: [Explain exactly what went wrong based on the runtime facts, e.g., missing lock, incorrect branch condition, data race]
 
 ## 3. Code Fix Implementation
-[Provide the complete modified code using Markdown code blocks. Add prominent comments such as `// 🐛 [Bug Fix]` at the changed parts]
+[Provide the complete modified code using Markdown code blocks. Add prominent comments such as `// [Bug Fix]` at the changed parts]
 
 ## 4. Verification Logic
 [Briefly explain why this fix resolves the issue and how it corrects the execution flow or synchronization graph]
@@ -179,7 +179,7 @@ Please act as a factual detective. **Focus exclusively on the Call Tree evidence
 - **The Flaw**: [Explain exactly what went wrong based on the call tree execution]
 
 ## 3. Code Fix Implementation
-[Provide the complete modified code using Markdown code blocks. Add prominent comments such as `// 🐛 [Bug Fix]` at the changed parts]
+[Provide the complete modified code using Markdown code blocks. Add prominent comments such as `// [Bug Fix]` at the changed parts]
 
 ## 4. Verification Logic
 [Briefly explain why this fix resolves the issue]
@@ -216,19 +216,10 @@ def generate_prompt(cli_file_path=None):
     print("="*50)
     print("Please enter the required information as prompted (press Enter directly to skip optional items)\n")
 
-    # 0. Select analysis mode
-    print("⚙️  Select Analysis Mode:")
-    print(
-        "   [1] Call-Tree First (default, suitable for most single-threaded logic errors)")
-    print("   [2] Include Concurrency Analysis (use when symptoms clearly indicate threading issues)")
-    mode = input("Enter choice (1 or 2) [default: 1]: ").strip()
-    if mode == "2":
-        selected_template = FULL_PROMPT_TEMPLATE
-        print("✅ Mode: Full analysis with concurrency support.\n")
-    else:
-        selected_template = SIMPLE_PROMPT_TEMPLATE
-        mode = "1"  # ensure mode is set for file hint logic
-        print("✅ Mode: Call-Tree only (concurrency sections omitted).\n")
+    # [Modified] 0. Select analysis mode (Hardcoded to Call-Tree First)
+    selected_template = SIMPLE_PROMPT_TEMPLATE
+    mode = "1"
+    print("✅ [Auto-Config] Analysis Mode automatically set to: [1] Call-Tree First (concurrency sections omitted).\n")
 
     # 1. Collect bug symptom
     bug_symptom = input(
@@ -258,7 +249,7 @@ def generate_prompt(cli_file_path=None):
             # Reset the variable so if it fails, it will fall back to manual input
             cli_file_path = None
         else:
-            # Mode-specific file hint
+            # Mode-specific file hint (Since mode is always "1", it will always use the Call Tree File hint)
             if mode == "2":
                 file_hint = "Call Tree File With Concurrency (e.g., ../../final-output-combined.md)"
             else:
