@@ -15,6 +15,10 @@ import sys
 import subprocess
 from pathlib import Path
 
+# Dynamically resolve the project root (one level up from 'enginerring' folder)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_BLOCK_PRUNER = str(PROJECT_ROOT / "core" / "block-pruner" / "target" / "block-pruner-1.0-SNAPSHOT.jar")
+DEFAULT_DATA_STRUCTURING = str(PROJECT_ROOT / "core" / "data-structuring" / "target" / "data-structuring-1.0-SNAPSHOT.jar")
 
 def process_logs(
     log_file=None,
@@ -24,8 +28,8 @@ def process_logs(
     target_folders=None,
     pruned_folder="pruned\\",
     event_dictionary_file="event_dictionary.txt",
-    block_pruner_jar=".\\core\\block-pruner\\target\\block-pruner-1.0-SNAPSHOT.jar",
-    data_structuring_jar=".\\core\\data-structuring\\target\\data-structuring-1.0-SNAPSHOT.jar",
+    block_pruner_jar=DEFAULT_BLOCK_PRUNER,
+    data_structuring_jar=DEFAULT_DATA_STRUCTURING,
 ):
     """
     Core logic for processing instrumentation logs.
@@ -164,12 +168,12 @@ def main():
     )
     parser.add_argument(
         "--block-pruner-jar",
-        default=".\\core\\block-pruner\\target\\block-pruner-1.0-SNAPSHOT.jar",
+        default=DEFAULT_BLOCK_PRUNER,
         help="Path to the Block Pruner jar"
     )
     parser.add_argument(
         "--data-structuring-jar",
-        default=".\\core\\data-structuring\\target\\data-structuring-1.0-SNAPSHOT.jar",
+        default=DEFAULT_DATA_STRUCTURING,
         help="Path to the Data Structuring jar"
     )
 

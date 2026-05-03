@@ -341,13 +341,13 @@ def analyze_logs(work_dir, instrumentor_test_path, proj_path=None):
             f"[WARN] event_dictionary.txt not found at {event_dict_file}", Colors.YELLOW)
 
     # --- Replace subprocess call with direct function invocation ---
-    # Add work_dir to path so that we can import process_logs_demo
+    # Add work_dir to path so that we can import process_logs from enginerring
     if work_dir not in sys.path:
         sys.path.insert(0, work_dir)
     try:
-        import process_logs
+        from enginerring import process_logs
     except ImportError as e:
-        print_color(f"Failed to import process_logs_demo: {e}", Colors.RED)
+        print_color(f"Failed to import process_logs: {e}", Colors.RED)
         return
 
     try:
