@@ -67,6 +67,33 @@ def instrument_code(work_dir, proj_path=None, git_root=None, is_new_project=Fals
     mode_arg = "full" if inst_mode_choice == "1" else "incremental"
     print_color(f"[Mode Selection] Selected mode: {mode_arg}", Colors.GREEN)
 
+    # [NEW] Switch back to the source branch before instrumentation
+    if proj_path:
+        config_file = os.path.join(proj_path, 'config.json')
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                
+                original_git_root = config.get('original_git_root')
+                source_branch = config.get('source_branch')
+                
+                if original_git_root and source_branch and os.path.isdir(original_git_root):
+                    print_color(f"[Git Checkout] Restoring branch to '{source_branch}' in {original_git_root}...", Colors.CYAN)
+                    subprocess.run(
+                        ['git', 'checkout', source_branch], 
+                        cwd=original_git_root, 
+                        stdout=subprocess.PIPE, 
+                        stderr=subprocess.PIPE, 
+                        check=True,
+                        text=True
+                    )
+                    print_color(f"[Git Checkout] Successfully switched to '{source_branch}'.", Colors.GREEN)
+            except subprocess.CalledProcessError as e:
+                print_color(f"[WARN] Failed to checkout branch '{source_branch}'. Error: {e.stderr.strip()}", Colors.YELLOW)
+            except Exception as e:
+                print_color(f"[WARN] Could not read config or switch branch: {e}", Colors.YELLOW)
+
     success = run_instrumentation_mode(
         git_root=git_root_dir,
         mode=mode_arg,
