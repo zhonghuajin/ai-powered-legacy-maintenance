@@ -9,6 +9,7 @@ import os
 import sys
 import json
 import subprocess
+import argparse  # 引入 argparse 用于解析命令行参数
 
 from print_utils.utils import Colors, print_color, pause_for_next_step
 from enginerring.work_flow.prechecks import (
@@ -133,6 +134,20 @@ def switch_to_source_branch(proj_path):
 
 
 def main():
+    # 设置命令行参数解析
+    parser = argparse.ArgumentParser(description="Instrumentor Test Bug Fix Workflow Quickstart Script")
+    parser.add_argument(
+        '--no-pause', 
+        action='store_true', 
+        help="Skip pausing between workflow steps."
+    )
+    args = parser.parse_args()
+
+    # 定义一个辅助函数，根据参数决定是否执行暂停
+    def maybe_pause(completed_step, next_step):
+        if not args.no_pause:
+            pause_for_next_step(completed_step, next_step)
+
     work_dir = os.path.abspath(os.getcwd())
     ask_llm_dir = os.path.join(work_dir, "enginerring", "ask_llm")
 
@@ -154,7 +169,7 @@ def main():
     # Step: Create or select a project
     proj_path, root_path, is_new_project = create_or_select_project(work_dir)
 
-    pause_for_next_step("Project and Environment Setup", "Setup Shadow Branch")
+    maybe_pause("Project and Environment Setup", "Setup Shadow Branch")
 
     # Workflow Execution: Instrumentation
     instrument_mode = instrument_code(
@@ -183,14 +198,14 @@ def main():
         print_color(
             "=======================================================\n", Colors.YELLOW)
 
-    pause_for_next_step("Setup Shadow Branch & Instrumentation",
-                        "Startup Log Manager Server")
+    maybe_pause("Setup Shadow Branch & Instrumentation",
+                "Startup Log Manager Server")
 
     # Pass proj_path so that uploaded files are saved under the project
     startup_log_manager_server(work_dir, proj_path=proj_path)
 
-    pause_for_next_step("Startup Log Manager Server",
-                        "Analyze Logs and Extract Denoised Data")
+    maybe_pause("Startup Log Manager Server",
+                "Analyze Logs and Extract Denoised Data")
 
     # --- Switch back to the source branch before log analysis ---
     switch_to_source_branch(proj_path)
@@ -209,20 +224,20 @@ def main():
     else:
         print_color('[Scenario Schema] Skipped by user.', Colors.YELLOW)
 
-    pause_for_next_step("Log Analysis", "Generate AI Prompt")
+    maybe_pause("Log Analysis", "Generate AI Prompt")
 
     generate_ai_prompt(work_dir)
-    pause_for_next_step("Generate AI Prompt", "Ask LLM for Bug Localization")
+    maybe_pause("Generate AI Prompt", "Ask LLM for Bug Localization")
 
     ask_llm_for_localization(ask_llm_dir)
-    pause_for_next_step("Ask LLM for Bug Localization", "Generate Fix Prompt")
+    maybe_pause("Ask LLM for Bug Localization", "Generate Fix Prompt")
 
     # Pass proj_path to generate_fix_prompt to automatically load target folders
     generate_fix_prompt(work_dir, proj_path)
-    pause_for_next_step("Generate Fix Prompt", "Ask LLM for Code Fix")
+    maybe_pause("Generate Fix Prompt", "Ask LLM for Code Fix")
 
     ask_llm_for_code_fix(ask_llm_dir)
-    pause_for_next_step("Ask LLM for Code Fix", "Apply Fix to Source Code")
+    maybe_pause("Ask LLM for Code Fix", "Apply Fix to Source Code")
 
     # MODIFIED: Pass proj_path to apply_fix to enable automatic configuration loading
     apply_fix(work_dir, proj_path)

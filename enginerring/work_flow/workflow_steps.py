@@ -79,12 +79,24 @@ def instrument_code(work_dir, proj_path=None, git_root=None, is_new_project=Fals
             "Error: Failed to setup shadow branch and instrument code. Exiting.", Colors.RED)
         sys.exit(1)
 
-    # ✨ [修改] 增加对 "NO_MODIFIED_FILES" 状态的判断，跳过移动文件的操作
+    # [MODIFIED] Added check for "NO_MODIFIED_FILES" state to skip moving files
     if proj_path and success != "NO_MODIFIED_FILES":
         _move_instrumentation_outputs_to_project(work_dir, proj_path)
     elif success == "NO_MODIFIED_FILES":
-        # ✨ [新增] 打印跳过提示
+        # [NEW] Print skip message and force branch switch
         print_color("[Skip] No modified files found, skipped moving instrumentation outputs.", Colors.YELLOW)
+        print_color("[Info] Forcing git switch to shadow-project-for-instrumention branch...", Colors.CYAN)
+        try:
+            subprocess.run(
+                ["git", "switch", "shadow-project-for-instrumention"],
+                cwd=git_root_dir,
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            print_color("[Success] Switched to shadow-project-for-instrumention branch.", Colors.GREEN)
+        except subprocess.CalledProcessError as e:
+            print_color(f"[WARN] Failed to switch to shadow branch: {e.stderr.strip()}", Colors.YELLOW)
 
     return mode_arg
 
@@ -193,19 +205,6 @@ def handle_instrumentation_dependencies(work_dir, proj_path, git_root, ask_llm_d
 
 def startup_log_manager_server(work_dir, proj_path=None):
     print_color("\n>>> Starting Log Manager Server...", Colors.CYAN)
-    
-    # NEW: Added interactive prompt to skip log manager startup
-    print()
-    print_color("========================================", Colors.CYAN)
-    print_color("       Log Manager Server Options       ", Colors.CYAN)
-    print_color("========================================", Colors.CYAN)
-    print("  1. Start Server (Default)\n  2. Skip (if logs are already collected)")
-    print_color("========================================", Colors.CYAN)
-    
-    choice = input("Enter a number (1-2) or press Enter to start [1]: ").strip()
-    if choice == "2":
-        print_color("[Log Manager] Skipping log manager server startup.", Colors.GREEN)
-        return
     
     server_dir = os.path.join(work_dir, "enginerring", "log_manager_server")
     
