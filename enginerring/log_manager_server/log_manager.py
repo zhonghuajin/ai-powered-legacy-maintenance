@@ -232,6 +232,12 @@ def scan_and_manage():
                             # flush may trigger file upload, give a bit more timeout
                             res = requests.get(url, timeout=5)
                             print_color(f"Response:\n{res.text}", Colors.GREEN)
+                            
+                            # [NEW FEATURE] Auto-exit after executing flush command
+                            if cmd_id == 3:
+                                print_color("Flush command executed successfully. Auto-exiting log manager...", Colors.YELLOW)
+                                return
+                                
                         except Exception as e:
                             print_color(f"Request failed: {e}", Colors.RED)
                     else:
