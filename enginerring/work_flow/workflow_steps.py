@@ -385,35 +385,14 @@ def generate_ai_prompt(work_dir):
             f"AI prompt generation script not found at: {python_script_path}", Colors.RED)
         return
 
-    # Scan for final-output-calltree.md files in the projects directory
-    projects_dir = os.path.join(work_dir, "projects")
-    search_pattern = os.path.join(projects_dir, "**", "final-output-calltree.md")
-    calltree_files = glob.glob(search_pattern, recursive=True)
+    # [MODIFIED] Directly look for final-output-calltree.md in work_dir
+    selected_calltree_path = os.path.join(work_dir, "final-output-calltree.md")
 
-    selected_calltree_path = None
-
-    if not calltree_files:
-        print_color("[Warning] No final-output-calltree.md found in projects directory.", Colors.YELLOW)
-    else:
-        print_color("\n=== Select Call Tree File ===", Colors.CYAN)
-        options = []
-        for idx, file_path in enumerate(calltree_files, start=1):
-            rel_path = os.path.relpath(file_path, projects_dir)
-            project_name = rel_path.split(os.sep)[0] if os.sep in rel_path else rel_path
-            options.append((project_name, os.path.abspath(file_path)))
-            print(f"  {idx}. {project_name} ({rel_path})")
-            
-        while True:
-            choice = input(f"Select a project number [1-{len(options)}] or press Enter to skip: ").strip()
-            if not choice:
-                break
-            if choice.isdigit():
-                num = int(choice)
-                if 1 <= num <= len(options):
-                    selected_project_name, selected_calltree_path = options[num - 1]
-                    print_color(f"Selected project: {selected_project_name}", Colors.GREEN)
-                    break
-            print_color("Invalid selection, please try again.", Colors.RED)
+    if not os.path.exists(selected_calltree_path):
+        print_color(f"[Error] final-output-calltree.md not found in working directory: {work_dir}", Colors.RED)
+        return
+    
+    print_color(f"[Info] Found final-output-calltree.md in working directory. Using path: {selected_calltree_path}", Colors.GREEN)
 
     print_color(
         f"Running Python script from {work_dir} to generate the prompt...", Colors.GREEN)
