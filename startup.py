@@ -215,14 +215,17 @@ def main():
     # ---------------------------------------------------------------
     # Scenario description generation (with automatic output move)
     # ---------------------------------------------------------------
-    print_color('\n[Scenario Schema] Choose action:', Colors.CYAN)
-    print('  1. Skip generate_scenario_description (Default)')
-    print('  2. Execute generate_scenario_description')
-    choice = input('Enter your choice [1]: ').strip() or '1'
-    if choice == '2':
-        generate_scenario_description(work_dir, proj_path)
-    else:
-        print_color('[Scenario Schema] Skipped by user.', Colors.YELLOW)
+    # [MODIFIED] Temporarily disabled generate_scenario_description as supporting code is not implemented.
+    print_color('\n[Scenario Schema] Temporarily skipped (Supporting code not implemented).', Colors.YELLOW)
+    
+    # print_color('\n[Scenario Schema] Choose action:', Colors.CYAN)
+    # print('  1. Skip generate_scenario_description (Default)')
+    # print('  2. Execute generate_scenario_description')
+    # choice = input('Enter your choice [1]: ').strip() or '1'
+    # if choice == '2':
+    #     generate_scenario_description(work_dir, proj_path)
+    # else:
+    #     print_color('[Scenario Schema] Skipped by user.', Colors.YELLOW)
 
     maybe_pause("Log Analysis", "Generate AI Prompt")
 
