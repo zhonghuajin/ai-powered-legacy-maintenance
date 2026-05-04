@@ -250,26 +250,31 @@ def startup_log_manager_server(work_dir, proj_path=None):
         log_server.SCENARIO_SAVE_ROOT = proj_path if proj_path else os.getcwd()
         
         print_color(f"Launching log manager server interface...", Colors.GREEN)
-        log_server.run_manager()
+        return log_server.run_manager()
     except ImportError as e:
         print_color(f"Failed to import log_manager module from {server_dir}: {e}", Colors.RED)
+        return False
 
 
-def analyze_logs(work_dir, proj_path=None):
+def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
     print_color(
         "\n>>> Analyzing logs and extracting denoised data...", Colors.CYAN)
         
     # ============================================================
     # NEW: Interactive prompt to skip log analysis
     # ============================================================
-    print()
-    print_color("========================================", Colors.CYAN)
-    print_color("       Analyze Logs Options             ", Colors.CYAN)
-    print_color("========================================", Colors.CYAN)
-    print("  1. Skip (Default)\n  2. Execute Log Analysis")
-    print_color("========================================", Colors.CYAN)
-    
-    choice = input("Enter a number (1-2) or press Enter to skip [1]: ").strip() or "1"
+    if auto_analyze:
+        print_color("[Auto] Flush command detected. Automatically executing Log Analysis...", Colors.GREEN)
+        choice = "2"
+    else:
+        print()
+        print_color("========================================", Colors.CYAN)
+        print_color("       Analyze Logs Options             ", Colors.CYAN)
+        print_color("========================================", Colors.CYAN)
+        print("  1. Skip (Default)\n  2. Execute Log Analysis")
+        print_color("========================================", Colors.CYAN)
+        
+        choice = input("Enter a number (1-2) or press Enter to skip [1]: ").strip() or "1"
     
     if choice == "1":
         print_color("[Log Analysis] Skipping log analysis and denoising.", Colors.GREEN)

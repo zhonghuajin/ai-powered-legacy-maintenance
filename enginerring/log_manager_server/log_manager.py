@@ -196,7 +196,7 @@ def scan_and_manage():
     if not target_ips:
         print_color("target_points not found.", Colors.YELLOW)
         if not input_target_ips():
-            return
+            return False
 
     while True:
         print_endpoints_menu()
@@ -206,7 +206,7 @@ def scan_and_manage():
 
             if cmd_input == 'exit':
                 print_color("Exiting log manager CLI and returning to main flow...", Colors.RED)
-                return
+                return False
             elif cmd_input == 'reip':
                 input_target_ips()
                 continue
@@ -236,7 +236,7 @@ def scan_and_manage():
                             # [NEW FEATURE] Auto-exit after executing flush command
                             if cmd_id == 3:
                                 print_color("Flush command executed successfully. Auto-exiting log manager...", Colors.YELLOW)
-                                return
+                                return True
                                 
                         except Exception as e:
                             print_color(f"Request failed: {e}", Colors.RED)
@@ -251,7 +251,9 @@ def scan_and_manage():
 
         except (KeyboardInterrupt, EOFError):
             print_color("\nInterrupt signal detected, exiting CLI...", Colors.RED)
-            return
+            return False
+            
+    return False
 
 
 def run_flask_app():
@@ -275,8 +277,8 @@ def run_manager():
     flask_thread = threading.Thread(target=run_flask_app, daemon=True)
     flask_thread.start()
     
-    # Run the CLI loop in the main thread. It will return when the user types 'exit'.
-    scan_and_manage()
+    # Run the CLI loop in the main thread. It will return when the user types 'exit' or flushes.
+    return scan_and_manage()
 
 
 # ==========================================

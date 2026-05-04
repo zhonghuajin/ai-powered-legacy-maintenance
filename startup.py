@@ -9,7 +9,7 @@ import os
 import sys
 import json
 import subprocess
-import argparse  # 引入 argparse 用于解析命令行参数
+import argparse
 
 from print_utils.utils import Colors, print_color, pause_for_next_step
 from enginerring.work_flow.prechecks import (
@@ -134,7 +134,6 @@ def switch_to_source_branch(proj_path):
 
 
 def main():
-    # 设置命令行参数解析
     parser = argparse.ArgumentParser(description="Instrumentor Test Bug Fix Workflow Quickstart Script")
     parser.add_argument(
         '--no-pause', 
@@ -143,7 +142,6 @@ def main():
     )
     args = parser.parse_args()
 
-    # 定义一个辅助函数，根据参数决定是否执行暂停
     def maybe_pause(completed_step, next_step):
         if not args.no_pause:
             pause_for_next_step(completed_step, next_step)
@@ -202,7 +200,8 @@ def main():
                 "Startup Log Manager Server")
 
     # Pass proj_path so that uploaded files are saved under the project
-    startup_log_manager_server(work_dir, proj_path=proj_path)
+    # Capture the flush state returned by the log manager
+    is_flushed = startup_log_manager_server(work_dir, proj_path=proj_path)
 
     maybe_pause("Startup Log Manager Server",
                 "Analyze Logs and Extract Denoised Data")
@@ -210,7 +209,8 @@ def main():
     # --- Switch back to the source branch before log analysis ---
     switch_to_source_branch(proj_path)
 
-    analyze_logs(work_dir, proj_path=proj_path)
+    # Pass the flush state to automatically trigger log analysis if applicable
+    analyze_logs(work_dir, proj_path=proj_path, auto_analyze=is_flushed)
 
     # ---------------------------------------------------------------
     # Scenario description generation (with automatic output move)
