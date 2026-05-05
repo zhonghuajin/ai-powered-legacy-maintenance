@@ -6,9 +6,9 @@ import subprocess
 
 def main():
 
-    # ========== 新增：安装共享工具包 shared_utils ==========
+    # ========== Install shared utilities package (shared_utils) ==========
     print("\nStep 0: Installing shared utilities package (shared_utils)...")
-    # 获取当前脚本所在的目录（项目根目录）
+    # Get the directory of the current script (project root directory)
     script_dir = os.path.dirname(os.path.abspath(__file__))
     shared_utils_dir = os.path.join(script_dir, "enginerring", "shared_utils")
 
@@ -17,7 +17,7 @@ def main():
             f"Error: shared_utils directory not found: {shared_utils_dir}", file=sys.stderr)
         sys.exit(1)
 
-    # 使用当前 Python 解释器执行 pip install -e .
+    # Use the current Python interpreter to execute pip install -e .
     try:
         result = subprocess.run(
             [sys.executable, "-m", "pip", "install",
