@@ -1,1 +1,0 @@
-D:\temp\scenario-based-runtime-context-for-ai\poc\instrumentor-test\pom.xml
