@@ -7,57 +7,31 @@ from print_utils.utils import print_color, Colors
 
 
 def _run_java_instrumentation(target_folders, incremental, mapping_file):
-    """
-    Executes the Java-specific instrumentation logic.
-    """
-    # 3. Check Java environment variables
-    print("\nChecking Java environment variables...")
+    """单 JAR 调用，替代原来的三次 subprocess"""
     java_home = os.environ.get("JAVA_HOME")
     if not java_home:
-        print_color("Error: JAVA_HOME Environment variable not configured. "
-                     "Please set JAVA_HOME to point to your JDK installation directory.", Colors.RED)
+        print_color("Error: JAVA_HOME not configured.", Colors.RED)
         return False
-
-    print(f"Using JAVA_HOME: {java_home}")
-
-    java_bin = os.path.join(java_home, "bin")
-    os.environ["PATH"] = f"{java_bin}{os.pathsep}{os.environ.get('PATH', '')}"
 
     java_exe = shutil.which("java")
     if not java_exe:
-        print_color("Error: Java (java) not found in PATH.", Colors.RED)
+        print_color("Error: java not found in PATH.", Colors.RED)
         return False
 
-    # 4. Execute Instrumentor related Java commands
-    print("\nExecuting code instrumentation (Instrumentor)...")
+    pipeline_jar = os.path.join(".", "core", "instrumentor", "target",
+                                "instrumentor-1.0-SNAPSHOT.jar")
 
-    instrumentor_jar = os.path.join(".", "core", "instrumentor", "target",
-                                    "instrumentor-1.0-SNAPSHOT.jar")
-    encoding_jar = os.path.join(".", "core", "instrumentor-with-encoding", "target",
-                                "instrumentor-with-encoding-1.0-SNAPSHOT.jar")
-    activator_jar = os.path.join(".", "core", "instrumentor-activator", "target",
-                                 "instrumentor-activator-1.0-SNAPSHOT.jar")
-
-    # Step 1: Main instrumentation (same for full & incremental)
-    print("Running Main instrumentation...")
-    java_cmd = [java_exe, "-jar", instrumentor_jar] + target_folders
-    if subprocess.run(java_cmd).returncode != 0:
-        print_color("Warning: Main instrumentation step returned non-zero exit code.", Colors.YELLOW)
-
-    # Step 2: Encoding mapping (incremental mode adds -m flag)
-    print("Running Encoding mapping...")
-    java_cmd = [java_exe, "-jar", encoding_jar]
+    java_cmd = [java_exe, "-jar", pipeline_jar]
     if incremental:
-        java_cmd += ["-m", mapping_file]
+        java_cmd += ["--incremental", "-m", mapping_file]
     java_cmd += target_folders
-    if subprocess.run(java_cmd).returncode != 0:
-        print_color("Warning: Encoding mapping step returned non-zero exit code.", Colors.YELLOW)
 
-    # Step 3: Activator (same for full & incremental)
-    print("Running Activator...")
-    java_cmd = [java_exe, "-jar", activator_jar] + target_folders
-    if subprocess.run(java_cmd).returncode != 0:
-        print_color("Warning: Activator step returned non-zero exit code.", Colors.YELLOW)
+    print(f"Running: {' '.join(java_cmd)}")
+    result = subprocess.run(java_cmd)
+
+    if result.returncode != 0:
+        print_color("Warning: Instrumentation pipeline returned non-zero exit code.", Colors.YELLOW)
+        return False
 
     return True
 

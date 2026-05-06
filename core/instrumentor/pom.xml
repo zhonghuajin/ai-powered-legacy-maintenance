@@ -50,7 +50,7 @@
                             </filters>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.example.instrumentor.UnifiedInstrumentor</mainClass>
+                                    <mainClass>com.example.instrumentor.InstrumentationPipeline</mainClass>
                                 </transformer>
                             </transformers>
                         </configuration>

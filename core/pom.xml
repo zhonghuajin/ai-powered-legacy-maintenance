@@ -14,8 +14,6 @@
     <modules>
         <!-- Instrumentation -->
         <module>instrumentor</module>
-        <module>instrumentor-with-encoding</module>
-        <module>instrumentor-activator</module>
         <!-- Instrumentation library, collects logs at runtime -->
         <module>instrumentor-log-recorder</module>
         <module>instrumentor-log-monitor</module>
