@@ -49,6 +49,7 @@ PROJECT_EXTENSIONS = {
     ".sln",      # Visual Studio solution file
     ".fsproj",   # F# project file
     ".vbproj",   # VB.NET project file
+    "composer.json",  # PHP Composer dependencies
 }
 
 def find_project_files(root_dir):

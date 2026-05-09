@@ -202,7 +202,7 @@ def main():
                     "=======================================================\n", Colors.YELLOW)
             elif instrument_mode == "full":
                 handle_instrumentation_dependencies(
-                    work_dir, proj_path, root_path, ask_llm_dir)
+                    work_dir, proj_path, root_path, ask_llm_dir, target_language)
                 commit_instrumentation(root_path)
                 print_color(
                     "\n=======================================================", Colors.YELLOW)

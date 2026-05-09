@@ -48,7 +48,6 @@ public class InstrumentationPipeline {
             mappingFile = Paths.get("comment-mapping.txt").toAbsolutePath().normalize();
         }
 
-        // 如果指定了 incremental 但 mapping 文件不存在，回退到 full 模式
         if (incremental && !Files.exists(mappingFile)) {
             System.out.println("Warning: mapping file not found, falling back to full mode.");
             incremental = false;

@@ -29,6 +29,9 @@ def _build_injection_prompt(file_path, original_content, snippet):
     Build a prompt to ask the LLM to inject the given snippet into the file
     and return the complete modified file content.
     """
+    ext = os.path.splitext(file_path)[1].lower().replace('.', '')
+    lang_marker = ext if ext else 'text'
+
     prompt = f"""You are an expert build engineer. Given the file path, its current content, and a dependency snippet that must be added, produce the **complete modified file content** that correctly includes the snippet in the appropriate location.
 
 ### File Path
@@ -38,13 +41,13 @@ def _build_injection_prompt(file_path, original_content, snippet):
 {original_content}
 
 ### Dependency Snippet to Add
-```xml
+```{lang_marker}
 {snippet}
 ```
 
 ### Output Requirements
-- Return ONLY the complete modified file content, wrapped in a markdown code block with language identifier (e.g. ```xml ... ```).
-- Ensure the XML is well-formed and the snippet is placed respecting the file's structure (e.g., inside <dependencies> for pom.xml, or appropriate section for others).
+- Return ONLY the complete modified file content, wrapped in a markdown code block with language identifier (e.g. ```{lang_marker} ... ```).
+- Ensure the syntax is well-formed (e.g., valid JSON for composer.json/package.json, valid XML for pom.xml) and the snippet is placed respecting the file's structure.
 - Do not include any explanation, just the code block."""
     return prompt
 
@@ -53,15 +56,16 @@ def _extract_code_from_response(answer):
     Extract the content of the first code block from the LLM answer.
     Returns the code as a string, or None if not found.
     """
-    # Look for ```xml ... ``` or ``` ... ```
-    match = re.search(r'```(?:xml)?\s*\n(.*?)\n```', answer, re.DOTALL)
+    match = re.search(r'```[a-zA-Z]*\s*\n(.*?)\n```', answer, re.DOTALL)
     if match:
-        return match.group(1)
-    # Fallback: if no code block, return the raw answer
-    print_color("[!] AI did not return a code block; using raw response as fallback.", Colors.YELLOW)
-    return answer
+        return match.group(1).strip()
+    
+    print_color("[!] AI response might not be perfectly formatted; attempting fallback extraction.", Colors.YELLOW)
+    clean_answer = re.sub(r'^```[a-zA-Z]*\s*', '', answer.strip())
+    clean_answer = re.sub(r'\s*```$', '', clean_answer)
+    return clean_answer.strip()
 
-def inject_dependency_into_file(file_path, snippet):
+def inject_dependency_into_file(file_path, snippet, work_dir=None):
     """
     Ask the AI to decide how to inject the dependency snippet into the file,
     then overwrite the file with the AI-provided modified content.
@@ -93,11 +97,14 @@ def inject_dependency_into_file(file_path, snippet):
         print_color(f"[!] LLM call failed: {e}", Colors.RED)
         return False
 
-    # Parse the LLM response to get the new file content
     new_content = _extract_code_from_response(answer)
     if not new_content:
         print_color("[!] Failed to extract file content from AI response.", Colors.RED)
         return False
+
+    if work_dir:
+        normalized_work_dir = work_dir.replace('\\', '/')
+        new_content = new_content.replace('{{CURRENT_WORKING_DIR}}', normalized_work_dir)
 
     # Overwrite the file with the new content
     try:
@@ -130,7 +137,8 @@ def _simple_inject(file_path, snippet, content):
         print_color(f"[!] Auto-injection for {filename} is not fully implemented yet. Please add manually:\n{snippet}", Colors.YELLOW)
         return False
 
-def run_injection(llm_response_file, snippets_json_path):
+# Added work_dir parameter with default None for backward compatibility
+def run_injection(llm_response_file, snippets_json_path, work_dir=None):
     if not os.path.exists(llm_response_file):
         print_color(f"[!] LLM response file not found: {llm_response_file}", Colors.RED)
         return
@@ -154,6 +162,11 @@ def run_injection(llm_response_file, snippets_json_path):
             print_color(f"[!] No snippet defined for {filename} in JSON.", Colors.RED)
             continue
             
-        success = inject_dependency_into_file(file_path, snippet)
+        if work_dir and snippet:
+            normalized_work_dir = work_dir.replace('\\', '/')
+            snippet = snippet.replace('{{CURRENT_WORKING_DIR}}', normalized_work_dir)
+            snippet = snippet.replace('{{WORK_DIR}}', normalized_work_dir)
+            
+        success = inject_dependency_into_file(file_path, snippet, work_dir)
         if success:
             print_color(f"[+] Successfully injected dependency into {file_path}", Colors.GREEN)

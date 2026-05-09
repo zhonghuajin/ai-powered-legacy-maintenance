@@ -128,7 +128,6 @@ def instrument_code(work_dir, proj_path=None, git_root=None, is_new_project=Fals
             except Exception as e:
                 print_color(f"[WARN] Could not read config or switch branch: {e}", Colors.YELLOW)
 
-    # Removed the 'language' keyword argument to match the original function signature
     success = run_instrumentation_mode(
         git_root=git_root_dir,
         mode=mode_arg,
@@ -160,7 +159,6 @@ def instrument_code(work_dir, proj_path=None, git_root=None, is_new_project=Fals
         except subprocess.CalledProcessError as e:
             print_color(f"[WARN] Failed to switch to shadow branch: {e.stderr.strip()}", Colors.YELLOW)
 
-    # Return mode and whether skipped
     return mode_arg, is_skipped
 
 
@@ -178,7 +176,7 @@ def _move_instrumentation_outputs_to_project(work_dir, proj_path):
                 f"[WARN] {filename} not found in working directory, skip.", Colors.YELLOW)
 
 
-def handle_instrumentation_dependencies(work_dir, proj_path, git_root, ask_llm_dir):
+def handle_instrumentation_dependencies(work_dir, proj_path, git_root, ask_llm_dir, target_language=None):
     """
     Handle dependency addition after instrumentation:
     1. Scan dependency files
@@ -190,6 +188,62 @@ def handle_instrumentation_dependencies(work_dir, proj_path, git_root, ask_llm_d
 
     # 1. Get files_input
     files_input = find_project_files(git_root)
+    
+    # Check for PHP project without composer.json
+    if target_language == 'php':
+        has_composer = any(f.endswith('composer.json') for f in (files_input or []))
+        if not has_composer:
+            print_color("[-] PHP project without composer.json detected.", Colors.YELLOW)
+            
+            log_recorder_path = os.path.join(work_dir, "MULTILINGUAL", "PHP", "INSTRUMENTOR-LOG-RECORDER", "src", "Instrumentation", "InstrumentLog.php").replace('\\', '/')
+            print_color(f"[Info] Injecting require_once for {log_recorder_path} into PHP files...", Colors.CYAN)
+            
+            config_path = os.path.join(proj_path, "config.json")
+            target_folders = []
+            if os.path.exists(config_path):
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config_data = json.load(f)
+                    target_folders = config_data.get("original-target-folders", [])
+            
+            injected_count = 0
+            require_stmt = f"\nrequire_once '{log_recorder_path}';\n"
+            
+            for folder in target_folders:
+                for root, _, files in os.walk(folder):
+                    for file in files:
+                        if file.endswith('.php'):
+                            filepath = os.path.join(root, file)
+                            try:
+                                with open(filepath, 'r', encoding='utf-8') as f:
+                                    content = f.read()
+                                
+                                if "require_once" in content and "InstrumentLog.php" in content:
+                                    continue
+                                    
+                                match_namespace = re.search(r'namespace\s+[a-zA-Z0-9_\\]+\s*;', content, re.IGNORECASE)
+                                match_declare = re.search(r'declare\s*\([^)]+\)\s*;', content, re.IGNORECASE)
+                                match_php = re.search(r'<\?php', content, re.IGNORECASE)
+                                
+                                insert_idx = 0
+                                if match_namespace:
+                                    insert_idx = match_namespace.end()
+                                elif match_declare:
+                                    insert_idx = match_declare.end()
+                                elif match_php:
+                                    insert_idx = match_php.end()
+                                
+                                if insert_idx > 0:
+                                    new_content = content[:insert_idx] + require_stmt + content[insert_idx:]
+                                    with open(filepath, 'w', encoding='utf-8') as f:
+                                        f.write(new_content)
+                                    injected_count += 1
+                            except Exception as e:
+                                print_color(f"[WARN] Failed to process {filepath}: {e}", Colors.YELLOW)
+
+            print_color(f"[Success] Injected require_once into {injected_count} PHP files.", Colors.GREEN)
+            print_color("[Info] Skipping standard dependency injection for non-composer PHP project.", Colors.YELLOW)
+            return
+
     if not files_input:
         print_color("[-] No dependency management files found.", Colors.YELLOW)
         return
@@ -206,12 +260,22 @@ def handle_instrumentation_dependencies(work_dir, proj_path, git_root, ask_llm_d
     snippets_json_path = os.path.join(
         work_dir, "enginerring", "dependency_handler", "dependency_snippets.json")
     dependency_input = ""
+    
     if os.path.exists(snippets_json_path):
         with open(snippets_json_path, "r", encoding="utf-8") as f:
             snippets = json.load(f)
-            # Use pom.xml snippet as an example for the prompt
-            dependency_input = snippets.get(
-                "pom.xml", "<dependency>...</dependency>")
+            
+            normalized_work_dir = work_dir.replace('\\', '/')
+            
+            for file_path in files_input:
+                fname = os.path.basename(file_path)
+                if fname in snippets:
+                    dependency_input = snippets[fname].replace('{{WORK_DIR}}', normalized_work_dir)
+                    break
+                    
+            if not dependency_input:
+                dependency_input = snippets.get(
+                    "pom.xml", "<dependency>...</dependency>")
 
     # 4. Generate Prompt
     prompt = generate_prompt(files_input, whitelist_input, dependency_input)
@@ -224,31 +288,27 @@ def handle_instrumentation_dependencies(work_dir, proj_path, git_root, ask_llm_d
     print_color(
         f"[+] Dependency prompt generated at {prompt_file}", Colors.GREEN)
 
-    # 5. Invoke LLM (import module directly for easier debugging)
+    # 5. Invoke LLM
     llm_response_file = os.path.join(
         ask_llm_dir, "dependency_llm_response.txt")
 
     print_color(
         ">>> Asking LLM to identify target dependency files...", Colors.CYAN)
 
-    # Add ask_llm directory to sys.path for importing
     if ask_llm_dir not in sys.path:
         sys.path.insert(0, ask_llm_dir)
 
     try:
         import run as ask_llm_run
 
-        # Switch to ask_llm directory so .env file can be read correctly
         original_cwd = os.getcwd()
         os.chdir(ask_llm_dir)
 
-        # Call the exposed API interface
         ask_llm_run.run_api(
             file_path="dependency_prompt.txt",
             output_path="dependency_llm_response.txt"
         )
 
-        # Return to original working directory
         os.chdir(original_cwd)
 
     except ImportError as e:
@@ -256,14 +316,13 @@ def handle_instrumentation_dependencies(work_dir, proj_path, git_root, ask_llm_d
             f"[!] Failed to import run.py from {ask_llm_dir}: {e}", Colors.RED)
         return
 
-    # Return to original working directory
     os.chdir(original_cwd)
 
     # 6. Inject dependencies
     print_color(
         "\n>>> Parsing LLM response and injecting dependencies...", Colors.CYAN)
-    run_injection(llm_response_file, snippets_json_path)
-
+    
+    run_injection(llm_response_file, snippets_json_path, work_dir)
 
 
 def startup_log_manager_server(work_dir, proj_path=None):
@@ -271,18 +330,15 @@ def startup_log_manager_server(work_dir, proj_path=None):
     
     server_dir = os.path.join(work_dir, "enginerring", "log_manager_server")
     
-    # Add server directory to sys.path for importing
     if server_dir not in sys.path:
         sys.path.insert(0, server_dir)
         
     try:
-        # Clear any cached module to avoid conflicts
         if 'log_manager' in sys.modules:
             del sys.modules['log_manager']
             
         import log_manager as log_server
         
-        # Set the save root to the selected project directory
         log_server.SCENARIO_SAVE_ROOT = proj_path if proj_path else os.getcwd()
         
         print_color(f"Launching log manager server interface...", Colors.GREEN)
@@ -322,7 +378,6 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
     os.makedirs(pruned_dir, exist_ok=True)
     print_color(f"[CLEAN] Ensured fresh pruned directory: {pruned_dir}", Colors.GREEN)
 
-    # Determine the search directory based on project context
     if proj_path and os.path.isdir(proj_path):
         search_dir = os.path.join(proj_path, 'scenario_data')
     else:
@@ -332,7 +387,6 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
             Colors.YELLOW
         )
 
-    # Extract project language from config.json if available
     project_lang = "java"
     if proj_path:
         config_path = os.path.join(proj_path, 'config.json')
@@ -361,7 +415,6 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
         reverse=True
     )
 
-    # Automatically create a fake empty event file if not found
     if not events_files:
         print_color(
             f"[Auto-Fix] Could not find events file in: {search_dir}. Automatically creating a fake empty event file.",
@@ -370,7 +423,7 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
         os.makedirs(search_dir, exist_ok=True)
         fake_events_file = os.path.join(search_dir, "instrumentor-events-fake.txt")
         with open(fake_events_file, "w", encoding="utf-8") as f:
-            pass  # Create empty file
+            pass  
         events_files = [fake_events_file]
 
     if not log_files:
@@ -396,7 +449,6 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
         comment_mapping_file = ".\\comment-mapping.txt"
         event_dict_file = ".\\event_dictionary.txt"
 
-    # Safety check: ensure required files exist
     if not os.path.exists(comment_mapping_file):
         print_color(
             f"[WARN] comment-mapping.txt not found at {comment_mapping_file}", Colors.YELLOW)
@@ -404,7 +456,6 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
         print_color(
             f"[WARN] event_dictionary.txt not found at {event_dict_file}", Colors.YELLOW)
 
-    # Add work_dir to path so that we can import process_logs from enginerring
     if work_dir not in sys.path:
         sys.path.insert(0, work_dir)
     try:
@@ -434,11 +485,9 @@ def select_ai_prompt_script(work_dir, target_language=None):
         print_color(f"[Error] AI app directory not found at: {ai_app_path}", Colors.RED)
         return None
 
-    # Scan for available python scripts
     scripts = []
     for file in os.listdir(ai_app_path):
         if file.endswith(".py") and file != "__init__.py":
-            # Future enhancement: filter scripts based on target_language if needed
             scripts.append(file)
             
     if not scripts:
@@ -474,7 +523,7 @@ def execute_ai_prompt(work_dir, selected_script):
     os.chdir(work_dir)
 
     ai_app_path = os.path.join(work_dir, "enginerring", "scenario_data_ai_app")
-    module_name = selected_script[:-3]  # Remove .py
+    module_name = selected_script[:-3]  
     
     selected_calltree_path = os.path.join(work_dir, "final-output-calltree.md")
 
@@ -492,7 +541,6 @@ def execute_ai_prompt(work_dir, selected_script):
         module = importlib.import_module(module_name)
         importlib.reload(module)
         
-        # Directly call the common interface generate_prompt with selected_calltree_path
         if hasattr(module, 'generate_prompt'):
             module.generate_prompt(selected_calltree_path)
             return selected_script

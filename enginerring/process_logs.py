@@ -95,6 +95,11 @@ def process_logs(
             target_folders_list, log_file, comment_mapping_file, events_file, 
             pruned_folder, event_dictionary_file
         )
+    elif language == "php":
+        _process_php_logs(
+            target_folders_list, log_file, comment_mapping_file, events_file, 
+            pruned_folder, event_dictionary_file
+        )
     else:
         raise ValueError(f"Unsupported language: {language}")
 
@@ -153,6 +158,13 @@ def _process_python_logs(target_folders_list, log_file, comment_mapping_file, ev
     # TODO: Implement Python specific block pruner and data structuring logic
     # Example: subprocess.run(['python', 'python_pruner.py', ...], check=True)
     print("[INFO] Python log processing is currently a stub and needs implementation.")
+
+
+def _process_php_logs(target_folders_list, log_file, comment_mapping_file, events_file, pruned_folder, event_dictionary_file):
+    """Specific logic for processing PHP logs."""
+    print("Executing PHP log processing tools...")
+    # TODO: Implement PHP specific block pruner and data structuring logic
+    print("[INFO] PHP log processing is currently a stub and needs implementation.")
 
 
 def main():

@@ -1,6 +1,6 @@
 <?php
 
-require 'vendor/autoload.php';
+require __DIR__ . '/../vendor/autoload.php';
 
 use PhpParser\Error;
 use PhpParser\Node;
@@ -10,7 +10,7 @@ use PhpParser\ParserFactory;
 use PhpParser\PrettyPrinter;
 
 /**
- * AST Traverser: Insert instrumentation comment at the beginning of all blocks
+ * AST Traverser: Insert instrumentation comment at the beginning of executable blocks
  */
 class BlockInstrumentorVisitor extends NodeVisitorAbstract {
     private $filePath;
@@ -23,8 +23,6 @@ class BlockInstrumentorVisitor extends NodeVisitorAbstract {
      * Handle file root scope (top-level statements without namespace)
      */
     public function beforeTraverse(array $nodes): ?array {
-        // Check if the root node list itself is top-level statements (not inside a Namespace_ node)
-        // If the first node is Namespace_, skip (leaveNode will handle Namespace_ stmts)
         $hasNamespace = false;
         foreach ($nodes as $node) {
             if ($node instanceof Node\Stmt\Namespace_) {
@@ -46,7 +44,28 @@ class BlockInstrumentorVisitor extends NodeVisitorAbstract {
     }
 
     public function leaveNode(Node $node) {
-        // Instrument all nodes that have a stmts array
+        // 1. Only instrument executable blocks
+        $isExecutableBlock = 
+            $node instanceof Node\Stmt\Function_ ||
+            $node instanceof Node\Stmt\ClassMethod ||
+            $node instanceof Node\Expr\Closure ||
+            $node instanceof Node\Stmt\If_ ||
+            $node instanceof Node\Stmt\ElseIf_ ||
+            $node instanceof Node\Stmt\Else_ ||
+            $node instanceof Node\Stmt\For_ ||
+            $node instanceof Node\Stmt\Foreach_ ||
+            $node instanceof Node\Stmt\While_ ||
+            $node instanceof Node\Stmt\Do_ ||
+            $node instanceof Node\Stmt\TryCatch || 
+            $node instanceof Node\Stmt\Catch_ ||
+            $node instanceof Node\Stmt\Finally_ ||
+            $node instanceof Node\Stmt\Case_;      
+
+        if (!$isExecutableBlock) {
+            return null;
+        }
+
+        // 2. Ensure the node has stmts and is an array
         if (isset($node->stmts) && is_array($node->stmts)) {
             $line = $node->getStartLine();
             if ($line > 0) {
@@ -54,6 +73,7 @@ class BlockInstrumentorVisitor extends NodeVisitorAbstract {
                 array_unshift($node->stmts, $nop);
             }
         }
+        
         return null;
     }
 
@@ -173,14 +193,17 @@ class InstrumentationPipeline {
         $totalActivated = 0;
         foreach ($files as $file) {
             $content = file_get_contents($file);
-            $newContent = preg_replace_callback($pattern, function($matches) use ($callTemplate, &$totalActivated) {
+            $fileActivatedCount = 0;
+            
+            $newContent = preg_replace_callback($pattern, function($matches) use ($callTemplate, &$totalActivated, &$fileActivatedCount) {
                 $indent = $matches[1];
                 $id = $matches[2];
                 $totalActivated++;
+                $fileActivatedCount++;
                 return sprintf($callTemplate, $indent, $id);
             }, $content);
             
-            if ($content !== $newContent) {
+            if ($fileActivatedCount > 0) {
                 file_put_contents($file, $newContent);
             }
         }
@@ -210,11 +233,23 @@ class InstrumentationPipeline {
 if (php_sapi_name() === 'cli') {
     $options = getopt("m:", ["incremental"]);
     $incremental = isset($options['incremental']);
-    $mappingFile = $options['m'] ?? __DIR__ . '/comment-mapping.txt';
+    $mappingFile = $options['m'] ?? 'comment-mapping.txt';
 
     $targets = [];
-    foreach ($argv as $index => $arg) {
-        if ($index == 0 || $arg == '--incremental' || $arg == '-m' || $arg == $mappingFile) continue;
+    $skipNext = false;
+    for ($i = 1; $i < count($argv); $i++) {
+        if ($skipNext) {
+            $skipNext = false;
+            continue;
+        }
+        $arg = $argv[$i];
+        if ($arg === '--incremental') {
+            continue;
+        }
+        if ($arg === '-m') {
+            $skipNext = true;
+            continue;
+        }
         $targets[] = $arg;
     }
 

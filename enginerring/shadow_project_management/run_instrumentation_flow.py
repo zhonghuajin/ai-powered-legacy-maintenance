@@ -43,7 +43,7 @@ def _run_php_instrumentation(target_folders, incremental, mapping_file, work_dir
         print_color("Error: php not found in PATH.", Colors.RED)
         return False
 
-    pipeline_script = os.path.join(work_dir, "multilingual", "php", "InstrumentationPipeline.php")
+    pipeline_script = os.path.join(work_dir, "multilingual", "php", "instrumentor", "InstrumentationPipeline.php")
 
     if not os.path.exists(pipeline_script):
         print_color(f"Error: PHP instrumentation script not found at {pipeline_script}", Colors.RED)

@@ -2,5 +2,6 @@
     "pom.xml": "<dependency>\n    <groupId>com.example</groupId>\n    <artifactId>instrumentor-log-monitor</artifactId>\n    <version>1.0-SNAPSHOT</version>\n</dependency>",
     "build.gradle": "implementation 'com.example:instrumentor-log-monitor:1.0-SNAPSHOT'",
     "build.gradle.kts": "implementation(\"com.example:instrumentor-log-monitor:1.0-SNAPSHOT\")",
-    "package.json": "\"instrumentor-log-monitor\": \"^1.0.0\""
+    "package.json": "\"instrumentor-log-monitor\": \"^1.0.0\"",
+    "composer.json": "\"repositories\": [\n    {\n        \"type\": \"path\",\n        \"url\": \"{{CURRENT_WORKING_DIR}}/MULTILINGUAL/PHP/INSTRUMENTOR-LOG-RECORDER\"\n    }\n],\n\"require\": {\n    \"my/instrumentor-log-recorder\": \"*@dev\"\n}"
 }

@@ -52,7 +52,7 @@ if ($uri !== '/' && file_exists(__DIR__ . $uri)) {
 }
 
 // Include Composer autoloader for Predis
-require_once __DIR__ . '/vendor/autoload.php';
+require __DIR__ . '/../vendor/autoload.php';
 
 // Initialize Predis connection
 try {
