@@ -35,3 +35,4 @@ enginerring/ask_llm/dependency_llm_response.txt
 vendor
 multilingual/php/comment-mapping.txt
 multilingual/php/composer.lock
+enginerring/shared_utils/shared_utils.egg-info
