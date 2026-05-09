@@ -10,6 +10,10 @@ if (file_exists($localAutoload)) {
 class InstrumentLog {
     private static $redis = null;
     private static $pid = null;
+    
+    private static $buffer = [];
+    private static $registered = false;
+    private static $batchSize = 100;
 
     private static function getRedis() {
         if (self::$redis === null) {
@@ -38,14 +42,35 @@ class InstrumentLog {
     }
 
     public static function staining($message) {
-        $redis = self::getRedis();
-        if (!$redis) {
+        if (!self::$registered) {
+            register_shutdown_function([__CLASS__, 'flush']);
+            self::$registered = true;
+        }
+
+        self::$buffer[] = $message;
+
+        if (count(self::$buffer) >= self::$batchSize) {
+            self::flush();
+        }
+    }
+
+    public static function flush() {
+        if (empty(self::$buffer)) {
             return;
         }
 
-        $pid = self::getPid();
-        $key = 'instrumentor:log:' . $pid;
-        
-        $redis->rpush($key, [$message]);
+        $redis = self::getRedis();
+        if ($redis) {
+            $pid = self::getPid();
+            $key = 'instrumentor:log:' . $pid;
+            
+            try {
+                $redis->rpush($key, self::$buffer);
+            } catch (\Exception $e) {
+                error_log("[InstrumentLog] Redis flush failed: " . $e->getMessage());
+            }
+        }
+
+        self::$buffer = [];
     }
 }

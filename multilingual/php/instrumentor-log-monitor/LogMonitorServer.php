@@ -100,8 +100,16 @@ function handleStatus($redis) {
     $pids = $redis->lrange('instrumentor:pids_order', 0, -1);
     $totalLogs = 0;
     
-    foreach ($pids as $pid) {
-        $totalLogs += $redis->llen('instrumentor:log:' . $pid);
+    if (!empty($pids)) {
+        // 使用 pipeline 批量执行 llen
+        $responses = $redis->pipeline(function ($pipe) use ($pids) {
+            foreach ($pids as $pid) {
+                $pipe->llen('instrumentor:log:' . $pid);
+            }
+        });
+        
+        // $responses 返回的是一个数组，顺序与 pipeline 中执行的命令顺序一致
+        $totalLogs = array_sum($responses);
     }
 
     echo "[LogMonitor] Current Status\n";
@@ -113,10 +121,20 @@ function handleFlush($redis) {
     $pids = $redis->lrange('instrumentor:pids_order', 0, -1);
     $snapshot = [];
 
-    foreach ($pids as $pid) {
-        $logs = $redis->lrange('instrumentor:log:' . $pid, 0, -1);
-        if (!empty($logs)) {
-            $snapshot[$pid] = array_values(array_unique($logs));
+    if (!empty($pids)) {
+        // 使用 pipeline 批量执行 lrange
+        $responses = $redis->pipeline(function ($pipe) use ($pids) {
+            foreach ($pids as $pid) {
+                $pipe->lrange('instrumentor:log:' . $pid, 0, -1);
+            }
+        });
+
+        // 遍历结果并组装 snapshot
+        foreach ($pids as $index => $pid) {
+            $logs = $responses[$index];
+            if (!empty($logs)) {
+                $snapshot[$pid] = array_values(array_unique($logs));
+            }
         }
     }
 
