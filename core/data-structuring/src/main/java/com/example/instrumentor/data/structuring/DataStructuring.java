@@ -336,7 +336,7 @@ public class DataStructuring {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 3) {
-            System.out.println("Usage: java -jar instrumentor-analyzer.jar <pruned_dir> <comment_mapping> <log_file> [output_base_name]");
+            System.out.println("Usage: java -jar data-structuring-1.0-SNAPSHOT.jar <pruned_dir> <comment_mapping> <log_file>");
             return;
         }
 
@@ -345,14 +345,7 @@ public class DataStructuring {
         String logPath = args[2];
         
         String baseOutputName = "final-output";
-        
-        if (args.length >= 4) {
-            baseOutputName = args[3];
-        }
 
-        if (baseOutputName.endsWith(".json")) {
-            baseOutputName = baseOutputName.substring(0, baseOutputName.length() - 5);
-        }
 
         System.out.println("[1/2] Starting to parse logs and source code structure...");
         Map<Integer, BlockInfo> blockMap = parseMappingFile(mappingPath);
