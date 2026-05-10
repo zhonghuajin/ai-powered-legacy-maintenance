@@ -36,3 +36,4 @@ vendor
 multilingual/php/comment-mapping.txt
 multilingual/php/composer.lock
 enginerring/shared_utils/shared_utils.egg-info
+.vscode/launch.json

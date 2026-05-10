@@ -9,8 +9,6 @@ import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.comments.Comment;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -337,32 +335,26 @@ public class DataStructuring {
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length < 4) {
-            System.out.println("Usage: java -jar instrumentor-analyzer.jar <pruned_dir> <comment_mapping> <log_file> <event_log_file> [event_dictionary] [output_base_name]");
+        if (args.length < 3) {
+            System.out.println("Usage: java -jar instrumentor-analyzer.jar <pruned_dir> <comment_mapping> <log_file> [output_base_name]");
             return;
         }
 
         Path prunedDir = Paths.get(args[0]);
         String mappingPath = args[1];
         String logPath = args[2];
-        String eventLogPath = args[3];
         
-        String dictPath = null;
         String baseOutputName = "final-output";
         
-        if (args.length == 5) {
-            if (args[4].endsWith(".txt")) dictPath = args[4];
-            else baseOutputName = args[4];
-        } else if (args.length >= 6) {
-            dictPath = args[4];
-            baseOutputName = args[5];
+        if (args.length >= 4) {
+            baseOutputName = args[3];
         }
 
         if (baseOutputName.endsWith(".json")) {
             baseOutputName = baseOutputName.substring(0, baseOutputName.length() - 5);
         }
 
-        System.out.println("[1/3] Starting to parse logs and source code structure...");
+        System.out.println("[1/2] Starting to parse logs and source code structure...");
         Map<Integer, BlockInfo> blockMap = parseMappingFile(mappingPath);
         List<ThreadTrace> traces = parseLogFile(logPath);
 
@@ -471,52 +463,7 @@ public class DataStructuring {
         String intermediateJson = gson.toJson(root);
         intermediateJson = compactIntegerArrays(intermediateJson);
 
-        System.out.println("[2/3] Starting analysis of Happens-Before synchronization relationships...");
-        
-        Map<String, String> eventDict = new HashMap<>();
-        if (dictPath != null && Files.exists(Paths.get(dictPath))) {
-            System.out.println(" - Dictionary file found, loading: " + dictPath);
-            for (String line : Files.readAllLines(Paths.get(dictPath), StandardCharsets.UTF_8)) {
-                int eq = line.indexOf('=');
-                if (eq > 0) {
-                    String id = line.substring(0, eq).trim();
-                    String action = line.substring(eq + 1).trim();
-                    eventDict.put("EVT_" + id, action);
-                }
-            }
-        }
-
-        String eventLogContent = Files.readString(Paths.get(eventLogPath), StandardCharsets.UTF_8);
-        
-        if (!eventDict.isEmpty()) {
-            StringBuilder translatedLog = new StringBuilder();
-            for (String line : eventLogContent.split("\\r?\\n")) {
-                if (line.trim().isEmpty() || line.startsWith("#")) {
-                    translatedLog.append(line).append("\n");
-                    continue;
-                }
-                String[] parts = line.split(", ");
-                
-                if (parts.length >= 3 && eventDict.containsKey(parts[2].trim())) {
-                    parts[2] = eventDict.get(parts[2].trim());
-                    translatedLog.append(String.join(", ", parts)).append("\n");
-                } else {
-                    translatedLog.append(line).append("\n");
-                }
-            }
-            eventLogContent = translatedLog.toString();
-        }
-
-        JsonObject happensBeforeData = HappensBeforeAnalyzer.analyzeEvents(eventLogContent);
-
-        System.out.println("[3/3] Generating standalone data files (JSON + Markdown)...");
-
-        String happensBeforeOutput = gson.toJson(happensBeforeData);
-        String hbPath = baseOutputName + "-happensbefore.json";
-        String hbMdPath = baseOutputName + "-happensbefore.md";
-        Files.writeString(Paths.get(hbPath), happensBeforeOutput, StandardCharsets.UTF_8);
-        MarkdownGenerator.generate(happensBeforeOutput, hbMdPath);
-        System.out.println(" - Happens-Before JSON & MD generated: " + hbPath + " / " + hbMdPath);
+        System.out.println("[2/2] Generating standalone data files (JSON + Markdown)...");
 
         String callTreeOnlyOutput = CallTreeAnalyzer.analyze(intermediateJson, null);
         String ctPath = baseOutputName + "-calltree.json";
@@ -524,24 +471,6 @@ public class DataStructuring {
         Files.writeString(Paths.get(ctPath), callTreeOnlyOutput, StandardCharsets.UTF_8);
         MarkdownGenerator.generate(callTreeOnlyOutput, ctMdPath);
         System.out.println(" - Call Tree JSON & MD generated: " + ctPath + " / " + ctMdPath);
-
-        JsonObject combinedRoot = JsonParser.parseString(callTreeOnlyOutput).getAsJsonObject();
-        if (happensBeforeData.has("sync_relations")) {
-            combinedRoot.add("sync_relations", happensBeforeData.get("sync_relations"));
-        }
-        if (happensBeforeData.has("data_races")) {
-            combinedRoot.add("data_races", happensBeforeData.get("data_races"));
-        }
-        if (happensBeforeData.has("possible_taint_flows")) {
-            combinedRoot.add("possible_taint_flows", happensBeforeData.get("possible_taint_flows"));
-        }
-
-        String combinedOutput = compactIntegerArrays(gson.toJson(combinedRoot));
-        String combinedPath = baseOutputName + "-combined.json";
-        String combinedMdPath = baseOutputName + "-combined.md";
-        Files.writeString(Paths.get(combinedPath), combinedOutput, StandardCharsets.UTF_8);
-        MarkdownGenerator.generate(combinedOutput, combinedMdPath);
-        System.out.println(" - Combined data JSON & MD generated: " + combinedPath + " / " + combinedMdPath);
 
         System.out.println("==================================================");
         System.out.println("All analysis tasks have been completed!");
