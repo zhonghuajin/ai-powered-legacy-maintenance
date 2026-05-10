@@ -456,14 +456,14 @@ public class DataStructuring {
         String intermediateJson = gson.toJson(root);
         intermediateJson = compactIntegerArrays(intermediateJson);
 
-        System.out.println("[2/2] Generating standalone data files (JSON + Markdown)...");
+        System.out.println("[2/2] Generating standalone data files...");
 
         String callTreeOnlyOutput = CallTreeAnalyzer.analyze(intermediateJson, null);
         String ctPath = baseOutputName + "-calltree.json";
-        String ctMdPath = baseOutputName + "-calltree.md";
+        // String ctMdPath = baseOutputName + "-calltree.md";
         Files.writeString(Paths.get(ctPath), callTreeOnlyOutput, StandardCharsets.UTF_8);
-        MarkdownGenerator.generate(callTreeOnlyOutput, ctMdPath);
-        System.out.println(" - Call Tree JSON & MD generated: " + ctPath + " / " + ctMdPath);
+        // MarkdownGenerator.generate(callTreeOnlyOutput, ctMdPath);
+        // System.out.println(" - Call Tree JSON & MD generated: " + ctPath + " / " + ctMdPath);
 
         System.out.println("==================================================");
         System.out.println("All analysis tasks have been completed!");

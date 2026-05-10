@@ -151,6 +151,19 @@ def _process_java_logs(target_folders_list, log_file, comment_mapping_file, even
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Error executing Data Structuring: {e}")
 
+    # 3. Execute Markdown Generator
+    print("Executing Markdown Generator...")
+    markdown_gen_cmd = [
+        "java", "-cp", data_structuring_jar,
+        "com.example.instrumentor.data.structuring.MarkdownGenerator",
+        "final-output-calltree.json",
+        "final-output-calltree.md"
+    ]
+    try:
+        subprocess.run(markdown_gen_cmd, env=env, check=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Error executing Markdown Generator: {e}")
+
 
 def _process_python_logs(target_folders_list, log_file, comment_mapping_file, events_file, pruned_folder, event_dictionary_file):
     """Specific logic for processing Python logs."""
