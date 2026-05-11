@@ -2,6 +2,7 @@ import importlib
 import os
 import sys
 import subprocess
+import socket
 import re
 import platform
 import glob
@@ -327,6 +328,39 @@ def handle_instrumentation_dependencies(work_dir, proj_path, git_root, ask_llm_d
 
 def startup_log_manager_server(work_dir, proj_path=None):
     print_color("\n>>> Starting Log Manager Server...", Colors.CYAN)
+    if proj_path:
+        config_file = os.path.join(proj_path, 'config.json')
+        if os.path.exists(config_file):
+            with open(config_file, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            if config.get('language') == 'php':
+                is_running = False
+                for port in range(19898, 19999):
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                        s.settimeout(0.05) # 设置极短的超时时间，加快扫描速度
+                        # connect_ex 返回 0 表示连接成功（端口被占用/服务已启动）
+                        if s.connect_ex(('127.0.0.1', port)) == 0:
+                            is_running = True
+                            break
+                
+                if is_running:
+                    print_color('[PHP Monitor] Detected existing service on ports 19898-19998. Skipping startup.', Colors.GREEN)
+                else:
+                    jar_path = os.path.join(work_dir, 'multilingual', 'php', 'instrumentor-log-monitor', 'target', 'redis-log-monitor-1.0-SNAPSHOT.jar')
+                    if os.path.exists(jar_path):
+                        print_color('[PHP Monitor] No running service found. Auto-starting monitor in background...', Colors.GREEN)
+                        log_file_path = os.path.join(proj_path, 'php_monitor_startup.log')
+                        log_file = open(log_file_path, 'w')
+                        subprocess.Popen(
+                            ['java', '-jar', jar_path], 
+                            cwd=work_dir,
+                            stdout=log_file,
+                            stderr=subprocess.STDOUT
+                        )
+                    else:
+                        print_color(f'[Warning] PHP log monitor jar not found at: {jar_path}', Colors.YELLOW)
+
     
     server_dir = os.path.join(work_dir, "enginerring", "log_manager_server")
     
