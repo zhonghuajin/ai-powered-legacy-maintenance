@@ -211,14 +211,14 @@ def _prompt_target_input(target_file):
     """
     print_color(
         "\nHow would you like to specify target folders/files?", Colors.CYAN)
-    print("  1. Type or drag-and-drop paths in terminal (recommended)")
-    print("  2. Open in a text editor")
-    method = input("Choose method [1]: ").strip() or "1"
+    print("  1. Type or drag-and-drop paths in terminal")
+    print("  2. Open in a text editor (recommended)")
+    method = input("Choose method [2]: ").strip() or "2"
 
-    if method == "2":
-        return _collect_paths_editor(target_file)
-    else:
+    if method == "1":
         return _collect_paths_multiline()
+    else:
+        return _collect_paths_editor(target_file)
 
 
 def _collect_paths_multiline():
