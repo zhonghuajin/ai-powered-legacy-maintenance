@@ -9,7 +9,7 @@
  * Requirements: nikic/php-parser ^5.0 (install via: composer require nikic/php-parser)
  */
 
-require_once __DIR__ . '/vendor/autoload.php';
+require_once __DIR__ . '/../vendor/autoload.php';
 
 use PhpParser\ParserFactory;
 use PhpParser\PrettyPrinter\Standard as PrettyPrinter;

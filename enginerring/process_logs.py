@@ -17,8 +17,6 @@ from pathlib import Path
 
 # Dynamically resolve the project root (one level up from 'enginerring' folder)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_BLOCK_PRUNER = str(PROJECT_ROOT / "core" / "block-pruner" / "target" / "block-pruner-1.0-SNAPSHOT.jar")
-DEFAULT_DATA_STRUCTURING = str(PROJECT_ROOT / "core" / "data-structuring" / "target" / "data-structuring-1.0-SNAPSHOT.jar")
 
 def process_logs(
     language="java",
@@ -29,8 +27,8 @@ def process_logs(
     target_folders=None,
     pruned_folder="pruned\\",
     event_dictionary_file="event_dictionary.txt",
-    block_pruner_jar=DEFAULT_BLOCK_PRUNER,
-    data_structuring_jar=DEFAULT_DATA_STRUCTURING,
+    block_pruner_jar=None,
+    data_structuring_jar=None,
 ):
     """
     Core logic for processing instrumentation logs.
@@ -102,12 +100,35 @@ def process_logs(
         )
     else:
         raise ValueError(f"Unsupported language: {language}")
+    
+    # Execute Markdown Generator
+    if not data_structuring_jar:
+        data_structuring_jar = str(PROJECT_ROOT / "core" / "data-structuring" / "target" / "data-structuring-1.0-SNAPSHOT.jar")
+
+    print("Executing Markdown Generator...")
+    markdown_gen_cmd = [
+        "java", "-cp", data_structuring_jar,
+        "com.example.instrumentor.data.structuring.MarkdownGenerator",
+        "final-output-calltree.json",
+        "final-output-calltree.md"
+    ]
+    try:
+        env = os.environ.copy()
+        subprocess.run(markdown_gen_cmd, env=env, check=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Error executing Markdown Generator: {e}")    
 
     print("Log processing, data structuring, and source code restoration completed successfully!")
 
 
 def _process_java_logs(target_folders_list, log_file, comment_mapping_file, events_file, pruned_folder, event_dictionary_file, block_pruner_jar, data_structuring_jar):
     """Specific logic for processing Java logs using JAR files."""
+    
+    if not block_pruner_jar:
+        block_pruner_jar = str(PROJECT_ROOT / "core" / "block-pruner" / "target" / "block-pruner-1.0-SNAPSHOT.jar")
+    if not data_structuring_jar:
+        data_structuring_jar = str(PROJECT_ROOT / "core" / "data-structuring" / "target" / "data-structuring-1.0-SNAPSHOT.jar")
+
     print("Checking Java environment variables...")
     java_home = os.environ.get("JAVA_HOME")
     if not java_home:
@@ -151,19 +172,6 @@ def _process_java_logs(target_folders_list, log_file, comment_mapping_file, even
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Error executing Data Structuring: {e}")
 
-    # 3. Execute Markdown Generator
-    print("Executing Markdown Generator...")
-    markdown_gen_cmd = [
-        "java", "-cp", data_structuring_jar,
-        "com.example.instrumentor.data.structuring.MarkdownGenerator",
-        "final-output-calltree.json",
-        "final-output-calltree.md"
-    ]
-    try:
-        subprocess.run(markdown_gen_cmd, env=env, check=True)
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Error executing Markdown Generator: {e}")
-
 
 def _process_python_logs(target_folders_list, log_file, comment_mapping_file, events_file, pruned_folder, event_dictionary_file):
     """Specific logic for processing Python logs."""
@@ -176,8 +184,46 @@ def _process_python_logs(target_folders_list, log_file, comment_mapping_file, ev
 def _process_php_logs(target_folders_list, log_file, comment_mapping_file, events_file, pruned_folder, event_dictionary_file):
     """Specific logic for processing PHP logs."""
     print("Executing PHP log processing tools...")
-    # TODO: Implement PHP specific block pruner and data structuring logic
-    print("[INFO] PHP log processing is currently a stub and needs implementation.")
+    
+    env = os.environ.copy()
+    
+    # 1. Execute PHP Block Pruner
+    print("Executing PHP Block Pruner...")
+    php_pruner_script_path = str(PROJECT_ROOT / "multilingual" / "php" / "block-pruner" / "BlockPruner.php")
+    source_dirs_arg = ";".join(target_folders_list)
+    
+    php_pruner_cmd = [
+        "php",
+        php_pruner_script_path,
+        source_dirs_arg,
+        comment_mapping_file,
+        log_file,
+        pruned_folder
+    ]
+    
+    print(f"Running command: {' '.join(php_pruner_cmd)}")
+    try:
+        subprocess.run(php_pruner_cmd, env=env, check=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Error executing PHP Block Pruner: {e}")
+
+    # 2. Execute PHP Data Structuring
+    print("Executing PHP Data Structuring...")
+    php_structuring_script_path = str(PROJECT_ROOT / "multilingual" / "php" / "data-structuring" / "bin" / "data-structuring.php")
+    
+    php_structuring_cmd = [
+        "php",
+        php_structuring_script_path,
+        pruned_folder,
+        comment_mapping_file,
+        log_file
+    ]
+    
+    print(f"Running command: {' '.join(php_structuring_cmd)}")
+    try:
+        subprocess.run(php_structuring_cmd, env=env, check=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Error executing PHP Data Structuring: {e}")
 
 
 def main():
@@ -226,13 +272,13 @@ def main():
     )
     parser.add_argument(
         "--block-pruner-jar",
-        default=DEFAULT_BLOCK_PRUNER,
-        help="Path to the Block Pruner jar"
+        default=None,
+        help="Path to the Block Pruner jar (defaults to Java core target path)"
     )
     parser.add_argument(
         "--data-structuring-jar",
-        default=DEFAULT_DATA_STRUCTURING,
-        help="Path to the Data Structuring jar"
+        default=None,
+        help="Path to the Data Structuring jar (defaults to Java core target path)"
     )
 
     args = parser.parse_args()
