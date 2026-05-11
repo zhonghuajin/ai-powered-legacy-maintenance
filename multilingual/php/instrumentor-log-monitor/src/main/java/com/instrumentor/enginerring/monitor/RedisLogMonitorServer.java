@@ -79,12 +79,7 @@ public class RedisLogMonitorServer {
     }
 
     private void handleClear(HttpExchange exchange) throws IOException {
-        try (Jedis jedis = jedisPool.getResource()) {
-            Set<String> keys = jedis.keys("instrumentor:*");
-            if (keys != null && !keys.isEmpty()) {
-                jedis.del(keys.toArray(new String[0]));
-            }
-        }
+        clearNow(); // 复用提取出的 clearNow 方法
         sendTextResponse(exchange, 200, "[LogMonitor] Logs cleared from Redis.\n");
     }
 
@@ -114,7 +109,7 @@ public class RedisLogMonitorServer {
     private void handleFlush(HttpExchange exchange) throws IOException {
         resetFlushState();
         flushNow("manual_http");
-        sendTextResponse(exchange, 200, "[LogMonitor] Flush triggered. Files sent to manager or saved locally.\n");
+        sendTextResponse(exchange, 200, "[LogMonitor] Flush triggered. Files sent to manager or saved locally, and logs cleared.\n");
     }
 
     private void handleSetManager(HttpExchange exchange) throws IOException {
@@ -159,9 +154,30 @@ public class RedisLogMonitorServer {
             } else {
                 log("flushNow(%s): no logs to flush.", source);
             }
+
+            // 3. 在 flush 之后执行 clear 操作
+            clearNow();
+
         } catch (Exception e) {
             log("flushNow(%s) failed: %s", source, e.getMessage());
             e.printStackTrace(System.err);
+        }
+    }
+
+    /**
+     * 提取出的清理 Redis 数据的公共方法
+     */
+    public static void clearNow() {
+        try (Jedis jedis = jedisPool.getResource()) {
+            Set<String> keys = jedis.keys("instrumentor:*");
+            if (keys != null && !keys.isEmpty()) {
+                jedis.del(keys.toArray(new String[0]));
+                log("clearNow: successfully cleared %d keys from Redis.", keys.size());
+            } else {
+                log("clearNow: no keys found to clear.");
+            }
+        } catch (Exception e) {
+            log("clearNow failed: %s", e.getMessage());
         }
     }
 
