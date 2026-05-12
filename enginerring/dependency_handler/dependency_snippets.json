@@ -3,5 +3,5 @@
     "build.gradle": "implementation 'com.example:instrumentor-log-monitor:1.0-SNAPSHOT'",
     "build.gradle.kts": "implementation(\"com.example:instrumentor-log-monitor:1.0-SNAPSHOT\")",
     "package.json": "\"instrumentor-log-monitor\": \"^1.0.0\"",
-    "composer.json": "\"repositories\": [\n    {\n        \"type\": \"path\",\n        \"url\": \"{{CURRENT_WORKING_DIR}}/MULTILINGUAL/PHP/INSTRUMENTOR-LOG-RECORDER\"\n    }\n],\n\"require\": {\n    \"my/instrumentor-log-recorder\": \"*@dev\"\n}"
+    "composer.json": "\"repositories\": [\n    {\n        \"type\": \"path\",\n        \"url\": \"{{CURRENT_WORKING_DIR}}/MULTILINGUAL/PHP/INSTRUMENTOR-LOG-RECORDER\",\n        \"options\": {\n            \"symlink\": false\n        }\n    }\n],\n\"require\": {\n    \"my/instrumentor-log-recorder\": \"*@dev\"\n}"
 }

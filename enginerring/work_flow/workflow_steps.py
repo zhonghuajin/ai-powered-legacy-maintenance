@@ -57,24 +57,8 @@ def instrument_code(work_dir, proj_path=None, git_root=None, is_new_project=Fals
     print_color(
         "\n>>> Setting up shadow branch and instrumenting code...", Colors.CYAN)
 
-    print()
-    print_color("========================================", Colors.YELLOW)
-    print_color(" IMPORTANT PATH EXPLANATION", Colors.YELLOW)
-    print_color("========================================", Colors.YELLOW)
-    print_color(
-        " The path requested here is the Git root directory of the target project.", Colors.YELLOW)
-    print_color(
-        " It is NOT the same as the paths listed in target-folders.txt.", Colors.YELLOW)
-    print_color(
-        " The paths in target-folders.txt are the specific source folders to instrument.", Colors.YELLOW)
-    print_color(
-        " The path entered below must be the top-level Git repository root that contains those folders.", Colors.YELLOW)
-    print_color("========================================", Colors.YELLOW)
-
     if git_root:
         git_root_dir = git_root
-        print_color(
-            f"Using saved Git repository root directory: {git_root_dir}", Colors.GREEN)
     else:
         git_root_dir = ""
         while not git_root_dir:
@@ -338,8 +322,7 @@ def startup_log_manager_server(work_dir, proj_path=None):
                 is_running = False
                 for port in range(19898, 19999):
                     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                        s.settimeout(0.05) # 设置极短的超时时间，加快扫描速度
-                        # connect_ex 返回 0 表示连接成功（端口被占用/服务已启动）
+                        s.settimeout(0.05) 
                         if s.connect_ex(('127.0.0.1', port)) == 0:
                             is_running = True
                             break
