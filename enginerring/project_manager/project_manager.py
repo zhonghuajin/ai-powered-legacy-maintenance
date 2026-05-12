@@ -94,40 +94,13 @@ def _create_new_project(work_dir, projects_dir):
     Returns (proj_path, root_path).
     """
     print_color("\n--- Create a New Project ---", Colors.CYAN)
-    # Validate project name
-    while True:
-        name = input(
-            "Enter a project name (English letters, digits, hyphens, underscores allowed): "
-        ).strip()
-        if not name:
-            print_color("Project name cannot be empty.", Colors.RED)
-            continue
-        # Check for Unicode range - rejected with English message
-        if re.search(r'[\u4e00-\u9fff]', name):
-            print_color(
-                "Non-English characters are not allowed. Please use English.", Colors.RED)
-            continue
-        if not re.match(r'^[a-zA-Z0-9_\-\.]+$', name):
-            print_color(
-                "Only letters, digits, hyphens, underscores and dots are allowed.", Colors.RED
-            )
-            continue
-        # Check if project already exists
-        proj_path = os.path.join(projects_dir, name)
-        if os.path.exists(proj_path):
-            print_color(
-                f"Project '{name}' already exists. Please choose a different name.", Colors.RED
-            )
-            continue
-        break
-
     print()
     print_color("========================================", Colors.YELLOW)
     print_color(" IMPORTANT PATH EXPLANATION", Colors.YELLOW)
     print_color("========================================", Colors.YELLOW)
     print_color(" The path requested here is the Git root directory of the target project.", Colors.YELLOW)
-    print_color(" It is NOT the same as the paths listed in target-folders.txt.", Colors.YELLOW)
-    print_color(" The paths in target-folders.txt are the specific source folders to instrument.", Colors.YELLOW)
+    print_color(" It is NOT the same as the paths listed in target source folders.", Colors.YELLOW)
+    print_color(" The paths in target source folders are the specific source folders to instrument.", Colors.YELLOW)
     print_color(" The path entered below must be the top-level Git repository root that contains those folders.", Colors.YELLOW)
     print_color("========================================", Colors.YELLOW)
 
@@ -147,8 +120,24 @@ def _create_new_project(work_dir, projects_dir):
 
     print_color(f"Using saved Git repository root directory: {git_root}", Colors.GREEN)
 
-    # Create project folder and config.json
+    # Automatically derive project name from the git_root path
+    base_name = os.path.basename(os.path.normpath(git_root))
+    
+    # Sanitize the derived name to ensure it only contains allowed characters
+    name = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', base_name)
+    if not name:
+        name = "default_project"
+
+    # Handle duplicate project names by appending a suffix
+    original_name = name
+    counter = 1
     proj_path = os.path.join(projects_dir, name)
+    while os.path.exists(proj_path):
+        name = f"{original_name}_{counter}"
+        proj_path = os.path.join(projects_dir, name)
+        counter += 1
+
+    # Create project folder and config.json
     os.makedirs(proj_path, exist_ok=True)
     config = {"original_git_root": git_root}
     config_path = os.path.join(proj_path, "config.json")
