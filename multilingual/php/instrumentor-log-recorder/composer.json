@@ -1,5 +1,5 @@
 {
-    "name": "my/instrumentor-log-recorder",
+    "name": "zhonghuajin/instrumentor-log-recorder",
     "description": "Runtime log recorder for instrumentation",
     "require": {
         "predis/predis": "^2.0"
