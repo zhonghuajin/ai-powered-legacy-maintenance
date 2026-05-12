@@ -121,6 +121,16 @@ def _create_new_project(work_dir, projects_dir):
             continue
         break
 
+    print()
+    print_color("========================================", Colors.YELLOW)
+    print_color(" IMPORTANT PATH EXPLANATION", Colors.YELLOW)
+    print_color("========================================", Colors.YELLOW)
+    print_color(" The path requested here is the Git root directory of the target project.", Colors.YELLOW)
+    print_color(" It is NOT the same as the paths listed in target-folders.txt.", Colors.YELLOW)
+    print_color(" The paths in target-folders.txt are the specific source folders to instrument.", Colors.YELLOW)
+    print_color(" The path entered below must be the top-level Git repository root that contains those folders.", Colors.YELLOW)
+    print_color("========================================", Colors.YELLOW)
+
     git_root = ""
     while not git_root:
         git_root = input(
@@ -134,6 +144,8 @@ def _create_new_project(work_dir, projects_dir):
             git_root = ""
         else:
             git_root = os.path.abspath(git_root)
+
+    print_color(f"Using saved Git repository root directory: {git_root}", Colors.GREEN)
 
     # Create project folder and config.json
     proj_path = os.path.join(projects_dir, name)
