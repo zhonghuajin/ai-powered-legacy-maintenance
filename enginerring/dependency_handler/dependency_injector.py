@@ -2,6 +2,7 @@
 import os
 import json
 import re
+import subprocess
 from print_utils.utils import Colors, print_color
 
 # Import LLM client for AI-driven injection
@@ -137,11 +138,52 @@ def _simple_inject(file_path, snippet, content):
         print_color(f"[!] Auto-injection for {filename} is not fully implemented yet. Please add manually:\n{snippet}", Colors.YELLOW)
         return False
 
-# Added work_dir parameter with default None for backward compatibility
+def update_dependencies(successful_files):
+    """
+    Navigate to the directories of the successfully modified files 
+    and execute the corresponding package manager update commands.
+    """
+    if not successful_files:
+        return
+
+    print_color(f"\n>>> Updating dependencies for {len(successful_files)} files...", Colors.CYAN)
+    original_cwd = os.getcwd()
+    
+    # Determine if we are on Windows to enable shell execution for .bat/.cmd resolution
+    use_shell = (os.name == 'nt')
+    
+    for file_path in successful_files:
+        dir_name = os.path.dirname(file_path)
+        file_name = os.path.basename(file_path).lower()
+        
+        cmd = []
+        if file_name == 'pom.xml':
+            cmd = ['mvn', 'clean', 'install', '-DskipTests']
+        elif file_name == 'composer.json':
+            cmd = ['composer', 'update']
+        elif file_name == 'package.json':
+            cmd = ['npm', 'install']
+        else:
+            continue
+            
+        print_color(f"\n>>> Running '{' '.join(cmd)}' in {dir_name}...", Colors.CYAN)
+        try:
+            os.chdir(dir_name)
+            # Added shell=use_shell to resolve Windows executable paths correctly
+            subprocess.run(cmd, check=True, shell=use_shell)
+            print_color(f"[+] Successfully updated dependencies in {dir_name}", Colors.GREEN)
+        except subprocess.CalledProcessError as e:
+            print_color(f"[!] Failed to update dependencies in {dir_name}: {e}", Colors.RED)
+        except FileNotFoundError as e:
+            print_color(f"[!] Command not found in {dir_name}: {e}. Please ensure the package manager is installed and in PATH.", Colors.RED)
+        finally:
+            # Always ensure we return to the original working directory
+            os.chdir(original_cwd)
+
 def run_injection(llm_response_file, snippets_json_path, work_dir=None):
     if not os.path.exists(llm_response_file):
         print_color(f"[!] LLM response file not found: {llm_response_file}", Colors.RED)
-        return
+        return []
 
     with open(llm_response_file, 'r', encoding='utf-8') as f:
         response_text = f.read()
@@ -149,9 +191,10 @@ def run_injection(llm_response_file, snippets_json_path, work_dir=None):
     target_files = parse_llm_response(response_text)
     if not target_files:
         print_color("[-] No target dependency files identified by LLM.", Colors.YELLOW)
-        return
+        return []
 
     snippets = load_snippets(snippets_json_path)
+    successful_files = []
     
     print_color(f"\n>>> Injecting dependencies into {len(target_files)} files...", Colors.CYAN)
     for file_path in target_files:
@@ -170,3 +213,10 @@ def run_injection(llm_response_file, snippets_json_path, work_dir=None):
         success = inject_dependency_into_file(file_path, snippet, work_dir)
         if success:
             print_color(f"[+] Successfully injected dependency into {file_path}", Colors.GREEN)
+            successful_files.append(file_path)
+            
+    # Trigger the dependency update process for successfully modified files
+    if successful_files:
+        update_dependencies(successful_files)
+        
+    return successful_files
