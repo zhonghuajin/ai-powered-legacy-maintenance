@@ -19,9 +19,6 @@ You are a senior software architect and debugging expert. Based on the provided 
 **🐞 Observable Symptom / Anomaly**: 
 {bug_symptom}
 
-**🛠️ Tech Stack Context**: 
-{tech_stack}
-
 **💬 Additional Notes (Suspected variables, specific thread IDs, etc.)**: 
 {additional_info}
 
@@ -120,9 +117,6 @@ You are a senior software architect and debugging expert. Based on the provided 
 
 **🐞 Observable Symptom / Anomaly**: 
 {bug_symptom}
-
-**🛠️ Tech Stack Context**: 
-{tech_stack}
 
 **💬 Additional Notes**: 
 {additional_info}
@@ -227,25 +221,19 @@ def generate_prompt(cli_file_path=None):
     if not bug_symptom:
         bug_symptom = "[No specific symptom provided. Please analyze the trace data for obvious logic errors or exceptions.]"
 
-    # 2. Collect tech stack
-    tech_stack = input(
-        "\n🛠️ 2. Please enter the [Tech Stack Context] (default: Java):\n> ").strip()
-    if not tech_stack:
-        tech_stack = "Java"
-
-    # 3. Collect additional notes
+    # 2. Collect additional notes
     additional_info = input(
-        "\n💬 3. Please enter [Additional Notes] (optional, e.g., suspect SyncTest.sharedData is missing volatile):\n> ").strip()
+        "\n💬 2. Please enter [Additional Notes] (optional, e.g., suspect SyncTest.sharedData is missing volatile):\n> ").strip()
     if not additional_info:
         additional_info = "No special additional notes. Please follow the factual trace."
 
-    # 4. Read trace data file
+    # 3. Read trace data file
     trace_data = ""
     
     while True:
         if cli_file_path:
             file_path = cli_file_path
-            print(f"\n📁 4. Using Call Tree File from arguments: {file_path}")
+            print(f"\n📁 3. Using Call Tree File from arguments: {file_path}")
             # Reset the variable so if it fails, it will fall back to manual input
             cli_file_path = None
         else:
@@ -256,7 +244,7 @@ def generate_prompt(cli_file_path=None):
                 file_hint = "Call Tree File (e.g., ../../final-output-calltree.md)"
 
             file_path = input(
-                f"\n📁 4. Please enter the path to the [{file_hint}]:\n> ").strip()
+                f"\n📁 3. Please enter the path to the [{file_hint}]:\n> ").strip()
             # Remove possible quotes (common when dragging a file into the terminal)
             file_path = file_path.strip('\'"')
 
@@ -278,15 +266,14 @@ def generate_prompt(cli_file_path=None):
             print(f"❌ Failed to read file: {e}")
             continue
 
-    # 5. Assemble the final prompt
+    # 4. Assemble the final prompt
     final_prompt = selected_template.format(
         bug_symptom=bug_symptom,
-        tech_stack=tech_stack,
         additional_info=additional_info,
         trace_data=trace_data
     )
 
-    # 6. Write to file
+    # 5. Write to file
     output_filename = "AI_Bug_Localization_Prompt.md"
     try:
         with open(output_filename, 'w', encoding='utf-8') as f:

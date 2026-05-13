@@ -18,9 +18,6 @@ You are a senior software security audit expert and Java concurrency programming
 **🎯 Key Audit Focus**: 
 {audit_focus}
 
-**🛠️ Technology Stack Context**: 
-{tech_stack}
-
 **💬 Additional Notes (Optional)**: 
 {additional_info}
 
@@ -94,27 +91,23 @@ def generate_prompt(cli_file_path=None):
     # 1. Collect audit focus
     audit_focus = input("🎯 1. Please enter [Key Audit Focus] (e.g., Focus on identifying data races, deadlocks, or cross-thread taint propagation):\n> ").strip()
     if not audit_focus:
-        audit_focus = "Comprehensive排查 concurrency security vulnerabilities (Data Races), memory visibility issues (missing Happens-Before), and potential business logic defects."
+        # Translated "Comprehensive排查" to "Comprehensive investigation of"
+        audit_focus = "Comprehensive investigation of concurrency security vulnerabilities (Data Races), memory visibility issues (missing Happens-Before), and potential business logic defects."
 
-    # 2. Collect tech stack
-    tech_stack = input("\n🛠️ 2. Please enter [Technology Stack Context] (default: Java, multi-threaded concurrency JMM):\n> ").strip()
-    if not tech_stack:
-        tech_stack = "Java, multi-threaded concurrency (JMM, Happens-Before, locking mechanisms)"
-
-    # 3. Collect additional notes
-    additional_info = input("\n💬 3. Please enter [Additional Notes] (optional, e.g., Only JDK native libraries can be used for fixes, original method signatures cannot be changed):\n> ").strip()
+    # 2. Collect additional notes
+    additional_info = input("\n💬 2. Please enter [Additional Notes] (optional, e.g., Only JDK native libraries can be used for fixes, original method signatures cannot be changed):\n> ").strip()
     if not additional_info:
         additional_info = "No special additional restrictions. Please follow best practices for Java concurrency programming (e.g., prioritize using tools from the java.util.concurrent package)."
 
-    # 4. Read trace data file
+    # 3. Read trace data file
     trace_data = ""
     while True:
         if cli_file_path:
             file_path = cli_file_path
-            print(f"\n📁 4. Using Execution Trace Data File from arguments: {file_path}")
+            print(f"\n📁 3. Using Execution Trace Data File from arguments: {file_path}")
             cli_file_path = None  # Reset in case of failure
         else:
-            file_path = input("\n📁 4. Please enter the path to the [Execution Trace Data File] (e.g., final-output-combined.md):\n> ").strip()
+            file_path = input("\n📁 3. Please enter the path to the [Execution Trace Data File] (e.g., final-output-combined.md):\n> ").strip()
             # Remove possible quotes (common when dragging files from terminal)
             file_path = file_path.strip('\'"')
         
@@ -135,15 +128,14 @@ def generate_prompt(cli_file_path=None):
             print(f"❌ Failed to read file: {e}")
             continue
 
-    # 5. Assemble final prompt
+    # 4. Assemble final prompt
     final_prompt = PROMPT_TEMPLATE.format(
         audit_focus=audit_focus,
-        tech_stack=tech_stack,
         additional_info=additional_info,
         trace_data=trace_data
     )
 
-    # 6. Write to file
+    # 5. Write to file
     output_filename = "AI_General_Prompt.md"
     try:
         with open(output_filename, 'w', encoding='utf-8') as f:
