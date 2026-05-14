@@ -18,9 +18,6 @@ You are a senior software architect and code development expert. Based on the ex
 **🎯 Target New Feature**: 
 {target_feature}
 
-**🛠️ Tech Stack Context**: 
-{tech_stack}
-
 **💬 Additional Notes (Optional)**: 
 {additional_info}
 
@@ -115,25 +112,20 @@ def generate_prompt(cli_file_path=None):
     if not target_feature:
         target_feature = "[No specific requirement provided, please let the AI analyze possible extension points in the current scenario]"
 
-    # 2. Collect tech stack
-    tech_stack = input("\n🛠️ 2. Please enter the [Tech Stack Context] (default: Java, multithreaded concurrency):\n> ").strip()
-    if not tech_stack:
-        tech_stack = "Java, multithreaded concurrency (JMM, Happens-Before)"
-
-    # 3. Collect additional notes
-    additional_info = input("\n💬 3. Please enter [Additional Notes] (optional, e.g., must use JDK 8, no external dependencies allowed):\n> ").strip()
+    # 2. Collect additional notes
+    additional_info = input("\n💬 2. Please enter [Additional Notes] (optional, e.g., must use JDK 8, no external dependencies allowed):\n> ").strip()
     if not additional_info:
         additional_info = "No special additional notes. Please follow general best practices."
 
-    # 4. Read trace data file
+    # 3. Read trace data file
     trace_data = ""
     while True:
         if cli_file_path:
             file_path = cli_file_path
-            print(f"\n📁 4. Using Call Chain Data File from arguments: {file_path}")
+            print(f"\n📁 3. Using Call Chain Data File from arguments: {file_path}")
             cli_file_path = None
         else:
-            file_path = input("\n📁 4. Please enter the path to the [Call Chain Data File] (e.g., final-output-calltree.md):\n> ").strip()
+            file_path = input("\n📁 3. Please enter the path to the [Call Chain Data File] (e.g., final-output-calltree.md):\n> ").strip()
             # Remove possible quotes (common when dragging a file into the terminal)
             file_path = file_path.strip('\'"')
         
@@ -154,15 +146,14 @@ def generate_prompt(cli_file_path=None):
             print(f"❌ Failed to read file: {e}")
             continue
 
-    # 5. Assemble the final prompt
+    # 4. Assemble the final prompt
     final_prompt = PROMPT_TEMPLATE.format(
         target_feature=target_feature,
-        tech_stack=tech_stack,
         additional_info=additional_info,
         trace_data=trace_data
     )
 
-    # 6. Write to file
+    # 5. Write to file
     output_filename = "AI_General_Prompt.md"
     try:
         with open(output_filename, 'w', encoding='utf-8') as f:
