@@ -201,6 +201,7 @@ path/to/second/file.ext
 # 2. Interactive Guidance Logic
 # ==========================================
 
+
 def generate_prompt(cli_file_path=None):
     """
     Exposed interface to generate the bug localization prompt.
@@ -229,7 +230,7 @@ def generate_prompt(cli_file_path=None):
 
     # 3. Read trace data file
     trace_data = ""
-    
+
     while True:
         if cli_file_path:
             file_path = cli_file_path
@@ -274,7 +275,7 @@ def generate_prompt(cli_file_path=None):
     )
 
     # 5. Write to file
-    output_filename = "AI_Bug_Localization_Prompt.md"
+    output_filename = "AI_Task_Prompt.md"
     try:
         with open(output_filename, 'w', encoding='utf-8') as f:
             f.write(final_prompt)

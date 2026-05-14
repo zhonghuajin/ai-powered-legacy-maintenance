@@ -175,10 +175,10 @@ def main():
         # Step: Create or select a project
         proj_path, root_path, is_new_project = create_or_select_project(work_dir)
 
-        # NEW: Ensure language is selected before prompting for scripts
+        # Ensure language is selected before prompting for scripts
         target_language = ensure_language_selected(proj_path)
 
-        # NEW: Pre-select the AI Prompt Generator script early to avoid workflow interruption later
+        # Pre-select the AI Prompt Generator script early to avoid workflow interruption later
         selected_script = select_ai_prompt_script(work_dir, target_language)
 
         maybe_pause("Project and Environment Setup", "Setup Shadow Branch")
@@ -235,31 +235,30 @@ def main():
         # Execute the pre-selected script without interrupting the flow
         execute_ai_prompt(work_dir, selected_script)
 
-        if selected_script == "generate_bug_localization_prompt.py":
-            # Execute the original Bug Fix Workflow
-            maybe_pause("Generate AI Prompt", "Ask LLM for Bug Localization")
+        # [Modified] Allow both bug localization and feature dev to use the automated modification flow
+        if selected_script not in ["generate_audit_prompt.py", "generate_audit_prompt_cn.py"]:
+            # Execute the Unified Task Workflow
+            maybe_pause("Generate AI Prompt", "Ask LLM for Task Analysis")
             ask_llm_for_localization(ask_llm_dir)
             
-            maybe_pause("Ask LLM for Bug Localization", "Generate Fix Prompt")
+            maybe_pause("Ask LLM for Task Analysis", "Generate Fix/Dev Prompt")
             generate_fix_prompt(work_dir, proj_path)
             
-            maybe_pause("Generate Fix Prompt", "Ask LLM for Code Fix")
+            maybe_pause("Generate Fix/Dev Prompt", "Ask LLM for Code Modification")
             ask_llm_for_code_fix(ask_llm_dir)
             
-            maybe_pause("Ask LLM for Code Fix", "Apply Fix to Source Code")
+            maybe_pause("Ask LLM for Code Modification", "Apply Changes to Source Code")
             apply_fix(work_dir, proj_path)
             
             print_color(
                 "\n=======================================================", Colors.MAGENTA)
             print_color(
-                "  Workflow execution completed successfully. The bug has been fixed.", Colors.GREEN)
-            print_color(
-                "  You can now re-run the tests to verify the fix.", Colors.GREEN)
+                "  Workflow execution completed successfully. The code has been updated.", Colors.GREEN)
             print_color(
                 "=======================================================", Colors.MAGENTA)
                 
         elif selected_script:
-            # Execute the General LLM Task Workflow
+            # Execute the General LLM Task Workflow (Fallback for audit, etc.)
             maybe_pause("Generate AI Prompt", "Execute General LLM Task")
             print_color(f"\n>>> Executing general LLM task for {selected_script}...", Colors.CYAN)
             
@@ -272,9 +271,8 @@ def main():
                 original_cwd = os.getcwd()
                 os.chdir(ask_llm_dir)
                 
-                # Assuming the generic prompt is saved as AI_General_Prompt.md
-                # You may need to adjust this filename based on your actual script output
-                prompt_file_path = os.path.join(original_cwd, "AI_General_Prompt.md") 
+                # [Modified] Use the unified AI_Task_Prompt.md
+                prompt_file_path = os.path.join(original_cwd, "AI_Task_Prompt.md") 
                 output_file_path = os.path.join(original_cwd, "output.md")
                 
                 if not os.path.exists(prompt_file_path):

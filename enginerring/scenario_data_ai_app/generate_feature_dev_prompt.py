@@ -74,7 +74,7 @@ Please strictly follow the template below when providing the guidance plan:
 - **Reasoning**: [explain why this location is chosen]
 
 ## 3. Code Implementation (How to modify)
-[Provide the complete modified code using Markdown code blocks, and add prominent comments such as `// ✨ [Added]` or `// 🛠️ [Modified]` at newly added/changed parts]
+[Provide the complete modified code using Markdown code blocks, and add prominent comments such as `// [Added]` or `// [Modified]` at newly added/changed parts]
 
 ## 4. Potential Risks and Notes
 [List side effects, concurrency hazards, or performance issues to watch out for during development]
@@ -154,7 +154,8 @@ def generate_prompt(cli_file_path=None):
     )
 
     # 5. Write to file
-    output_filename = "AI_General_Prompt.md"
+    # [Modified] Unified output filename for downstream processing
+    output_filename = "AI_Task_Prompt.md"
     try:
         with open(output_filename, 'w', encoding='utf-8') as f:
             f.write(final_prompt)

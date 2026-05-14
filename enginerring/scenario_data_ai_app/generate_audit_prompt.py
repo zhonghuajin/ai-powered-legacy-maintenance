@@ -82,6 +82,8 @@ Please strictly follow the template below to output your code audit report:
 # ==========================================
 # 2. Interactive Guidance Logic
 # ==========================================
+
+
 def generate_prompt(cli_file_path=None):
     print("="*50)
     print("🛡️  AI Zero-Noise Code Audit Prompt Generator")
@@ -89,13 +91,15 @@ def generate_prompt(cli_file_path=None):
     print("Please enter audit task information as prompted (press Enter to skip optional fields and use default values)\n")
 
     # 1. Collect audit focus
-    audit_focus = input("🎯 1. Please enter [Key Audit Focus] (e.g., Focus on identifying data races, deadlocks, or cross-thread taint propagation):\n> ").strip()
+    audit_focus = input(
+        "🎯 1. Please enter [Key Audit Focus] (e.g., Focus on identifying data races, deadlocks, or cross-thread taint propagation):\n> ").strip()
     if not audit_focus:
         # Translated "Comprehensive排查" to "Comprehensive investigation of"
         audit_focus = "Comprehensive investigation of concurrency security vulnerabilities (Data Races), memory visibility issues (missing Happens-Before), and potential business logic defects."
 
     # 2. Collect additional notes
-    additional_info = input("\n💬 2. Please enter [Additional Notes] (optional, e.g., Only JDK native libraries can be used for fixes, original method signatures cannot be changed):\n> ").strip()
+    additional_info = input(
+        "\n💬 2. Please enter [Additional Notes] (optional, e.g., Only JDK native libraries can be used for fixes, original method signatures cannot be changed):\n> ").strip()
     if not additional_info:
         additional_info = "No special additional restrictions. Please follow best practices for Java concurrency programming (e.g., prioritize using tools from the java.util.concurrent package)."
 
@@ -104,21 +108,24 @@ def generate_prompt(cli_file_path=None):
     while True:
         if cli_file_path:
             file_path = cli_file_path
-            print(f"\n📁 3. Using Execution Trace Data File from arguments: {file_path}")
+            print(
+                f"\n📁 3. Using Execution Trace Data File from arguments: {file_path}")
             cli_file_path = None  # Reset in case of failure
         else:
-            file_path = input("\n📁 3. Please enter the path to the [Execution Trace Data File] (e.g., final-output-combined.md):\n> ").strip()
+            file_path = input(
+                "\n📁 3. Please enter the path to the [Execution Trace Data File] (e.g., final-output-combined.md):\n> ").strip()
             # Remove possible quotes (common when dragging files from terminal)
             file_path = file_path.strip('\'"')
-        
+
         if not file_path:
             print("❌ File path cannot be empty, please re-enter!")
             continue
-            
+
         if not os.path.exists(file_path):
-            print(f"❌ File not found: {file_path}. Please check if the path is correct!")
+            print(
+                f"❌ File not found: {file_path}. Please check if the path is correct!")
             continue
-            
+
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 trace_data = f.read()
@@ -136,20 +143,23 @@ def generate_prompt(cli_file_path=None):
     )
 
     # 5. Write to file
-    output_filename = "AI_General_Prompt.md"
+    output_filename = "AI_Task_Prompt.md"
     try:
         with open(output_filename, 'w', encoding='utf-8') as f:
             f.write(final_prompt)
         print("\n" + "="*50)
-        print(f"🎉 Success! The complete code audit prompt has been generated and saved in the current directory: {output_filename}")
+        print(
+            f"🎉 Success! The complete code audit prompt has been generated and saved in the current directory: {output_filename}")
         print("👉 You can now open this file directly, copy all content and send it to a large language model (e.g., Claude 3.5 Sonnet / GPT-4o) for in-depth audit!")
         print("="*50)
     except Exception as e:
         print(f"\n❌ Failed to save file: {e}")
 
+
 def main():
     cli_file_path = sys.argv[1] if len(sys.argv) > 1 else None
     generate_prompt(cli_file_path)
+
 
 if __name__ == "__main__":
     try:
