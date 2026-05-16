@@ -106,6 +106,7 @@ path/to/second/file.ext
 # ==========================================
 
 def prepare_prompt():
+    print("#AI will modify codes")
     """
     Phase 1: Interactive prompt preparation.
     Collects user inputs before long-running tasks.
