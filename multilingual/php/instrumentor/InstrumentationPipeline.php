@@ -19,9 +19,6 @@ class BlockInstrumentorVisitor extends NodeVisitorAbstract {
         $this->filePath = $filePath;
     }
 
-    /**
-     * Handle file root scope (top-level statements without namespace)
-     */
     public function beforeTraverse(array $nodes): ?array {
         $hasNamespace = false;
         foreach ($nodes as $node) {
@@ -44,8 +41,7 @@ class BlockInstrumentorVisitor extends NodeVisitorAbstract {
     }
 
     public function leaveNode(Node $node) {
-        // 1. Only instrument executable blocks
-        $isExecutableBlock = 
+        $isExecutableBlock =
             $node instanceof Node\Stmt\Function_ ||
             $node instanceof Node\Stmt\ClassMethod ||
             $node instanceof Node\Expr\Closure ||
@@ -56,16 +52,15 @@ class BlockInstrumentorVisitor extends NodeVisitorAbstract {
             $node instanceof Node\Stmt\Foreach_ ||
             $node instanceof Node\Stmt\While_ ||
             $node instanceof Node\Stmt\Do_ ||
-            $node instanceof Node\Stmt\TryCatch || 
+            $node instanceof Node\Stmt\TryCatch ||
             $node instanceof Node\Stmt\Catch_ ||
             $node instanceof Node\Stmt\Finally_ ||
-            $node instanceof Node\Stmt\Case_;      
+            $node instanceof Node\Stmt\Case_;
 
         if (!$isExecutableBlock) {
             return null;
         }
 
-        // 2. Ensure the node has stmts and is an array
         if (isset($node->stmts) && is_array($node->stmts)) {
             $line = $node->getStartLine();
             if ($line > 0) {
@@ -73,7 +68,7 @@ class BlockInstrumentorVisitor extends NodeVisitorAbstract {
                 array_unshift($node->stmts, $nop);
             }
         }
-        
+
         return null;
     }
 
@@ -92,13 +87,25 @@ class InstrumentationPipeline {
     private $mappingFile;
     private $isIncremental;
 
+    /** Match original comments injected during instrumentation, e.g. // /abs/path/foo.php:123 */
+    private const ORIGINAL_COMMENT_PATTERN = '/^(\s*)\/\/\s*(.+\.php:\d+)\s*$/m';
+    /** Match already-mapped comments, e.g. // INST#42 */
+    private const MAPPED_COMMENT_PATTERN   = '/^(\s*)\/\/\s*INST#(\d+)\s*$/m';
+
     public function __construct(bool $isIncremental, string $mappingFile) {
         $this->isIncremental = $isIncremental;
-        $this->mappingFile = $mappingFile;
+        $this->mappingFile   = $mappingFile;
     }
 
     public function run(array $targets) {
-        echo "=== PHP Instrumentation Pipeline ===\n";
+        // Fall back to full mode if mapping file is missing in incremental mode
+        if ($this->isIncremental && !file_exists($this->mappingFile)) {
+            echo "Warning: mapping file not found, falling back to full mode.\n";
+            $this->isIncremental = false;
+        }
+
+        $mode = $this->isIncremental ? "Incremental" : "Full";
+        echo "=== PHP Instrumentation Pipeline ({$mode} mode) ===\n";
 
         $files = $this->collectPhpFiles($targets);
         if (empty($files)) {
@@ -109,7 +116,7 @@ class InstrumentationPipeline {
         echo ">> Step: Code Instrumentation\n";
         $this->instrumentFiles($files);
 
-        // Step 2: Encoding (generate ID mapping)
+        // Step 2: Encoding (generate / update ID mapping)
         echo ">> Step: Encoding Mapping\n";
         $this->encodeMapping($files);
 
@@ -121,7 +128,7 @@ class InstrumentationPipeline {
     }
 
     private function instrumentFiles(array $files) {
-        $parser = (new ParserFactory)->createForNewestSupportedVersion();
+        $parser  = (new ParserFactory)->createForNewestSupportedVersion();
         $printer = new PrettyPrinter\Standard();
 
         foreach ($files as $file) {
@@ -130,10 +137,10 @@ class InstrumentationPipeline {
                 $ast = $parser->parse($code);
                 $traverser = new NodeTraverser();
                 $traverser->addVisitor(new BlockInstrumentorVisitor($file));
-                
+
                 $modifiedAst = $traverser->traverse($ast);
-                $newCode = $printer->prettyPrintFile($modifiedAst);
-                
+                $newCode     = $printer->prettyPrintFile($modifiedAst);
+
                 file_put_contents($file, $newCode);
             } catch (Error $error) {
                 echo "Parse error in {$file}: {$error->getMessage()}\n";
@@ -141,68 +148,197 @@ class InstrumentationPipeline {
         }
     }
 
+    /**
+     * Build (or update) the comment -> ID mapping.
+     *
+     * - Full mode: scan all target files, assign IDs from 1.
+     * - Incremental mode: load existing mapping, drop entries belonging to
+     *   the target files (which are being re-instrumented), preserve all
+     *   non-target entries with their original IDs, then allocate new IDs
+     *   for the freshly scanned comments starting from max(preservedIds)+1.
+     */
     private function encodeMapping(array $files) {
         $idToComment = [];
         $commentToId = [];
-        $nextId = 1;
 
-        $pattern = '/^(\s*)\/\/\s*(.+\.php:\d+)\s*$/m';
+        // ---- Step 1. Preserve non-target entries when incremental ----
+        if ($this->isIncremental && file_exists($this->mappingFile)) {
+            $existingMap = $this->loadRawMapping($this->mappingFile);
 
+            // Build a set of target file absolute paths for fast lookup
+            $targetFilePaths = [];
+            foreach ($files as $file) {
+                $targetFilePaths[$file] = true;
+            }
+
+            foreach ($existingMap as $id => $comment) {
+                $filePath = $this->extractFilePathFromComment($comment);
+                if ($filePath !== null && isset($targetFilePaths[$filePath])) {
+                    // Belongs to a re-instrumented target file: discard
+                    continue;
+                }
+                // Preserve this entry with its original ID
+                $idToComment[$id]      = $comment;
+                $commentToId[$comment] = $id;
+            }
+        }
+
+        // ---- Step 2. Scan original comments from target files ----
+        $newComments = [];
+        $seen        = [];
         foreach ($files as $file) {
             $content = file_get_contents($file);
-            if (preg_match_all($pattern, $content, $matches, PREG_SET_ORDER)) {
+            if (preg_match_all(self::ORIGINAL_COMMENT_PATTERN, $content, $matches, PREG_SET_ORDER)) {
                 foreach ($matches as $match) {
-                    $originalComment = $match[2];
-                    if (!isset($commentToId[$originalComment])) {
-                        $commentToId[$originalComment] = $nextId;
-                        $idToComment[$nextId] = $originalComment;
-                        $nextId++;
+                    $comment = $match[2];
+                    if (!isset($seen[$comment])) {
+                        $seen[$comment]  = true;
+                        $newComments[]   = $comment;
                     }
                 }
             }
         }
 
-        // Replace original comments with INST#ID in source
-        foreach ($files as $file) {
-            $content = file_get_contents($file);
-            $newContent = preg_replace_callback($pattern, function($matches) use ($commentToId) {
-                $indent = $matches[1];
-                $originalComment = $matches[2];
-                $id = $commentToId[$originalComment] ?? null;
-                if ($id) {
-                    return $indent . "// INST#" . $id;
-                }
-                return $matches[0];
-            }, $content);
-            file_put_contents($file, $newContent);
+        // Sort newly scanned comments by (path, line) for stable IDs
+        $this->sortCommentsByPathAndLine($newComments);
+
+        // ---- Step 3. Allocate IDs for new comments ----
+        $nextId = empty($idToComment) ? 1 : (max(array_keys($idToComment)) + 1);
+        foreach ($newComments as $comment) {
+            if (!isset($commentToId[$comment])) {
+                $idToComment[$nextId]  = $comment;
+                $commentToId[$comment] = $nextId;
+                $nextId++;
+            }
         }
 
-        // Save mapping file
-        $mappingContent = "# Instrumentation Mapping\n";
-        foreach ($idToComment as $id => $comment) {
-            $mappingContent .= "{$id} = {$comment}\n";
+        if (empty($idToComment)) {
+            echo "   No instrumentation points found.\n";
+            return;
         }
-        file_put_contents($this->mappingFile, $mappingContent);
+
+        // ---- Step 4. Replace // path:line with // INST#ID in target sources ----
+        foreach ($files as $file) {
+            $content = file_get_contents($file);
+            $newContent = preg_replace_callback(
+                self::ORIGINAL_COMMENT_PATTERN,
+                function ($matches) use ($commentToId) {
+                    $indent          = $matches[1];
+                    $originalComment = $matches[2];
+                    $id              = $commentToId[$originalComment] ?? null;
+                    if ($id !== null) {
+                        return $indent . "// INST#" . $id;
+                    }
+                    return $matches[0];
+                },
+                $content
+            );
+            if ($newContent !== $content) {
+                file_put_contents($file, $newContent);
+            }
+        }
+
+        // ---- Step 5. Persist mapping file (sorted by ID) ----
+        ksort($idToComment);
+        $this->writeMappingFile($idToComment);
         echo "   Mapping saved to {$this->mappingFile} (Total: " . count($idToComment) . ")\n";
     }
 
+    private function writeMappingFile(array $idToComment): void {
+        $lines   = [];
+        $lines[] = "# ================================================";
+        $lines[] = "# Instrumentation Comment -> Integer ID Mapping Table";
+        $lines[] = "# Generation Time: " . date('Y-m-d H:i:s');
+        $lines[] = "# Total Entries: " . count($idToComment);
+        $lines[] = "# ================================================";
+        $lines[] = "# Format: Integer ID = File Absolute Path:Code Block Start Line Number";
+        $lines[] = "# Note: This mapping needs to be regenerated after source code modifications and re-instrumentation.";
+        $lines[] = "";
+
+        foreach ($idToComment as $id => $comment) {
+            $lines[] = "{$id} = {$comment}";
+        }
+
+        $dir = dirname($this->mappingFile);
+        if ($dir !== '' && !is_dir($dir)) {
+            mkdir($dir, 0777, true);
+        }
+        file_put_contents($this->mappingFile, implode("\n", $lines) . "\n");
+    }
+
+    /**
+     * Read an existing mapping file. Lines starting with '#' or empty lines
+     * are ignored. Each entry has the form "<id> = <comment>".
+     */
+    private function loadRawMapping(string $mappingFile): array {
+        $result = [];
+        $lines  = @file($mappingFile, FILE_IGNORE_NEW_LINES);
+        if ($lines === false) {
+            return $result;
+        }
+
+        foreach ($lines as $line) {
+            $trimmed = trim($line);
+            if ($trimmed === '' || $trimmed[0] === '#') {
+                continue;
+            }
+            if (preg_match('/^(\d+)\s*=\s*(.+)$/', $trimmed, $m)) {
+                $result[(int) $m[1]] = trim($m[2]);
+            }
+        }
+        return $result;
+    }
+
+    /**
+     * Extract the file path part from a comment like "/abs/path/foo.php:123".
+     * Returns null if the suffix after the last colon is not numeric.
+     */
+    private function extractFilePathFromComment(string $comment): ?string {
+        $lastColon = strrpos($comment, ':');
+        if ($lastColon === false || $lastColon === 0) {
+            return null;
+        }
+        $afterColon = substr($comment, $lastColon + 1);
+        if ($afterColon === '' || !ctype_digit($afterColon)) {
+            return null;
+        }
+        return substr($comment, 0, $lastColon);
+    }
+
+    private function sortCommentsByPathAndLine(array &$comments): void {
+        usort($comments, function ($a, $b) {
+            $colA = strrpos($a, ':');
+            $colB = strrpos($b, ':');
+            $pathA = substr($a, 0, $colA);
+            $pathB = substr($b, 0, $colB);
+            $cmp = strcmp($pathA, $pathB);
+            if ($cmp !== 0) return $cmp;
+            $lineA = (int) substr($a, $colA + 1);
+            $lineB = (int) substr($b, $colB + 1);
+            return $lineA <=> $lineB;
+        });
+    }
+
     private function activate(array $files) {
-        $pattern = '/^(\s*)\/\/\s*INST#(\d+)\s*$/m';
         $callTemplate = "%s\\App\\Instrumentation\\InstrumentLog::staining(%d);";
 
         $totalActivated = 0;
         foreach ($files as $file) {
-            $content = file_get_contents($file);
+            $content            = file_get_contents($file);
             $fileActivatedCount = 0;
-            
-            $newContent = preg_replace_callback($pattern, function($matches) use ($callTemplate, &$totalActivated, &$fileActivatedCount) {
-                $indent = $matches[1];
-                $id = $matches[2];
-                $totalActivated++;
-                $fileActivatedCount++;
-                return sprintf($callTemplate, $indent, $id);
-            }, $content);
-            
+
+            $newContent = preg_replace_callback(
+                self::MAPPED_COMMENT_PATTERN,
+                function ($matches) use ($callTemplate, &$totalActivated, &$fileActivatedCount) {
+                    $indent = $matches[1];
+                    $id     = $matches[2];
+                    $totalActivated++;
+                    $fileActivatedCount++;
+                    return sprintf($callTemplate, $indent, $id);
+                },
+                $content
+            );
+
             if ($fileActivatedCount > 0) {
                 file_put_contents($file, $newContent);
             }
@@ -213,11 +349,13 @@ class InstrumentationPipeline {
     private function collectPhpFiles(array $targets): array {
         $files = [];
         foreach ($targets as $target) {
-            $target = realpath($target);
-            if (is_file($target) && pathinfo($target, PATHINFO_EXTENSION) === 'php') {
-                $files[] = $target;
-            } elseif (is_dir($target)) {
-                $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($target));
+            $real = realpath($target);
+            if ($real === false) continue;
+
+            if (is_file($real) && pathinfo($real, PATHINFO_EXTENSION) === 'php') {
+                $files[] = $real;
+            } elseif (is_dir($real)) {
+                $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($real));
                 foreach ($iterator as $fileInfo) {
                     if ($fileInfo->isFile() && $fileInfo->getExtension() === 'php') {
                         $files[] = $fileInfo->getRealPath();
@@ -225,17 +363,21 @@ class InstrumentationPipeline {
                 }
             }
         }
-        return array_unique($files);
+        return array_values(array_unique($files));
     }
 }
 
 // CLI entry point
 if (php_sapi_name() === 'cli') {
-    $options = getopt("m:", ["incremental"]);
+    $options     = getopt("", ["incremental", "mapping:"]);
     $incremental = isset($options['incremental']);
-    $mappingFile = $options['m'] ?? 'comment-mapping.txt';
+    $mappingFile = $options['mapping'] ?? 'comment-mapping.txt';
 
-    $targets = [];
+    if (!preg_match('#^(/|[A-Za-z]:[\\\\/])#', $mappingFile)) {
+        $mappingFile = getcwd() . DIRECTORY_SEPARATOR . $mappingFile;
+    }
+
+    $targets  = [];
     $skipNext = false;
     for ($i = 1; $i < count($argv); $i++) {
         if ($skipNext) {
@@ -243,18 +385,23 @@ if (php_sapi_name() === 'cli') {
             continue;
         }
         $arg = $argv[$i];
+
         if ($arg === '--incremental') {
             continue;
         }
-        if ($arg === '-m') {
+        if ($arg === '--mapping') {
             $skipNext = true;
             continue;
         }
+        if (strpos($arg, '--mapping=') === 0) {
+            continue;
+        }
+
         $targets[] = $arg;
     }
 
     if (empty($targets)) {
-        die("Usage: php InstrumentorPipeline.php [--incremental] [-m mappingFile] <target1> [target2 ...]\n");
+        die("Usage: php InstrumentationPipeline.php [--incremental] [--mapping mappingFile] <target1> [target2 ...]\n");
     }
 
     $pipeline = new InstrumentationPipeline($incremental, $mappingFile);
