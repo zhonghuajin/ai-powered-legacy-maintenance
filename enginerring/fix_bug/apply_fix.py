@@ -143,13 +143,19 @@ def run_apply_fix(fixed_code_path=None, base_dirs=None):
         abs_path = resolve_file_path(rel_path, base_dirs)
         
         if not abs_path:
-            print(f"   Failed: Could not find the file in local directories.")
-            continue
+            if base_dirs and len(base_dirs) > 0:
+                abs_path = os.path.normpath(os.path.join(base_dirs[0], rel_path))
+                os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+                print(f"   Info: File not found locally. Assuming it is a NEW file inferred by AI.")
+                print(f"   Info: Creating directories for -> {abs_path}")
+            else:
+                print(f"   Failed: Could not find the file and no base directories available.")
+                continue
             
         try:
             with open(abs_path, 'w', encoding='utf-8') as f:
                 f.write(new_content)
-            print(f"   Success: Overwrote file -> {abs_path}")
+            print(f"   Success: Overwrote/Created file -> {abs_path}")
             success_count += 1
         except Exception as e:
             print(f"   Failed to write file {abs_path}: {e}")
