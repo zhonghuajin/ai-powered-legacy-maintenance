@@ -225,70 +225,9 @@ def _manage_target_folders(proj_path):
 
 def _prompt_target_input(target_file):
     """
-    Let the user choose between interactive input or opening an editor,
-    then collect and return a list of paths.
+    Directly open an editor to collect and return a list of paths.
     """
-    print_color(
-        "\nHow would you like to specify target folders/files?", Colors.CYAN)
-    print("  1. Type or drag-and-drop paths in terminal")
-    print("  2. Open in a text editor (recommended)")
-    method = input("Choose method [2]: ").strip() or "2"
-
-    if method == "1":
-        return _collect_paths_multiline()
-    else:
-        return _collect_paths_editor(target_file)
-
-
-def _collect_paths_multiline():
-    """
-    Collect file/folder paths interactively, one per line.
-    The user can drag files from a file manager into the terminal.
-    An empty line signals the end of input.
-    Returns a list of validated absolute paths.
-    """
-    print_color("\nEnter target file/folder paths, one per line.", Colors.CYAN)
-    print_color(
-        "  Tip: You can drag files/folders from your file manager into the terminal.", Colors.YELLOW)
-    print_color(
-        "  Press Enter on an empty line to finish. Type 'q' to cancel.\n", Colors.YELLOW)
-
-    paths = []
-    while True:
-        try:
-            line = input(f"  [{len(paths) + 1}] > ").strip()
-        except KeyboardInterrupt:
-            print("\nInput cancelled.")
-            return paths
-
-        # Strip surrounding quotes that drag-and-drop may produce
-        line = line.strip("'\"")
-
-        if not line:
-            if paths:
-                break
-            print_color(
-                "  Please enter at least one path (or 'q' to cancel).", Colors.RED)
-            continue
-
-        if line.lower() == "q":
-            return paths
-
-        if not os.path.exists(line):
-            print_color(f"  WARNING: Path does not exist: {line}", Colors.RED)
-            confirm = input("  Add it anyway? [y/N]: ").strip().lower()
-            if confirm not in ("y", "yes"):
-                continue
-
-        abs_path = os.path.abspath(line)
-        if abs_path in paths:
-            print_color(f"  Duplicate skipped: {abs_path}", Colors.YELLOW)
-            continue
-
-        paths.append(abs_path)
-        print_color(f"  Added: {abs_path}", Colors.GREEN)
-
-    return paths
+    return _collect_paths_editor(target_file)
 
 
 def _collect_paths_editor(target_file):

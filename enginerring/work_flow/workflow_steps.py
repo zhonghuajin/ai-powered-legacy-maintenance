@@ -19,6 +19,22 @@ from enginerring.dependency_handler.prompt_organizer import generate_prompt
 from enginerring.dependency_handler.dependency_injector import run_injection
 
 
+def get_single_char():
+    if os.name == 'nt':
+        import msvcrt
+        return msvcrt.getch().decode('utf-8', errors='ignore')
+    else:
+        import tty
+        import termios
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(sys.stdin.fileno())
+            ch = sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        return ch
+    
 def ensure_language_selected(proj_path):
     """
     Ensure the target programming language is selected and saved in config.json.
@@ -40,9 +56,6 @@ def ensure_language_selected(proj_path):
         target_language = config.get('language')
         
         if not target_language:
-            # =========================================================
-            # [新增] 智能语言检测逻辑介入
-            # =========================================================
             detect_dir = config.get('original_git_root', proj_path)
             print_color(f"\n>>> Auto-detecting project language in {detect_dir}...", Colors.CYAN)
             
@@ -50,7 +63,6 @@ def ensure_language_selected(proj_path):
             
             if len(detected_langs) == 1:
                 auto_lang = detected_langs.pop().lower()
-                # 兼容处理：例如把 'javascript/node' 映射为 'javascript'
                 if '/' in auto_lang:
                     auto_lang = auto_lang.split('/')[0]
                     
@@ -68,11 +80,7 @@ def ensure_language_selected(proj_path):
                 print_color(f"[Auto-Detect] Multiple languages detected: {', '.join(detected_langs)}. Falling back to manual selection.", Colors.YELLOW)
             else:
                 print_color("[Auto-Detect] Could not confidently detect language. Falling back to manual selection.", Colors.YELLOW)
-            # =========================================================
 
-            # =========================================================
-            # 降级逻辑：手动选择 (保持原有逻辑作为兜底)
-            # =========================================================
             print_color("\n========================================", Colors.CYAN)
             print_color("       Select Programming Language      ", Colors.CYAN)
             print_color("========================================", Colors.CYAN)
@@ -600,10 +608,27 @@ def select_ai_prompt_script(work_dir, target_language=None):
     print_color("========================================", Colors.CYAN)
 
     choice = ""
+    prompt_msg = f"Enter your choice (1-{len(scripts)}): "
+    
     while True:
-        choice = input(f"Enter your choice (1-{len(scripts)}): ").strip()
+        if len(scripts) < 10:
+            print(prompt_msg, end='', flush=True)
+            choice = get_single_char()
+            
+            if choice == '\x03':
+                print("\n")
+                raise KeyboardInterrupt
+                
+            print(choice)
+            choice = choice.strip()
+        else:
+            choice = input(prompt_msg).strip()
+
         if choice.isdigit() and 1 <= int(choice) <= len(scripts):
             break
+        
+        if len(scripts) < 10:
+            print() 
         print_color("[!] Invalid choice, please try again.", Colors.RED)
 
     selected_script = scripts[int(choice) - 1]
