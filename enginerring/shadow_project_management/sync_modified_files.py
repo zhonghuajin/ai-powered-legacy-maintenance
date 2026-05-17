@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import subprocess
 import shutil
@@ -10,7 +11,8 @@ from .run_instrumentation_flow import run_instrumentation_flow
 def run_cmd(cmd, check=True):
     """Run shell command and return output"""
     print(f"Executing command: {' '.join(cmd)}")
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    result = subprocess.run(cmd, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, text=True)
     if check and result.returncode != 0:
         print(f"Command failed: {result.stderr}")
         result.check_returncode()
@@ -24,7 +26,8 @@ def _finalize_incremental_run(proj_path):
     target-folders.txt from the 'target-folders' field in config.json.
     """
     target_file = os.path.join(proj_path, "target-folders.txt")
-    history_file = os.path.join(proj_path, "incremental-instrument-history.log")
+    history_file = os.path.join(
+        proj_path, "incremental-instrument-history.log")
     config_file = os.path.join(proj_path, "config.json")
 
     # Step 1: Append current target list to history log
@@ -35,9 +38,11 @@ def _finalize_incremental_run(proj_path):
             timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             with open(history_file, 'a', encoding='utf-8') as f:
                 f.write(f"\n{'='*40}\n")
-                f.write(f"{timestamp} Incremental instrumentation target files:\n")
+                f.write(
+                    f"{timestamp} Incremental instrumentation target files:\n")
                 f.write(current_content + '\n')
-            print(f"[Post-process] Appended target file list to {history_file}")
+            print(
+                f"[Post-process] Appended target file list to {history_file}")
     else:
         print("[Post-process] target-folders.txt not found, skip history append.")
 
@@ -52,9 +57,51 @@ def _finalize_incremental_run(proj_path):
                     f.write(folder + '\n')
             print(f"[Post-process] Restored target-folders.txt from config.json")
         else:
-            print("[Post-process] Warning: 'original-target-folders' in config.json is not a list, skip restore.")
+            print(
+                "[Post-process] Warning: 'original-target-folders' in config.json is not a list, skip restore.")
     else:
-        print("[Post-process] Warning: config.json not found, cannot restore target-folders.txt.")
+        print(
+            "[Post-process] Warning: config.json not found, cannot restore target-folders.txt.")
+
+
+def get_llm_commit_message(proj_path, status_output, work_dir):
+    """Generate a commit message using LLM based on the previous prompt context and git status."""
+    default_msg = 'Auto-commit before incremental instrumentation'
+    if not proj_path:
+        return default_msg
+
+    mapping_file = os.path.join(work_dir, 'last_prompt_context.json')
+    if not os.path.exists(mapping_file):
+        return default_msg
+
+    try:
+        with open(mapping_file, 'r', encoding='utf-8') as f:
+            mapping_data = json.load(f)
+
+        requirement = mapping_data.get("requirement", "")
+
+        llm_prompt = f"""
+        You are a senior developer. Please generate a concise and professional Git Commit Comment based on the following information (return only plain text, no quotes or extra explanations):
+        1. Previous modification requirement: {requirement}
+        2. Current Git status (modified files):
+        {status_output}
+        """
+
+        ask_llm_dir = os.path.join(work_dir, 'enginerring', 'ask_llm')
+        if ask_llm_dir not in sys.path:
+            sys.path.insert(0, ask_llm_dir)
+        from llm_chat import LLMClient
+
+        provider = os.environ.get('AUTO_SELECTED_LLM_PROVIDER', 'deepseek')
+        client = LLMClient(provider=provider)
+        comment = client.chat(llm_prompt, stream=False).strip()
+
+        if comment:
+            return comment.strip('"').strip("'")
+        return default_msg
+    except Exception as e:
+        print(f"[WARN] Failed to generate AI commit message: {e}")
+        return default_msg
 
 
 def sync_files(original_cwd, proj_path=None):
@@ -98,7 +145,8 @@ def sync_files(original_cwd, proj_path=None):
     # 1. Check if current branch is source_branch
     current_branch = run_cmd(['git', 'rev-parse', '--abbrev-ref', 'HEAD'])
     if current_branch != source_branch:
-        print(f"Error: Current branch is '{current_branch}', but expected '{source_branch}'. Incremental sync aborted.")
+        print(
+            f"Error: Current branch is '{current_branch}', but expected '{source_branch}'. Incremental sync aborted.")
         return False
 
     target_branch = "shadow-project-for-instrumention"
@@ -106,20 +154,29 @@ def sync_files(original_cwd, proj_path=None):
     # 2. Check for uncommitted changes and commit if any
     status_output = run_cmd(['git', 'status', '--porcelain'])
     has_uncommitted_changes = bool(status_output.strip())
-    
+
     if has_uncommitted_changes:
         print("\n" + "!" * 70)
-        print("\033[1;31m" + "[ WARNING: UNCOMMITTED CHANGES DETECTED ]".center(64) + "\033[0m")
-        print(f"\033[1;33mUncommitted changes found in branch '{source_branch}'. Executing 'git commit'...\033[0m")
+        print(
+            "\033[1;31m" + "[ WARNING: UNCOMMITTED CHANGES DETECTED ]".center(64) + "\033[0m")
+        print(
+            f"\033[1;33mUncommitted changes found in branch '{source_branch}'. Executing 'git commit'...\033[0m")
         run_cmd(['git', 'add', '.'])
-        run_cmd(['git', 'commit', '-m', 'Auto-commit before incremental instrumentation'])
-        print("\033[1;31m" + f"YOUR CHANGES IN '{source_branch}' HAVE BEEN COMMITTED!".center(64) + "\033[0m")
+
+        # Use AI to generate commit message
+        ai_commit_msg = get_llm_commit_message(
+            proj_path, status_output, original_cwd)
+        run_cmd(['git', 'commit', '-m', ai_commit_msg])
+
+        print(
+            "\033[1;31m" + f"YOUR CHANGES IN '{source_branch}' HAVE BEEN COMMITTED!".center(64) + "\033[0m")
         print("!" * 70 + "\n")
 
     # 3. Get truly user-modified files
     print("Calculating merge base to find actual modified files...")
     merge_base = run_cmd(['git', 'merge-base', 'HEAD', target_branch])
-    diff_output = run_cmd(['git', 'diff', '--name-only', f'{merge_base}..HEAD'])
+    diff_output = run_cmd(
+        ['git', 'diff', '--name-only', f'{merge_base}..HEAD'])
 
     modified_files = set()
     for line in diff_output.splitlines():
@@ -174,7 +231,8 @@ def sync_files(original_cwd, proj_path=None):
     with open(target_folders_file, 'w', encoding='utf-8') as f:
         for path in synced_absolute_paths:
             f.write(path + '\n')
-    print(f"Saved {len(synced_absolute_paths)} absolute path(s) to {target_folders_file}.")
+    print(
+        f"Saved {len(synced_absolute_paths)} absolute path(s) to {target_folders_file}.")
 
     # Switch back to original working directory to locate instrumentation jar
     os.chdir(original_cwd)
@@ -182,10 +240,12 @@ def sync_files(original_cwd, proj_path=None):
 
     # 8. Execute incremental instrumentation
     print("Running instrumentation flow for synchronized files...")
-    
-    mapping_file = os.path.join(proj_path, "comment-mapping.txt") if proj_path else None
+
+    mapping_file = os.path.join(
+        proj_path, "comment-mapping.txt") if proj_path else None
     if mapping_file and not os.path.isfile(mapping_file):
-        print(f"Warning: Mapping file not found at {mapping_file}, continuing without it.")
+        print(
+            f"Warning: Mapping file not found at {mapping_file}, continuing without it.")
         mapping_file = None
 
     # Pass the language parameter to the instrumentation flow
@@ -203,14 +263,15 @@ def sync_files(original_cwd, proj_path=None):
         print(f"Soft resetting shadow branch to match '{source_branch}'...")
         run_cmd(['git', 'reset', '--soft', source_branch])
         run_cmd(['git', 'commit', '-m', 'Auto-commit: Code instrumentation'])
-        
+
         # Post-processing after successful incremental instrumentation
         if proj_path:
             _finalize_incremental_run(proj_path)
 
         print("\n" + "*" * 70)
         print("\033[1;32m" + "[ SUCCESS ]".center(64) + "\033[0m")
-        print(f"\033[1;32mShadow branch is now exactly 1 commit ahead of '{source_branch}'.\033[0m")
+        print(
+            f"\033[1;32mShadow branch is now exactly 1 commit ahead of '{source_branch}'.\033[0m")
         print("*" * 70 + "\n")
         print("All operations completed successfully!")
     else:

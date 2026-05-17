@@ -20,7 +20,7 @@ You are a senior software architect and debugging expert. Based on the provided 
 ## 📋 Bug Symptom & Context
 
 **🐞 Observable Symptom / Anomaly**: 
-{bug_symptom}
+{requirement}
 
 **💬 Additional Notes (Suspected variables, specific thread IDs, etc.)**: 
 {additional_info}
@@ -119,7 +119,7 @@ You are a senior software architect and debugging expert. Based on the provided 
 ## 📋 Bug Symptom & Context
 
 **🐞 Observable Symptom / Anomaly**: 
-{bug_symptom}
+{requirement}
 
 **💬 Additional Notes**: 
 {additional_info}
@@ -220,10 +220,10 @@ def prepare_prompt():
     print("✅ [Auto-Config] Analysis Mode automatically set to: [1] Call-Tree First (concurrency sections omitted).\n")
 
     # 1. Collect bug symptom
-    bug_symptom = input(
+    requirement = input(
         "🐞 1. Please describe the [Observable Symptom] (e.g., The event-driven aggregation test incorrectly outputs an array of zeros instead of the expected computed values because the program retrieves the results before the background tasks have finished processing them.):\n> ").strip()
-    if not bug_symptom:
-        bug_symptom = "[No specific symptom provided. Please analyze the trace data for obvious logic errors or exceptions.]"
+    if not requirement:
+        requirement = "[No specific symptom provided. Please analyze the trace data for obvious logic errors or exceptions.]"
 
     # 2. Collect additional notes via Editor
     additional_info = get_multiline_input_via_editor(
@@ -232,7 +232,7 @@ def prepare_prompt():
     )
 
     return {
-        "bug_symptom": bug_symptom,
+        "requirement": requirement,
         "additional_info": additional_info,
         "mode": mode
     }
@@ -244,8 +244,8 @@ def generate_prompt_with_context(cli_file_path, context):
     """
     if not context:
         context = prepare_prompt()
-        
-    bug_symptom = context.get("bug_symptom", "")
+
+    requirement = context.get("requirement", "")
     additional_info = context.get("additional_info", "")
     mode = context.get("mode", "1")
 
@@ -292,7 +292,7 @@ def generate_prompt_with_context(cli_file_path, context):
 
     # 4. Assemble the final prompt
     final_prompt = selected_template.format(
-        bug_symptom=bug_symptom,
+        requirement=requirement,
         additional_info=additional_info,
         trace_data=trace_data
     )

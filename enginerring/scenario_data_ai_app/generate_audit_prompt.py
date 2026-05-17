@@ -17,7 +17,7 @@ You are a senior software security audit expert and Java concurrency programming
 ## 1. Audit Task Definition
 
 **Key Audit Focus**: 
-{audit_focus}
+{requirement}
 
 **Additional Notes (Optional)**: 
 {additional_info}
@@ -84,6 +84,7 @@ Please strictly follow the template below to output your code audit report:
 # 2. Interactive Guidance Logic
 # ==========================================
 
+
 def prepare_prompt():
     """
     Phase 1: Interactive prompt preparation.
@@ -95,10 +96,10 @@ def prepare_prompt():
     print("Please enter audit task information as prompted (press Enter to skip optional fields and use default values)\n")
 
     # 1. Collect audit focus
-    audit_focus = input(
+    requirement = input(
         "[Step 1] Please enter [Key Audit Focus] (e.g., Focus on identifying data races, deadlocks, or cross-thread taint propagation):\n> ").strip()
-    if not audit_focus:
-        audit_focus = "Comprehensive investigation of concurrency security vulnerabilities (Data Races), memory visibility issues (missing Happens-Before), and potential business logic defects."
+    if not requirement:
+        requirement = "Comprehensive investigation of concurrency security vulnerabilities (Data Races), memory visibility issues (missing Happens-Before), and potential business logic defects."
 
     # 2. Collect additional notes via Editor
     additional_info = get_multiline_input_via_editor(
@@ -107,7 +108,7 @@ def prepare_prompt():
     )
 
     return {
-        "audit_focus": audit_focus,
+        "requirement": requirement,
         "additional_info": additional_info
     }
 
@@ -118,8 +119,8 @@ def generate_prompt_with_context(cli_file_path, context):
     """
     if not context:
         context = prepare_prompt()
-        
-    audit_focus = context.get("audit_focus", "")
+
+    requirement = context.get("requirement", "")
     additional_info = context.get("additional_info", "")
 
     # 3. Read trace data file
@@ -127,7 +128,8 @@ def generate_prompt_with_context(cli_file_path, context):
     while True:
         if cli_file_path:
             file_path = cli_file_path
-            print(f"\n[Step 3] Using Execution Trace Data File from arguments: {file_path}")
+            print(
+                f"\n[Step 3] Using Execution Trace Data File from arguments: {file_path}")
             cli_file_path = None  # Reset in case of failure
         else:
             file_path = input(
@@ -140,13 +142,15 @@ def generate_prompt_with_context(cli_file_path, context):
             continue
 
         if not os.path.exists(file_path):
-            print(f"[Error] File not found: {file_path}. Please check if the path is correct.")
+            print(
+                f"[Error] File not found: {file_path}. Please check if the path is correct.")
             continue
 
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 trace_data = f.read()
-            print("[Success] Successfully loaded execution trace and concurrency state data.")
+            print(
+                "[Success] Successfully loaded execution trace and concurrency state data.")
             break
         except Exception as e:
             print(f"[Error] Failed to read file: {e}")
@@ -154,7 +158,7 @@ def generate_prompt_with_context(cli_file_path, context):
 
     # 4. Assemble final prompt
     final_prompt = PROMPT_TEMPLATE.format(
-        audit_focus=audit_focus,
+        requirement=requirement,
         additional_info=additional_info,
         trace_data=trace_data
     )
@@ -165,7 +169,8 @@ def generate_prompt_with_context(cli_file_path, context):
         with open(output_filename, 'w', encoding='utf-8') as f:
             f.write(final_prompt)
         print("\n" + "="*50)
-        print(f"[Success] The complete code audit prompt has been generated and saved: {output_filename}")
+        print(
+            f"[Success] The complete code audit prompt has been generated and saved: {output_filename}")
         print("You can now open this file directly, copy all content and send it to an LLM for in-depth audit.")
         print("="*50)
     except Exception as e:

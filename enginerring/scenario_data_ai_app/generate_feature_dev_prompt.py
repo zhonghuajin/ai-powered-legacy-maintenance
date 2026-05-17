@@ -19,7 +19,7 @@ You are a senior software architect and code development expert. Based on the ex
 ## 📋 Requirement Definition
 
 **🎯 Target New Feature**: 
-{target_feature}
+{requirement}
 
 **💬 Additional Notes (Optional)**: 
 {additional_info}
@@ -118,9 +118,10 @@ def prepare_prompt():
     print("Please enter the required information as prompted (press Enter directly to skip optional items)\n")
 
     # 1. Collect target feature
-    target_feature = input("🎯 1. Please enter the [Target New Feature] (e.g., add a Semaphore-based test scenario):\n> ").strip()
-    if not target_feature:
-        target_feature = "[No specific requirement provided, please let the AI analyze possible extension points in the current scenario]"
+    requirement = input(
+        "🎯 1. Please enter the [Target New Feature] (e.g., add a Semaphore-based test scenario):\n> ").strip()
+    if not requirement:
+        requirement = "[No specific requirement provided, please let the AI analyze possible extension points in the current scenario]"
 
     # 2. Collect additional notes via Editor
     additional_info = get_multiline_input_via_editor(
@@ -129,7 +130,7 @@ def prepare_prompt():
     )
 
     return {
-        "target_feature": target_feature,
+        "requirement": requirement,
         "additional_info": additional_info
     }
 
@@ -140,8 +141,8 @@ def generate_prompt_with_context(cli_file_path, context):
     """
     if not context:
         context = prepare_prompt()
-        
-    target_feature = context.get("target_feature", "")
+
+    requirement = context.get("requirement", "")
     additional_info = context.get("additional_info", "")
 
     # 3. Read trace data file
@@ -149,21 +150,24 @@ def generate_prompt_with_context(cli_file_path, context):
     while True:
         if cli_file_path:
             file_path = cli_file_path
-            print(f"\n📁 3. Using Call Chain Data File from arguments: {file_path}")
+            print(
+                f"\n📁 3. Using Call Chain Data File from arguments: {file_path}")
             cli_file_path = None
         else:
-            file_path = input("\n📁 3. Please enter the path to the [Call Chain Data File] (e.g., final-output-calltree.md):\n> ").strip()
+            file_path = input(
+                "\n📁 3. Please enter the path to the [Call Chain Data File] (e.g., final-output-calltree.md):\n> ").strip()
             # Remove possible quotes (common when dragging a file into the terminal)
             file_path = file_path.strip('\'"')
-        
+
         if not file_path:
             print("❌ File path cannot be empty. Please enter it again!")
             continue
-            
+
         if not os.path.exists(file_path):
-            print(f"❌ File not found: {file_path}. Please check whether the path is correct!")
+            print(
+                f"❌ File not found: {file_path}. Please check whether the path is correct!")
             continue
-            
+
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 trace_data = f.read()
@@ -175,7 +179,7 @@ def generate_prompt_with_context(cli_file_path, context):
 
     # 4. Assemble the final prompt
     final_prompt = PROMPT_TEMPLATE.format(
-        target_feature=target_feature,
+        requirement=requirement,
         additional_info=additional_info,
         trace_data=trace_data
     )
@@ -186,7 +190,8 @@ def generate_prompt_with_context(cli_file_path, context):
         with open(output_filename, 'w', encoding='utf-8') as f:
             f.write(final_prompt)
         print("\n" + "="*50)
-        print(f"🎉 Success! The complete prompt has been generated and saved in the current directory as: {output_filename}")
+        print(
+            f"🎉 Success! The complete prompt has been generated and saved in the current directory as: {output_filename}")
         print("👉 You can now open this file directly, copy all its contents, and send them to the AI!")
         print("="*50)
     except Exception as e:

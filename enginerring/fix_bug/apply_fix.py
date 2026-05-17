@@ -4,6 +4,7 @@
 import os
 import sys
 import re
+import json
 
 # ==========================================
 # 1. Path resolution logic
@@ -98,7 +99,7 @@ def parse_output_md(content):
 # 3. Main program logic
 # ==========================================
 
-def run_apply_fix(fixed_code_path=None, base_dirs=None):
+def run_apply_fix(fixed_code_path=None, base_dirs=None, prompt_context=None, proj_path=None):
     """
     Exposed interface to run the fix application logic.
     """
@@ -138,6 +139,7 @@ def run_apply_fix(fixed_code_path=None, base_dirs=None):
     
     # Find and replace local files
     success_count = 0
+    success_files = []
     for rel_path, new_content in files_to_update.items():
         print(f"\nProcessing: {rel_path}")
         abs_path = resolve_file_path(rel_path, base_dirs)
@@ -157,9 +159,25 @@ def run_apply_fix(fixed_code_path=None, base_dirs=None):
                 f.write(new_content)
             print(f"   Success: Overwrote/Created file -> {abs_path}")
             success_count += 1
+            success_files.append(rel_path)
         except Exception as e:
             print(f"   Failed to write file {abs_path}: {e}")
             
+    # Update the prompt context with modified paths and remove additional_info
+    if prompt_context:
+        if "additional_info" in prompt_context:
+            del prompt_context["additional_info"]
+        
+        prompt_context["modified_paths"] = success_files
+        
+        context_file_path = os.path.join(os.getcwd(), 'last_prompt_context.json')
+        try:
+            with open(context_file_path, 'w', encoding='utf-8') as f:
+                json.dump(prompt_context, f, ensure_ascii=False, indent=4)
+            print(f"   Success: Updated prompt context at -> {context_file_path}")
+        except Exception as e:
+            print(f"[WARN] Failed to update prompt context: {e}")
+
     print("\n" + "="*50)
     print(f"Execution completed! Successfully updated {success_count}/{len(files_to_update)} files.")
     print("="*50)

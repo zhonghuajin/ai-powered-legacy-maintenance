@@ -636,7 +636,7 @@ def select_ai_prompt_script(work_dir, target_language=None):
     return selected_script
 
 
-def prepare_ai_prompt_interactive(work_dir, selected_script):
+def prepare_ai_prompt_interactive(work_dir, selected_script, save_context=True):
     """
     Execute the interactive preparation phase of the selected AI prompt script
     before the long-running instrumentation and log analysis.
@@ -661,6 +661,15 @@ def prepare_ai_prompt_interactive(work_dir, selected_script):
 
         if hasattr(module, 'prepare_prompt'):
             prompt_context = module.prepare_prompt()
+            
+            if prompt_context and save_context:
+                context_file_path = os.path.join(work_dir, 'last_prompt_context.json')
+                try:
+                    with open(context_file_path, 'w', encoding='utf-8') as f:
+                        json.dump(prompt_context, f, ensure_ascii=False, indent=4)
+                    print_color(f"[Info] Saved prompt context to {context_file_path}", Colors.GREEN)
+                except Exception as e:
+                    print_color(f"[WARN] Failed to save context: {e}", Colors.YELLOW)
         else:
             print_color(
                 f"[Info] 'prepare_prompt' function not found in {selected_script}. Skipping interactive preparation.", Colors.YELLOW)
@@ -830,7 +839,7 @@ def ask_llm_for_code_fix(ask_llm_dir):
             os.chdir(original_cwd)
 
 
-def apply_fix(work_dir, proj_path=None):
+def apply_fix(work_dir, proj_path=None, prompt_context=None):
     print_color("\n>>> Applying Fix to Source Code...", Colors.CYAN)
 
     fix_bug_dir = os.path.join(work_dir, "enginerring", "fix_bug")
@@ -862,7 +871,11 @@ def apply_fix(work_dir, proj_path=None):
                 "[Warning] No original-target-folders found in config.json, using current directory.", Colors.YELLOW)
 
         fix_applier.run_apply_fix(
-            fixed_code_path=fixed_code_path, base_dirs=base_dirs)
+            fixed_code_path=fixed_code_path, 
+            base_dirs=base_dirs, 
+            prompt_context=prompt_context, 
+            proj_path=proj_path
+        )
 
         os.chdir(original_cwd)
     except ImportError as e:

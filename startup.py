@@ -210,8 +210,10 @@ def main():
             # Pre-select the AI Prompt Generator script early to avoid workflow interruption later
             selected_script = select_ai_prompt_script(work_dir, target_language)
 
+            has_ai_marker = check_if_ai_will_modify(work_dir, selected_script)
+
             # Prepare AI Prompt (Interactive Phase) before long-running tasks
-            prompt_context = prepare_ai_prompt_interactive(work_dir, selected_script)
+            prompt_context = prepare_ai_prompt_interactive(work_dir, selected_script, save_context=has_ai_marker)
 
             maybe_pause("Project and Environment Setup", "Setup Shadow Branch")
 
@@ -221,7 +223,6 @@ def main():
 
             # Handle dependency injection and commit for full mode
             if is_skipped:
-                # If no files were modified, do not output the incremental completion prompt
                 pass
             else:
                 if instrument_mode == "incremental":
@@ -249,8 +250,6 @@ def main():
             maybe_pause("Setup Shadow Branch & Instrumentation",
                         "Startup Log Manager Server")
 
-            # Pass proj_path so that uploaded files are saved under the project
-            # Capture the flush state returned by the log manager
             is_flushed = startup_log_manager_server(work_dir, proj_path=proj_path)
 
             maybe_pause("Startup Log Manager Server",
@@ -259,16 +258,12 @@ def main():
             # --- Switch back to the source branch before log analysis ---
             switch_to_source_branch(proj_path)
 
-            # Pass the flush state to automatically trigger log analysis if applicable
             analyze_logs(work_dir, proj_path=proj_path, auto_analyze=is_flushed)
 
             maybe_pause("Log Analysis", "Generate AI Prompt")
 
             # Execute the pre-selected script without interrupting the flow, passing the context
             execute_ai_prompt(work_dir, selected_script, prompt_context)
-
-            # Dynamically check if the selected script contains the magic marker
-            has_ai_marker = check_if_ai_will_modify(work_dir, selected_script)
 
             # Allow scripts with the specific marker to use the automated modification flow
             if has_ai_marker:
@@ -283,7 +278,8 @@ def main():
                 ask_llm_for_code_fix(ask_llm_dir)
                 
                 maybe_pause("Ask LLM for Code Modification", "Apply Changes to Source Code")
-                apply_fix(work_dir, proj_path)
+                # PASS prompt_context HERE
+                apply_fix(work_dir, proj_path, prompt_context)
                 
                 print_color(
                     "\n=======================================================", Colors.MAGENTA)

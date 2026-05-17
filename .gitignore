@@ -38,3 +38,4 @@ multilingual/php/composer.lock
 enginerring/shared_utils/shared_utils.egg-info
 .vscode/launch.json
 AI_Task_Prompt.md
+last_prompt_context.json
