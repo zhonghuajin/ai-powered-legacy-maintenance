@@ -40,3 +40,6 @@ enginerring/shared_utils/shared_utils.egg-info
 AI_Task_Prompt.md
 last_prompt_context.json
 enginerring/ask_llm/.env
+multilingual/javascript/comment-mapping.txt
+node_modules/
+multilingual/javascript/package-lock.json
