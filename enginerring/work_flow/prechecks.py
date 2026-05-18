@@ -99,7 +99,7 @@ def auto_select_llm_provider(env_file):
 
     # Map API keys to a tuple of (Display Name, Internal Provider ID)
     llm_providers = {
-        "DEEPSEEK_API_KEY": ("DeepSeek V4 Pro", "deepseek-v4pro"), # "DEEPSEEK_API_KEY": ("DeepSeek", "deepseek"), 
+        "DEEPSEEK_API_KEY": ("DeepSeek", "deepseek"), # "DEEPSEEK_API_KEY": ("DeepSeek V4 Pro", "deepseek-v4pro"), # 
         "ANTHROPIC_API_KEY": ("Claude (Anthropic)", "claude"),
         "OPENAI_API_KEY": ("GPT (OpenAI)", "gpt"),
         "ZHIPU_API_KEY": ("GLM (Zhipu)", "glm"),

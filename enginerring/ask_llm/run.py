@@ -45,7 +45,14 @@ def run_api(file_path: str, output_path: str, provider: str = None, reasoning: s
     check_dependencies()
 
     import llm_chat
-
+    
+    if file_path:
+        filename = os.path.basename(file_path)
+        target_prompts = ["AI_Task_Prompt.md", "AI_Apply_Fix_Prompt.md"]
+        if filename in target_prompts:
+            provider = "poe"
+            print(f"\033[33m[*] Matched specific task file ({filename}), forcing LLM Provider to 'poe'\033[0m")
+            
     # Attempt to load provider from environment variable if not explicitly passed
     if not provider:
         provider = os.environ.get('AUTO_SELECTED_LLM_PROVIDER')
