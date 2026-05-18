@@ -21,19 +21,29 @@ class BlockInstrumentorVisitor extends NodeVisitorAbstract {
 
     public function beforeTraverse(array $nodes): ?array {
         $hasNamespace = false;
-        foreach ($nodes as $node) {
+        $safeInsertIndex = 0;
+
+        foreach ($nodes as $index => $node) {
             if ($node instanceof Node\Stmt\Namespace_) {
                 $hasNamespace = true;
                 break;
             }
+
+            if ($node instanceof Node\Stmt\Declare_) {
+                $safeInsertIndex = $index + 1;
+            }
         }
 
         if (!$hasNamespace && !empty($nodes)) {
-            $line = $nodes[0]->getStartLine();
-            if ($line > 0) {
-                $nop = $this->createInstrumentationNop($line);
-                array_unshift($nodes, $nop);
-                return $nodes;
+
+            if (isset($nodes[$safeInsertIndex])) {
+                $line = $nodes[$safeInsertIndex]->getStartLine();
+                if ($line > 0) {
+                    $nop = $this->createInstrumentationNop($line);
+
+                    array_splice($nodes, $safeInsertIndex, 0, [$nop]);
+                    return $nodes;
+                }
             }
         }
 
