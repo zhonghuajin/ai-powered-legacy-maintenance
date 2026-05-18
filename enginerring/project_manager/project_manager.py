@@ -71,6 +71,22 @@ def create_or_select_project(work_dir, preselected_proj_path=None):
     return proj_path, root_path, is_new_project
 
 
+def _getch():
+    try:
+        import msvcrt
+        return msvcrt.getch().decode('utf-8', 'ignore')
+    except ImportError:
+        import tty
+        import termios
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(sys.stdin.fileno())
+            ch = sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        return ch
+
 def _select_or_create_project(work_dir, projects_dir, existing_projects):
     """
     Display existing projects and let the user pick one or create a new project.
@@ -79,12 +95,24 @@ def _select_or_create_project(work_dir, projects_dir, existing_projects):
     print_color("\n=== Existing Projects ===", Colors.CYAN)
     for idx, (name, root, _) in enumerate(existing_projects, start=1):
         print(f"  {idx}. {name}  ->  {root}")
-    print(f"  {len(existing_projects) + 1}. Create a new project")
+    
+    total_options = len(existing_projects) + 1
+    print(f"  {total_options}. Create a new project")
 
     while True:
         try:
-            choice = input(
-                "Select a project number or choose to create a new one: ").strip()
+            if total_options < 10:
+                print("Select a project number or choose to create a new one: ", end="", flush=True)
+                choice = _getch()
+                
+                if choice == '\x03':
+                    raise KeyboardInterrupt
+                    
+                print(choice)
+                choice = choice.strip()
+            else:
+                choice = input("Select a project number or choose to create a new one: ").strip()
+
             if choice.isdigit():
                 num = int(choice)
                 if 1 <= num <= len(existing_projects):
@@ -94,13 +122,13 @@ def _select_or_create_project(work_dir, projects_dir, existing_projects):
                         Colors.GREEN,
                     )
                     return selected_proj_path, selected_root, False
-                elif num == len(existing_projects) + 1:
+                elif num == total_options:
                     proj_path, git_root = _create_new_project(work_dir, projects_dir)
                     return proj_path, git_root, True
                 else:
                     print_color("Invalid choice. Try again.", Colors.RED)
             else:
-                print_color("Please enter a number.", Colors.RED)
+                print_color("Please enter a valid number.", Colors.RED)
         except KeyboardInterrupt:
             print("\nOperation cancelled.")
             sys.exit(1)
