@@ -2,8 +2,6 @@ package com.instrumentor.enginerring.monitor;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.JedisPool;
 
 import java.io.*;
 import java.net.HttpURLConnection;
@@ -19,22 +17,22 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
-public class RedisLogMonitorServer {
+public class JsLogMonitorServer {
 
-    private static final int DEFAULT_PORT = 19898;
+    private static final int DEFAULT_PORT = 19899;
     private static final DateTimeFormatter TS_FMT = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
-    private static final AtomicBoolean FLUSHED = new AtomicBoolean(false);
 
     private static String managerIp = null;
     private static int managerPort = -1;
 
-    private static JedisPool jedisPool;
+    private static final AtomicBoolean INTENT_CLEAR = new AtomicBoolean(false);
+    private static final AtomicBoolean INTENT_FLUSH = new AtomicBoolean(false);
+
+    private static volatile int lastKnownLogCount = 0;
+    private static volatile long lastHeartbeatTime = 0;
 
     public static void main(String[] args) {
-
-        jedisPool = new JedisPool("127.0.0.1", 6379);
-
-        RedisLogMonitorServer server = new RedisLogMonitorServer();
+        JsLogMonitorServer server = new JsLogMonitorServer();
         server.startHttpServer(DEFAULT_PORT);
     }
 
@@ -62,50 +60,53 @@ public class RedisLogMonitorServer {
         }
 
         try {
+
             server.createContext("/clear", this::handleClear);
             server.createContext("/flush", this::handleFlush);
             server.createContext("/status", this::handleStatus);
             server.createContext("/setManager", this::handleSetManager);
+
+            server.createContext("/poll", this::handlePoll);
+            server.createContext("/push", this::handlePush);
+
             server.setExecutor(null);
             server.start();
-            log("PHP Redis Instrumentor monitoring service started: http://localhost:%d", port);
+            log("JS Instrumentor monitoring service started: http://localhost:%d", port);
         } catch (Exception e) {
             log("Unable to configure or start HTTP service: %s", e.getMessage());
         }
     }
 
     private void handleClear(HttpExchange exchange) throws IOException {
-        clearNow();
-        sendTextResponse(exchange, 200, "[LogMonitor] Logs cleared from Redis.\n");
-    }
-
-    private void handleStatus(HttpExchange exchange) throws IOException {
-        int totalThreads = 0;
-        long totalLogs = 0;
-
-        try (Jedis jedis = jedisPool.getResource()) {
-            List<String> pids = jedis.lrange("instrumentor:pids_order", 0, -1);
-            totalThreads = pids.size();
-            for (String pid : pids) {
-                totalLogs += jedis.llen("instrumentor:log:" + pid);
-            }
-        }
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("[LogMonitor] Current Status (PHP Redis)\n");
-        sb.append("  Total Threads (PIDs) : ").append(totalThreads).append("\n");
-        sb.append("  Total Basic Log Entries: ").append(totalLogs).append("\n");
-        sb.append("  Total Event Log Entries: 0 (Not supported in PHP yet)\n");
-        if (managerIp != null) {
-            sb.append("  Manager Address: http://").append(managerIp).append(":").append(managerPort).append("\n");
-        }
-        sendTextResponse(exchange, 200, sb.toString());
+        INTENT_CLEAR.set(true);
+        sendTextResponse(exchange, 200, "[JsLogMonitor] Clear intent recorded. Waiting for JS client to poll.\n");
     }
 
     private void handleFlush(HttpExchange exchange) throws IOException {
-        resetFlushState();
-        flushNow("manual_http");
-        sendTextResponse(exchange, 200, "[LogMonitor] Flush triggered. Files sent to manager or saved locally, and logs cleared.\n");
+        INTENT_FLUSH.set(true);
+        sendTextResponse(exchange, 200, "[JsLogMonitor] Flush intent recorded. Waiting for JS client to push logs.\n");
+    }
+
+    private void handleStatus(HttpExchange exchange) throws IOException {
+        StringBuilder sb = new StringBuilder();
+        sb.append("[JsLogMonitor] Current Status (JS Browser)\n");
+
+        boolean isOnline = (System.currentTimeMillis() - lastHeartbeatTime) < 10000;
+
+        sb.append("  Client Status: ").append(isOnline ? "Online" : "Offline").append("\n");
+        sb.append("  Total Threads (PIDs) : ").append(isOnline ? 1 : 0).append(" (Browser Main Thread)\n");
+        sb.append("  Total Basic Log Entries: ").append(lastKnownLogCount).append("\n");
+        sb.append("  Total Event Log Entries: 0 (Not supported in JS yet)\n");
+        sb.append("  Pending Clear Intent: ").append(INTENT_CLEAR.get()).append("\n");
+        sb.append("  Pending Flush Intent: ").append(INTENT_FLUSH.get()).append("\n");
+
+        if (managerIp != null) {
+            sb.append("  Manager Address: http://").append(managerIp).append(":").append(managerPort).append("\n");
+        } else {
+            sb.append("  Manager Address: Not set\n");
+        }
+
+        sendTextResponse(exchange, 200, sb.toString());
     }
 
     private void handleSetManager(HttpExchange exchange) throws IOException {
@@ -117,84 +118,94 @@ public class RedisLogMonitorServer {
             try {
                 managerIp = ip;
                 managerPort = Integer.parseInt(portStr);
-                String msg = String.format("[LogMonitor] Manager set to %s:%d\n", managerIp, managerPort);
+                String msg = String.format("[JsLogMonitor] Manager set to %s:%d\n", managerIp, managerPort);
                 log(msg.trim());
                 sendTextResponse(exchange, 200, msg);
             } catch (NumberFormatException e) {
-                sendTextResponse(exchange, 400, "[LogMonitor] Invalid port number.\n");
+                sendTextResponse(exchange, 400, "[JsLogMonitor] Invalid port number.\n");
             }
         } else {
-            sendTextResponse(exchange, 400, "[LogMonitor] Missing ip or port parameters.\n");
+            sendTextResponse(exchange, 400, "[JsLogMonitor] Missing ip or port parameters.\n");
         }
     }
 
-    public static void flushNow(String source) {
-        if (!FLUSHED.compareAndSet(false, true)) {
-            log("flushNow(%s) skipped — already flushed.", source);
+    private void handlePoll(HttpExchange exchange) throws IOException {
+        addCorsHeaders(exchange);
+        if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(204, -1);
             return;
         }
 
+        Map<String, String> params = parseQuery(exchange.getRequestURI().getRawQuery());
+        if (params.containsKey("count")) {
+            try {
+                lastKnownLogCount = Integer.parseInt(params.get("count"));
+                lastHeartbeatTime = System.currentTimeMillis();
+            } catch (NumberFormatException ignored) {}
+        }
+
+        boolean clear = INTENT_CLEAR.getAndSet(false);
+        boolean flush = INTENT_FLUSH.getAndSet(false);
+
+        String response = String.format("{\"clear\": %b, \"flush\": %b}", clear, flush);
+        sendTextResponse(exchange, 200, response);
+    }
+
+    private void handlePush(HttpExchange exchange) throws IOException {
+        addCorsHeaders(exchange);
+        if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(204, -1);
+            return;
+        }
+
+        if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            try (InputStream is = exchange.getRequestBody();
+                 BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
+
+                String body = reader.lines().collect(Collectors.joining());
+                List<Integer> logs = new ArrayList<>();
+
+                if (!body.trim().isEmpty()) {
+                    String[] parts = body.split(",");
+                    for (String part : parts) {
+                        try {
+                            logs.add(Integer.parseInt(part.trim()));
+                        } catch (NumberFormatException ignored) {}
+                    }
+                }
+
+                LinkedHashMap<Long, List<Integer>> snapshot = new LinkedHashMap<>();
+                snapshot.put(1L, logs);
+
+                processAndFlushLogs(snapshot, "js_browser");
+
+                lastKnownLogCount = 0;
+
+                sendTextResponse(exchange, 200, "{\"status\": \"success\"}");
+            } catch (Exception e) {
+                log("Error processing push: %s", e.getMessage());
+                sendTextResponse(exchange, 500, "{\"status\": \"error\"}");
+            }
+        } else {
+            sendTextResponse(exchange, 405, "Method Not Allowed");
+        }
+    }
+
+    private void processAndFlushLogs(LinkedHashMap<Long, List<Integer>> snapshot, String source) {
         try {
             String ts = LocalDateTime.now().format(TS_FMT);
             String logFileName = "instrumentor-log-" + ts + "-" + source + ".txt";
 
-            LinkedHashMap<Long, List<Integer>> logSnapshot = buildSnapshotFromRedis();
-
-            if (!logSnapshot.isEmpty()) {
-                String logContent = formatLogSnapshotStatic(logSnapshot);
+            if (!snapshot.isEmpty() && !snapshot.get(1L).isEmpty()) {
+                String logContent = formatLogSnapshotStatic(snapshot);
                 handleFileOutput(logFileName, logContent, source);
             } else {
                 log("flushNow(%s): no logs to flush.", source);
             }
-
-            clearNow();
-
         } catch (Exception e) {
             log("flushNow(%s) failed: %s", source, e.getMessage());
             e.printStackTrace(System.err);
         }
-    }
-
-    public static void clearNow() {
-        try (Jedis jedis = jedisPool.getResource()) {
-            Set<String> keys = jedis.keys("instrumentor:*");
-            if (keys != null && !keys.isEmpty()) {
-                jedis.del(keys.toArray(new String[0]));
-                log("clearNow: successfully cleared %d keys from Redis.", keys.size());
-            } else {
-                log("clearNow: no keys found to clear.");
-            }
-        } catch (Exception e) {
-            log("clearNow failed: %s", e.getMessage());
-        }
-    }
-
-    private static LinkedHashMap<Long, List<Integer>> buildSnapshotFromRedis() {
-        LinkedHashMap<Long, List<Integer>> snapshot = new LinkedHashMap<>();
-        try (Jedis jedis = jedisPool.getResource()) {
-            List<String> pids = jedis.lrange("instrumentor:pids_order", 0, -1);
-            for (String pidStr : pids) {
-                try {
-                    long pid = Long.parseLong(pidStr);
-                    List<String> logStrs = jedis.lrange("instrumentor:log:" + pidStr, 0, -1);
-                    if (!logStrs.isEmpty()) {
-
-                        List<Integer> logs = logStrs.stream()
-                                .map(Integer::parseInt)
-                                .distinct()
-                                .collect(Collectors.toList());
-                        snapshot.put(pid, logs);
-                    }
-                } catch (NumberFormatException e) {
-                    log("Invalid PID in Redis: " + pidStr);
-                }
-            }
-        }
-        return snapshot;
-    }
-
-    public static void resetFlushState() {
-        FLUSHED.set(false);
     }
 
     private static String formatLogSnapshotStatic(LinkedHashMap<Long, List<Integer>> snapshot) {
@@ -297,7 +308,7 @@ public class RedisLogMonitorServer {
     }
 
     private static void log(String fmt, Object... args) {
-        System.err.printf("[LogMonitor] " + fmt + "%n", args);
+        System.err.printf("[JsLogMonitor] " + fmt + "%n", args);
     }
 
     private Map<String, String> parseQuery(String rawQuery) throws UnsupportedEncodingException {
@@ -309,6 +320,12 @@ public class RedisLogMonitorServer {
                     kv.length > 1 ? URLDecoder.decode(kv[1], "UTF-8") : "");
         }
         return params;
+    }
+
+    private void addCorsHeaders(HttpExchange exchange) {
+        exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
+        exchange.getResponseHeaders().add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        exchange.getResponseHeaders().add("Access-Control-Allow-Headers", "Content-Type");
     }
 
     private void sendTextResponse(HttpExchange exchange, int statusCode, String body) throws IOException {

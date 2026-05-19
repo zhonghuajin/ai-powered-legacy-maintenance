@@ -98,6 +98,11 @@ def process_logs(
             target_folders_list, log_file, comment_mapping_file, events_file, 
             pruned_folder, event_dictionary_file
         )
+    elif language in ["javascript", "js"]:
+        _process_javascript_logs(
+            target_folders_list, log_file, comment_mapping_file, events_file, 
+            pruned_folder, event_dictionary_file
+        )
     else:
         raise ValueError(f"Unsupported language: {language}")
     
@@ -224,6 +229,36 @@ def _process_php_logs(target_folders_list, log_file, comment_mapping_file, event
         subprocess.run(php_structuring_cmd, env=env, check=True)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Error executing PHP Data Structuring: {e}")
+
+
+def _process_javascript_logs(target_folders_list, log_file, comment_mapping_file, events_file, pruned_folder, event_dictionary_file):
+    """Specific logic for processing JavaScript logs."""
+    print("Executing JavaScript log processing tools...")
+    
+    env = os.environ.copy()
+    
+    # 1. Execute JavaScript Block Pruner
+    print("Executing JavaScript Block Pruner...")
+    js_pruner_script_path = str(PROJECT_ROOT / "multilingual" / "javascript" / "block-pruner" / "BlockPruner.js")
+    source_dirs_arg = ";".join(target_folders_list)
+    
+    js_pruner_cmd = [
+        "node",
+        js_pruner_script_path,
+        source_dirs_arg,
+        comment_mapping_file,
+        log_file,
+        pruned_folder
+    ]
+    
+    print(f"Running command: {' '.join(js_pruner_cmd)}")
+    try:
+        subprocess.run(js_pruner_cmd, env=env, check=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Error executing JavaScript Block Pruner: {e}")
+        
+    # 2. Execute JavaScript Data Structuring (Stub for future implementation if needed)
+    print("[INFO] JavaScript Data Structuring execution can be added here if applicable.")
 
 
 def main():

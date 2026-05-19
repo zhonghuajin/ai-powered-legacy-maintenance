@@ -13,7 +13,7 @@ class InstrumentationPipeline {
         this.commentToId = new Map();
         this.nextId = 1;
 
-        this.instrumentFunctionName = 'window.__instrumentLog';
+        this.instrumentFunctionName = 'window.staining';
     }
 
     run(targets) {
@@ -86,7 +86,7 @@ class InstrumentationPipeline {
                     t.callExpression(
                         t.memberExpression(
                             t.identifier('window'),
-                            t.identifier('__instrumentLog')
+                            t.identifier('staining')
                         ),
                         [t.numericLiteral(id)]
                     )

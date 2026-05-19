@@ -112,7 +112,7 @@ def auto_select_llm_provider(env_file):
     llm_providers_map = {
         "DEEPSEEK_API_KEY": [
             ("DeepSeek", "deepseek", False), 
-            ("DeepSeek V4 Pro", "deepseek-v4pro", True)
+            # ("DeepSeek V4 Pro", "deepseek-v4pro", True)
         ],
         "ANTHROPIC_API_KEY": [("Claude (Anthropic)", "claude", True)],
         "OPENAI_API_KEY": [("GPT (OpenAI)", "gpt", True)],

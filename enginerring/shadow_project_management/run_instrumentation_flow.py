@@ -65,6 +65,31 @@ def _run_php_instrumentation(target_folders, incremental, mapping_file, work_dir
     return True
 
 
+def _run_javascript_instrumentation(target_folders, work_dir):
+    """Executes the JavaScript-specific instrumentation logic."""
+    node_exe = shutil.which("node")
+    if not node_exe:
+        print_color("Error: node not found in PATH.", Colors.RED)
+        return False
+
+    pipeline_script = os.path.join(work_dir, "multilingual", "javascript", "instrumentor", "InstrumentationPipeline.js")
+
+    if not os.path.exists(pipeline_script):
+        print_color(f"Error: JS instrumentation script not found at {pipeline_script}", Colors.RED)
+        return False
+
+    js_cmd = [node_exe, pipeline_script] + target_folders
+
+    print(f"Running: {' '.join(js_cmd)}")
+    result = subprocess.run(js_cmd)
+
+    if result.returncode != 0:
+        print_color("Warning: JS Instrumentation pipeline returned non-zero exit code.", Colors.YELLOW)
+        return False
+
+    return True
+
+
 def _run_python_instrumentation(target_folders, incremental, mapping_file):
     """
     Executes the Python-specific instrumentation logic.
@@ -157,6 +182,9 @@ def run_instrumentation_flow(target_folders_file=None, target_folders_list=None,
     elif lang_lower == 'php':
         work_dir = os.path.abspath(os.getcwd())
         success = _run_php_instrumentation(target_folders, incremental, mapping_file, work_dir)
+    elif lang_lower in ['javascript', 'js']:
+        work_dir = os.path.abspath(os.getcwd())
+        success = _run_javascript_instrumentation(target_folders, work_dir)
     elif lang_lower == 'python':
         success = _run_python_instrumentation(target_folders, incremental, mapping_file)
     else:

@@ -84,10 +84,10 @@ def ensure_language_selected(proj_path):
             print_color("\n========================================", Colors.CYAN)
             print_color("       Select Programming Language      ", Colors.CYAN)
             print_color("========================================", Colors.CYAN)
-            print("  1. Java\n  2. PHP\n  3. Python")
+            print("  1. Java\n  2. PHP\n  3. Python\n  4. JavaScript")
             print_color("========================================", Colors.CYAN)
             lang_choice = input("Enter your choice [1]: ").strip() or "1"
-            lang_map = {'1': 'java', '2': 'php', '3': 'python'}
+            lang_map = {'1': 'java', '2': 'php', '3': 'python', '4': 'javascript'}
             target_language = lang_map.get(lang_choice, 'java')
 
             config['language'] = target_language
@@ -421,6 +421,25 @@ def startup_log_manager_server(work_dir, proj_path=None):
                     else:
                         print_color(
                             f'[Warning] PHP log monitor jar not found at: {jar_path}', Colors.YELLOW)
+
+            if config.get('language') in ['javascript', 'js']:
+                jar_path = os.path.join(
+                    work_dir, 'multilingual', 'javascript', 'instrumentor-log-monitor', 'target', 'js-log-monitor-1.0-SNAPSHOT.jar')
+                if os.path.exists(jar_path):
+                    print_color(
+                        '[JS Monitor] Auto-starting monitor in background...', Colors.GREEN)
+                    log_file_path = os.path.join(
+                        proj_path, 'js_monitor_startup.log')
+                    log_file = open(log_file_path, 'w')
+                    subprocess.Popen(
+                        ['java', '-jar', jar_path],
+                        cwd=work_dir,
+                        stdout=log_file,
+                        stderr=subprocess.STDOUT
+                    )
+                else:
+                    print_color(
+                        f'[Warning] JS log monitor jar not found at: {jar_path}', Colors.YELLOW)
 
     server_dir = os.path.join(work_dir, "enginerring", "log_manager_server")
 
