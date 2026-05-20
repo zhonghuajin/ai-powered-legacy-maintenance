@@ -43,3 +43,4 @@ enginerring/ask_llm/.env
 multilingual/javascript/comment-mapping.txt
 node_modules/
 multilingual/javascript/package-lock.json
+intermediate-debug.json

@@ -1,11 +1,6 @@
-import React, { useState } from 'react';
-import { GitBranch, FolderTree } from 'lucide-react';
 import CallTreeVisualizer from './CallTreeVisualizer';
-import ThreadFileExplorer from './ThreadFileExplorer';
 
 export default function App() {
-  const [activeView, setActiveView] = useState('calltree'); // 'calltree' | 'fileexplorer'
-
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Global Navigation Bar */}
@@ -21,39 +16,13 @@ export default function App() {
                 <p className="text-xs text-slate-400">Runtime Context Visualization Toolset</p>
               </div>
             </div>
-
-            {/* View Toggle Buttons */}
-            <div className="flex items-center gap-2 bg-slate-800 rounded-lg p-1">
-              <button
-                onClick={() => setActiveView('calltree')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition ${
-                  activeView === 'calltree'
-                    ? 'bg-blue-600 text-white shadow'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-700'
-                }`}
-              >
-                <GitBranch size={16} />
-                Call Tree View
-              </button>
-              <button
-                onClick={() => setActiveView('fileexplorer')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition ${
-                  activeView === 'fileexplorer'
-                    ? 'bg-emerald-600 text-white shadow'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-700'
-                }`}
-              >
-                <FolderTree size={16} />
-                File Explorer View
-              </button>
-            </div>
           </div>
         </div>
       </div>
 
       {/* Main Content Area - Add top spacing for navigation bar */}
       <div className="pt-16">
-        {activeView === 'calltree' ? <CallTreeVisualizer /> : <ThreadFileExplorer />}
+        <CallTreeVisualizer />
       </div>
     </div>
   );

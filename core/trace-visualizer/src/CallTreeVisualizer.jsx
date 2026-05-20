@@ -1,12 +1,10 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import {
   Upload, ChevronRight, ChevronDown, FileCode2, Activity,
-  Code2, GitCommit, Layers, Search, ListTree, Clock3,
-  Braces, Hash, FolderTree, Info, Copy, Check, PanelLeft, PanelLeftClose,
+  Code2, Layers, Search, ListTree, Braces, FolderTree,
+  Info, Copy, Check, PanelLeft, PanelLeftClose, FileText, HelpCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-
-/* ─────────────────────────── Utility Functions ─────────────────────────── */
 
 function classNames(...items) {
   return items.filter(Boolean).join(' ');
@@ -25,46 +23,137 @@ function readFileAsText(file) {
     reader.readAsText(file, 'utf-8');
   });
 }
-function collectStatsFromNode(node, stats = { methods: 0, files: new Set(), blocks: 0 }) {
+
+function collectStatsFromNode(node, stats = { methods: 0, files: new Set() }) {
   if (!node || typeof node !== 'object') return stats;
   stats.methods += 1;
   if (node.file) stats.files.add(node.file);
-  stats.blocks += safeArray(node.executed_blocks).length;
   safeArray(node.calls).forEach((child) => collectStatsFromNode(child, stats));
   return stats;
 }
+
 function flattenNodes(node, list = []) {
   if (!node || typeof node !== 'object') return list;
   list.push(node);
   safeArray(node.calls).forEach((child) => flattenNodes(child, list));
   return list;
 }
-function findBlockIdsInSource(source) {
-  if (!source || typeof source !== 'string') return [];
-  return [...source.matchAll(/Executed Block ID:\s*(\d+)/g)].map((m) => Number(m[1]));
-}
-function highlightSource(source, highlightedBlocks = []) {
-  if (!source) return [];
-  const targetSet = new Set(highlightedBlocks.map(Number));
-  return source.split('\n').map((line, idx) => {
-    const match = line.match(/Executed Block ID:\s*(\d+)/);
-    const blockId = match ? Number(match[1]) : null;
-    const active = blockId !== null && targetSet.has(blockId);
-    return (
-      <div
-        key={idx}
-        className={classNames(
-          'whitespace-pre-wrap break-words rounded px-2 py-0.5',
-          active ? 'bg-emerald-900/40 text-emerald-200' : 'text-slate-300',
-        )}
-      >
-        {line}
-      </div>
-    );
-  });
+
+function guessMethodName(source, defaultVal = 'unknown_method') {
+  if (!source) return defaultVal;
+  const lines = source.split('\n').map(l => l.trim());
+
+  for (let line of lines) {
+    if (line.includes('class ') || line.startsWith('@')) continue;
+    const match = line.match(/(?:public|protected|private|static|\s) +[\w<>\[\]]+\s+(\w+)\s*\(/);
+    if (match && match[1]) {
+      return match[1] + '()';
+    }
+  }
+  return defaultVal;
 }
 
-/* ─────────── Depth → Tailwind margin-left mapping (eliminate inline styles) ─────────── */
+function parseMarkdownToTrace(mdText) {
+  const lines = mdText.split(/\r?\n/);
+  const threads = [];
+  let currentThread = null;
+
+  let nodeStack = [];
+  let inCodeBlock = false;
+  let codeLines = [];
+  let currentCodeNode = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (inCodeBlock) {
+      if (line.trim().endsWith('```')) {
+        inCodeBlock = false;
+        if (currentCodeNode) {
+          currentCodeNode.source = codeLines.join('\n');
+
+          currentCodeNode.method = guessMethodName(currentCodeNode.source, currentCodeNode.method);
+        }
+        codeLines = [];
+        currentCodeNode = null;
+      } else {
+
+        const cleanedLine = line.replace(/^\s{4,}/, '');
+        codeLines.push(cleanedLine);
+      }
+      continue;
+    }
+
+    const threadMatch = line.match(/^##\s+(.+?)\s*\(Order:\s*(\d+)\)/);
+    if (threadMatch) {
+      currentThread = {
+        name: threadMatch[1].trim(),
+        order: parseInt(threadMatch[2], 10),
+        call_tree: null
+      };
+      threads.push(currentThread);
+      nodeStack = [];
+      continue;
+    }
+
+    const fileMatch = line.match(/^(\s*)-\s*\*File:\*\s*`([^`]+)`/);
+    const noFileMatch = line.match(/^(\s*)-\s*\(\s*no file\s*\)/);
+
+    if (fileMatch || noFileMatch) {
+      const rawIndent = fileMatch ? fileMatch[1] : noFileMatch[1];
+      const indentLevel = Math.floor(rawIndent.length / 4);
+      const filePath = fileMatch ? fileMatch[2] : 'unknown_file';
+
+      const fileName = filePath.split('/').pop().split('\\').pop() || 'Unknown';
+      const node = {
+        file: filePath,
+        method: fileName.replace('.java', '') + '.method()',
+        source: '',
+        calls: []
+      };
+
+      if (!currentThread) {
+
+        currentThread = { name: 'Default Thread', order: 1, call_tree: null };
+        threads.push(currentThread);
+      }
+
+      if (indentLevel === 0) {
+
+        currentThread.call_tree = node;
+        nodeStack = [{ node, indentLevel }];
+      } else {
+
+        while (nodeStack.length > 0 && nodeStack[nodeStack.length - 1].indentLevel >= indentLevel) {
+          nodeStack.pop();
+        }
+        if (nodeStack.length > 0) {
+          const parent = nodeStack[nodeStack.length - 1].node;
+          parent.calls.push(node);
+        } else {
+
+          if (!currentThread.call_tree) {
+            currentThread.call_tree = node;
+          }
+        }
+        nodeStack.push({ node, indentLevel });
+      }
+      continue;
+    }
+
+    if (line.trim().endsWith('```java')) {
+      inCodeBlock = true;
+      codeLines = [];
+      if (nodeStack.length > 0) {
+        currentCodeNode = nodeStack[nodeStack.length - 1].node;
+      }
+      continue;
+    }
+  }
+
+  return { threads };
+}
+
 const DEPTH_ML = [
   'ml-0', 'ml-4', 'ml-8', 'ml-12', 'ml-16',
   'ml-20', 'ml-24', 'ml-28', 'ml-32', 'ml-36',
@@ -73,38 +162,57 @@ function depthMargin(depth) {
   return DEPTH_ML[Math.min(depth, DEPTH_ML.length - 1)];
 }
 
-/* ─────────────────────────── Subcomponents ─────────────────────────── */
-
-function JsonHintCard() {
+function FileHintCard() {
   return (
-    <div className="mx-auto max-w-3xl rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm">
-      <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-100 text-blue-700">
-        <Layers size={30} />
-      </div>
-      <h2 className="text-2xl font-bold text-slate-900">Load Execution Trace JSON</h2>
-      <p className="mt-3 text-sm leading-6 text-slate-600">
-        After uploading a data file that matches this structure, the tool will automatically parse threads, execution order, call tree, trimmed source code, and executed block information.
-      </p>
-      <div className="mt-6 rounded-xl bg-slate-50 p-4 text-left">
-        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
-          <Info size={16} />Expected Structure
+    <div className="mx-auto max-w-4xl space-y-6">
+      <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm">
+        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-100 text-blue-700">
+          <Layers size={30} />
         </div>
-        <pre className="overflow-x-auto text-xs leading-6 text-slate-600">{`{
+        <h2 className="text-2xl font-bold text-slate-900">Load Execution Trace Data</h2>
+        <p className="mt-3 text-sm leading-6 text-slate-600 max-w-xl mx-auto">
+          Upload either the raw <strong>JSON Trace File</strong> or the <strong>Markdown (.md)</strong> file generated by the Java MarkdownGenerator. The visualizer will parse and reconstruct the call tree automatically.
+        </p>
+
+        <div className="mt-8 grid grid-cols-1 gap-6 text-left md:grid-cols-2">
+          {/* Format 1 */}
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
+              <Braces size={16} className="text-blue-600" />
+              Option A: Original JSON
+            </div>
+            <pre className="overflow-x-auto rounded-lg bg-slate-900 p-3 text-xs leading-5 text-slate-300 font-mono">{`{
   "threads": [
     {
       "name": "Thread-1",
       "order": 1,
-      "block_trace": [32, 33, 34],
       "call_tree": {
-        "method": "...",
-        "file": "...",
-        "executed_blocks": [32],
+        "method": "main",
+        "file": "App.java",
         "source": "...",
         "calls": []
       }
     }
   ]
 }`}</pre>
+          </div>
+
+          {/* Format 2 */}
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
+              <FileText size={16} className="text-emerald-600" />
+              Option B: Generated Markdown (.md)
+            </div>
+            <pre className="overflow-x-auto rounded-lg bg-slate-900 p-3 text-xs leading-5 text-slate-300 font-mono">{`# Thread Traces
+## Thread-1 (Order: 1)
+- *File:* \`App.java\`
+    \`\`\`java
+    public static void main() { ... }
+    \`\`\`
+    *Calls:*
+        - *File:* \`Helper.java\``}</pre>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -128,54 +236,31 @@ function SummaryCard({ icon, label, value, sub }) {
   );
 }
 
-function BlockTraceView({ blockTrace, selectedBlock, onSelectBlock }) {
-  const trace = safeArray(blockTrace);
+function MarkdownExplainer() {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-center gap-2">
-        <Clock3 className="text-blue-600" size={18} />
-        <h3 className="text-lg font-semibold text-slate-900">Thread Execution Trace</h3>
+        <HelpCircle className="text-blue-600" size={18} />
+        <h3 className="text-lg font-semibold text-slate-900">Markdown Structure Explanation</h3>
       </div>
-      {trace.length === 0 ? (
-        <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">No block_trace data</div>
-      ) : (
-        <div className="max-h-72 overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <div className="flex flex-wrap gap-2">
-            {trace.map((blockId, idx) => {
-              const active = Number(selectedBlock) === Number(blockId);
-              return (
-                <button
-                  key={`${blockId}-${idx}`}
-                  onClick={() => onSelectBlock(active ? null : blockId)}
-                  title={`Step ${idx + 1}`}
-                  className={classNames(
-                    'inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-mono transition',
-                    active
-                      ? 'border-blue-600 bg-blue-600 text-white'
-                      : 'border-slate-300 bg-white text-slate-700 hover:border-blue-400 hover:text-blue-700',
-                  )}
-                >
-                  {blockId}
-                  {idx < trace.length - 1 && <span className="ml-2 text-slate-400">→</span>}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      <div className="space-y-3 text-sm text-slate-600 leading-relaxed">
+        <p>
+          This tree structure was successfully parsed from the Markdown generated by <code>MarkdownGenerator.java</code>. Here is how the syntax maps back to the visual components:
+        </p>
+        <ul className="list-disc pl-5 space-y-1.5 text-xs">
+          <li><strong>Thread Separation</strong>: Defined by <code>## [Thread Name] (Order: [N])</code> headers.</li>
+          <li><strong>Hierarchy (4-Space Indent)</strong>: Each additional 4 spaces of indentation represents a deeper level in the method call stack.</li>
+          <li><strong>File Context</strong>: Extracted from the <code>- *File:* `[Path]`</code> line.</li>
+          <li><strong>Pruned Source Code</strong>: Extracted from the nested <code>```java ... ```</code> blocks.</li>
+          <li><strong>Method Signatures</strong>: Automatically extracted and guessed from the first valid method declaration inside the code block.</li>
+        </ul>
+      </div>
     </div>
   );
 }
 
-function SourcePanel({ node, selectedBlock }) {
+function SourcePanel({ node }) {
   const [copied, setCopied] = useState(false);
-
-  const blockIdsInSource = useMemo(() => findBlockIdsInSource(node?.source), [node?.source]);
-  const highlightedBlocks = useMemo(() => {
-    if (selectedBlock == null) return safeArray(node?.executed_blocks);
-    const num = Number(selectedBlock);
-    return blockIdsInSource.includes(num) ? [num] : safeArray(node?.executed_blocks);
-  }, [selectedBlock, node?.executed_blocks, blockIdsInSource]);
 
   const handleCopy = async () => {
     try {
@@ -184,7 +269,7 @@ function SourcePanel({ node, selectedBlock }) {
       await navigator.clipboard.writeText(textToCopy);
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
-    } catch { /* ignore */ }
+    } catch {  }
   };
 
   if (!node?.source) {
@@ -200,7 +285,7 @@ function SourcePanel({ node, selectedBlock }) {
       <div className="flex items-center justify-between border-b border-slate-700 bg-slate-800 px-4 py-2">
         <div className="flex items-center gap-2 text-sm text-slate-200">
           <Code2 size={16} />
-          <span className="font-mono">Trimmed Source Code</span>
+          <span className="font-mono">Pruned Source Code</span>
         </div>
         <button
           onClick={handleCopy}
@@ -210,21 +295,15 @@ function SourcePanel({ node, selectedBlock }) {
           {copied ? 'Copied' : 'Copy And Ask AI'}
         </button>
       </div>
-      <div className="max-h-screen overflow-auto p-4 text-xs font-mono leading-6">
-        <pre>{highlightSource(node.source, highlightedBlocks)}</pre>
+      <div className="max-h-screen overflow-auto p-4 text-xs font-mono leading-6 text-slate-300 whitespace-pre-wrap break-words">
+        {node.source}
       </div>
     </div>
   );
 }
 
-/* ── NodeMeta: Improved ── Display full function name when space is sufficient, intelligently truncate when compact ── */
-function NodeMeta({ node, isSelected, onSelect, selectedBlock, compact = false }) {
-  const executedBlocks = safeArray(node.executed_blocks);
+function NodeMeta({ node, isSelected, onSelect, compact = false }) {
   const childCount = safeArray(node.calls).length;
-  const blockMatch =
-    selectedBlock != null &&
-    (executedBlocks.includes(Number(selectedBlock)) ||
-      findBlockIdsInSource(node.source).includes(Number(selectedBlock)));
 
   return (
     <button
@@ -233,12 +312,9 @@ function NodeMeta({ node, isSelected, onSelect, selectedBlock, compact = false }
         'w-full rounded-xl border p-3 text-left transition',
         isSelected
           ? 'border-blue-500 bg-blue-50 shadow-sm'
-          : blockMatch
-            ? 'border-emerald-400 bg-emerald-50'
-            : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50',
+          : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50',
       )}
     >
-      {/* Method signature line */}
       <div className={classNames('flex items-start gap-2', compact ? 'flex-col' : 'justify-between')}>
         <div className={classNames(compact ? 'w-full' : 'min-w-0 flex-1')}>
           <div
@@ -259,44 +335,21 @@ function NodeMeta({ node, isSelected, onSelect, selectedBlock, compact = false }
           </div>
         </div>
 
-        {/* Statistics badges */}
         <div className={classNames(
           'flex shrink-0 gap-1',
           compact ? 'flex-row' : 'flex-col items-end'
         )}>
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-            {executedBlocks.length} blocks
-          </span>
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
             {childCount} calls
           </span>
         </div>
       </div>
-
-      {/* Block ID badges */}
-      {executedBlocks.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1">
-          {executedBlocks.map((id) => (
-            <span
-              key={id}
-              className={classNames(
-                'rounded-full px-2 py-0.5 text-xs font-mono',
-                Number(selectedBlock) === Number(id)
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-emerald-100 text-emerald-800',
-              )}
-            >
-              #{id}
-            </span>
-          ))}
-        </div>
-      )}
     </button>
   );
 }
 
-function CallTreeNode({ node, depth = 0, selectedNode, setSelectedNode, selectedBlock, compact = false }) {
-  const [expanded, setExpanded] = useState(depth < 2);
+function CallTreeNode({ node, depth = 0, selectedNode, setSelectedNode, compact = false }) {
+  const [expanded, setExpanded] = useState(depth < 3);
   const children = safeArray(node?.calls);
   const hasChildren = children.length > 0;
   const isSelected = selectedNode === node;
@@ -319,7 +372,6 @@ function CallTreeNode({ node, depth = 0, selectedNode, setSelectedNode, selected
           <NodeMeta
             node={node}
             isSelected={isSelected}
-            selectedBlock={selectedBlock}
             onSelect={() => setSelectedNode(node)}
             compact={compact}
           />
@@ -342,7 +394,6 @@ function CallTreeNode({ node, depth = 0, selectedNode, setSelectedNode, selected
                 depth={depth + 1}
                 selectedNode={selectedNode}
                 setSelectedNode={setSelectedNode}
-                selectedBlock={selectedBlock}
                 compact={compact}
               />
             ))}
@@ -353,14 +404,14 @@ function CallTreeNode({ node, depth = 0, selectedNode, setSelectedNode, selected
   );
 }
 
-/* ─────────────────────────── Main Component ─────────────────────────── */
+/* ─────────────────────────── 主组件 ─────────────────────────── */
 
 export default function CallTreeVisualizer() {
   const [data, setData] = useState(null);
+  const [fileType, setFileType] = useState(''); // 'json' 或 'markdown'
   const [error, setError] = useState('');
   const [activeThreadIndex, setActiveThreadIndex] = useState(0);
   const [selectedNode, setSelectedNode] = useState(null);
-  const [selectedBlock, setSelectedBlock] = useState(null);
   const [searchText, setSearchText] = useState('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -369,19 +420,30 @@ export default function CallTreeVisualizer() {
     if (!file) return;
     try {
       const text = await readFileAsText(file);
-      const json = JSON.parse(text);
-      if (!json || !Array.isArray(json.threads)) {
-        throw new Error('Invalid JSON structure: missing threads array');
+      const isMarkdown = file.name.endsWith('.md') || text.trim().startsWith('#');
+
+      let parsedData;
+      if (isMarkdown) {
+        parsedData = parseMarkdownToTrace(text);
+        setFileType('markdown');
+      } else {
+        parsedData = JSON.parse(text);
+        setFileType('json');
       }
-      setData(json);
+
+      if (!parsedData || !Array.isArray(parsedData.threads)) {
+        throw new Error('Invalid file structure: missing threads data');
+      }
+
+      setData(parsedData);
       setError('');
       setActiveThreadIndex(0);
-      setSelectedBlock(null);
-      setSelectedNode(json.threads?.[0]?.call_tree || null);
+      setSelectedNode(parsedData.threads?.[0]?.call_tree || null);
     } catch (err) {
       setError(err?.message || 'Parsing failed');
       setData(null);
       setSelectedNode(null);
+      setFileType('');
     }
   }, []);
 
@@ -400,37 +462,22 @@ export default function CallTreeVisualizer() {
 
   const activeThreadStats = useMemo(() => {
     if (!activeThread?.call_tree) {
-      return { methods: 0, fileCount: 0, blockCount: 0, traceCount: safeArray(activeThread?.block_trace).length };
+      return { methods: 0, fileCount: 0 };
     }
     const s = collectStatsFromNode(activeThread.call_tree);
-    return { methods: s.methods, fileCount: s.files.size, blockCount: s.blocks, traceCount: safeArray(activeThread?.block_trace).length };
+    return { methods: s.methods, fileCount: s.files.size };
   }, [activeThread]);
-
-  const allNodesInThread = useMemo(() =>
-    activeThread?.call_tree ? flattenNodes(activeThread.call_tree) : [],
-    [activeThread],
-  );
-
-  const matchedNodes = useMemo(() => {
-    if (selectedBlock == null) return [];
-    const target = Number(selectedBlock);
-    return allNodesInThread.filter((n) =>
-      safeArray(n.executed_blocks).includes(target) ||
-      findBlockIdsInSource(n.source).includes(target),
-    );
-  }, [allNodesInThread, selectedBlock]);
 
   const handleSwitchThread = (thread) => {
     const idx = threads.findIndex((t) => t === thread);
     setActiveThreadIndex(idx >= 0 ? idx : 0);
-    setSelectedBlock(null);
     setSelectedNode(thread?.call_tree || null);
   };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
 
-      {/* ── Header ── */}
+      {}
       <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-screen-2xl flex-col gap-4 px-4 py-4 md:px-6 lg:px-8">
           <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
@@ -440,12 +487,12 @@ export default function CallTreeVisualizer() {
               </div>
               <div>
                 <h1 className="text-xl font-bold md:text-2xl">Execution Trace Visualizer</h1>
-                <p className="text-sm text-slate-500">A general-purpose visualization tool for threads, call trees, code blocks, and trimmed source code</p>
+                <p className="text-sm text-slate-500">Visualizing call trees and pruned source code from JSON or Markdown outputs</p>
               </div>
             </div>
             <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50">
-              <Upload size={18} />Select JSON File
-              <input type="file" accept=".json,application/json" className="hidden" onChange={handleFileUpload} />
+              <Upload size={18} />Select File (JSON / MD)
+              <input type="file" accept=".json,application/json,.md,text/markdown" className="hidden" onChange={handleFileUpload} />
             </label>
           </div>
 
@@ -459,15 +506,24 @@ export default function CallTreeVisualizer() {
                 className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               />
             </div>
-            {data
-              ? <div className="text-sm text-slate-500">Loaded <span className="font-semibold text-slate-700">{formatCount(threads.length)}</span> threads</div>
-              : <div className="text-sm text-slate-400">No data loaded yet</div>
-            }
+            {data ? (
+              <div className="flex items-center gap-2 text-sm text-slate-500">
+                <span>Loaded <span className="font-semibold text-slate-700">{formatCount(threads.length)}</span> threads</span>
+                <span className={classNames(
+                  "rounded-full px-2 py-0.5 text-xs font-semibold",
+                  fileType === 'markdown' ? "bg-emerald-100 text-emerald-800" : "bg-blue-100 text-blue-800"
+                )}>
+                  {fileType === 'markdown' ? 'Markdown Mode' : 'JSON Mode'}
+                </span>
+              </div>
+            ) : (
+              <div className="text-sm text-slate-400">No data loaded yet</div>
+            )}
           </div>
         </div>
       </header>
 
-      {/* ── Main ── */}
+      {/* ── 主体区域 ── */}
       <main className="mx-auto max-w-screen-2xl px-4 py-6 md:px-6 lg:px-8">
         {error && (
           <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
@@ -475,10 +531,10 @@ export default function CallTreeVisualizer() {
           </div>
         )}
 
-        {!data ? <JsonHintCard /> : (
+        {!data ? <FileHintCard /> : (
           <div className="flex flex-col gap-6 lg:flex-row">
 
-            {/* ── Thread List Sidebar ── */}
+            {}
             <aside className={classNames(
               'shrink-0 transition-all duration-300 ease-in-out',
               sidebarCollapsed ? 'lg:w-12' : 'lg:w-72'
@@ -487,7 +543,6 @@ export default function CallTreeVisualizer() {
                 'sticky top-28 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden',
                 sidebarCollapsed ? 'p-2' : 'p-4'
               )}>
-                {/* Header: title + collapse button */}
                 <div className={classNames(
                   'flex items-center',
                   sidebarCollapsed ? 'flex-col gap-2' : 'justify-between gap-2 mb-3'
@@ -507,7 +562,6 @@ export default function CallTreeVisualizer() {
                   </button>
                 </div>
 
-                {/* Collapsed state: show only icon indicators for threads */}
                 {sidebarCollapsed ? (
                   <div className="flex flex-col items-center gap-2">
                     {filteredThreads.map((thread, idx) => {
@@ -530,7 +584,6 @@ export default function CallTreeVisualizer() {
                     })}
                   </div>
                 ) : (
-                  /* Expanded state: full list */
                   <div className="max-h-[70vh] space-y-2 overflow-auto pr-1">
                     {filteredThreads.length === 0 ? (
                       <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-500">No matching threads</div>
@@ -552,9 +605,6 @@ export default function CallTreeVisualizer() {
                               </div>
                               <div className="mt-1 text-xs text-slate-500">order #{thread?.order ?? '-'}</div>
                             </div>
-                            <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">
-                              {safeArray(thread?.block_trace).length} blocks
-                            </span>
                           </div>
                         </button>
                       );
@@ -564,11 +614,11 @@ export default function CallTreeVisualizer() {
               </div>
             </aside>
 
-            {/* ── Right Main Area ── */}
+            {/* ── 右侧主工作区 ── */}
             <section className="min-w-0 flex-1 space-y-6">
               {activeThread ? (
                 <>
-                  {/* Overview */}
+                  {/* 线程概览 */}
                   <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                     <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                       <div>
@@ -578,31 +628,20 @@ export default function CallTreeVisualizer() {
                         </div>
                         <div className="mt-2 text-sm text-slate-500">Order #{activeThread.order ?? '-'}</div>
                       </div>
-                      {selectedBlock != null && (
-                        <div className="rounded-xl bg-blue-50 px-3 py-2 text-sm text-blue-800">
-                          Currently Selected Block: <span className="font-mono font-semibold">#{selectedBlock}</span>
-                        </div>
-                      )}
                     </div>
-                    <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                      <SummaryCard icon={ListTree}   label="Methods"          value={formatCount(activeThreadStats.methods)}    sub="Total call tree nodes" />
-                      <SummaryCard icon={FolderTree} label="Files"            value={formatCount(activeThreadStats.fileCount)}  sub="Number of involved files" />
-                      <SummaryCard icon={GitCommit}  label="Executed Blocks"  value={formatCount(activeThreadStats.blockCount)} sub="Total executed_blocks count" />
-                      <SummaryCard icon={Hash}       label="Block Trace"      value={formatCount(activeThreadStats.traceCount)} sub="Thread execution sequence length" />
+                    <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-2">
+                      <SummaryCard icon={ListTree}   label="Methods" value={formatCount(activeThreadStats.methods)}   sub="Total call tree nodes" />
+                      <SummaryCard icon={FolderTree} label="Files"   value={formatCount(activeThreadStats.fileCount)} sub="Number of involved files" />
                     </div>
                   </div>
 
-                  {/* Execution trace */}
-                  <BlockTraceView
-                    blockTrace={activeThread.block_trace}
-                    selectedBlock={selectedBlock}
-                    onSelectBlock={setSelectedBlock}
-                  />
+                  {}
+                  {fileType === 'markdown' && <MarkdownExplainer />}
 
-                  {/* ── Call Tree + Node Details ── */}
+                  {}
                   <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
 
-                    {/* Call tree */}
+                    {}
                     <div className="xl:col-span-2 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                       <div className="mb-4 flex items-center justify-between">
                         <div className="flex items-center gap-2">
@@ -617,7 +656,6 @@ export default function CallTreeVisualizer() {
                             node={activeThread.call_tree}
                             selectedNode={selectedNode}
                             setSelectedNode={setSelectedNode}
-                            selectedBlock={selectedBlock}
                             compact={false}
                           />
                         </div>
@@ -626,7 +664,7 @@ export default function CallTreeVisualizer() {
                       )}
                     </div>
 
-                    {/* Node details */}
+                    {/* 节点详情 */}
                     <div className="xl:col-span-3 space-y-4">
                       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                         <div className="mb-4 flex items-center gap-2">
@@ -637,89 +675,29 @@ export default function CallTreeVisualizer() {
                         {selectedNode ? (
                           <div className="space-y-4">
                             <div>
-                              <div className="text-xs uppercase tracking-wide text-slate-500">Method</div>
+                              <div className="text-xs uppercase tracking-wide text-slate-500">Method (Guessed)</div>
                               <div className="mt-1 font-mono text-sm font-semibold text-slate-900 break-all">
                                 {selectedNode.method || '(unknown method)'}
                               </div>
                             </div>
                             <div>
                               <div className="text-xs uppercase tracking-wide text-slate-500">File</div>
-                              <div className="mt-1 break-all text-sm text-slate-700">
+                              <div className="mt-1 break-all text-sm text-slate-700 font-mono">
                                 {selectedNode.file || '(unknown file)'}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-xs uppercase tracking-wide text-slate-500">Executed Blocks</div>
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                {safeArray(selectedNode.executed_blocks).length > 0
-                                  ? safeArray(selectedNode.executed_blocks).map((id) => (
-                                    <button
-                                      key={id}
-                                      onClick={() => setSelectedBlock(id)}
-                                      className={classNames(
-                                        'rounded-full px-2.5 py-1 text-xs font-mono transition',
-                                        Number(selectedBlock) === Number(id)
-                                          ? 'bg-blue-600 text-white'
-                                          : 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200',
-                                      )}
-                                    >
-                                      #{id}
-                                    </button>
-                                  ))
-                                  : <span className="text-sm text-slate-500">None</span>
-                                }
                               </div>
                             </div>
                             <div>
                               <div className="text-xs uppercase tracking-wide text-slate-500">Child Calls</div>
                               <div className="mt-1 text-sm text-slate-700">{safeArray(selectedNode.calls).length}</div>
                             </div>
-                            <SourcePanel node={selectedNode} selectedBlock={selectedBlock} />
+                            <SourcePanel node={selectedNode} />
                           </div>
                         ) : (
                           <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">Please select a node from the call tree on the left</div>
                         )}
                       </div>
-
-                      {/* Block matched nodes */}
-                      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                        <div className="mb-4 flex items-center gap-2">
-                          <GitCommit size={18} className="text-blue-600" />
-                          <h3 className="text-lg font-semibold text-slate-900">Block Matched Nodes</h3>
-                        </div>
-                        {selectedBlock != null ? (
-                          matchedNodes.length > 0 ? (
-                            <div className="space-y-3">
-                              {matchedNodes.map((node, idx) => (
-                                <button
-                                  key={`${node.method || 'matched'}-${idx}`}
-                                  onClick={() => setSelectedNode(node)}
-                                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-left transition hover:border-slate-300 hover:bg-white"
-                                >
-                                  <div
-                                    className="truncate font-mono text-sm font-semibold text-slate-900"
-                                    title={node.method || '(unknown method)'}
-                                  >
-                                    {node.method || '(unknown method)'}
-                                  </div>
-                                  <div className="mt-1 truncate text-xs text-slate-500" title={node.file}>
-                                    {node.file || '(unknown file)'}
-                                  </div>
-                                </button>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-                              No nodes matching this block were found in the current thread
-                            </div>
-                          )
-                        ) : (
-                          <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-                            Select a block from the execution trace or node details to view associated call nodes
-                          </div>
-                        )}
-                      </div>
                     </div>
+
                   </div>
                 </>
               ) : (

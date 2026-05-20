@@ -1,471 +1,240 @@
 package com.example.instrumentor.data.structuring;
 
-import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
-import com.github.javaparser.ast.Node;
-import com.github.javaparser.ast.body.*;
-import com.github.javaparser.ast.expr.LambdaExpr;
-import com.github.javaparser.ast.comments.Comment;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
+import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.stmt.BlockStmt;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.file.*;
 import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class DataStructuring {
 
-    static class BlockInfo {
-        final int id;
-        final String filePath;
-        final int originalLine;
+    static class MethodNode {
+        String className;
+        String methodName;
+        int paramCount;
+        String sourceCode;
+        String filePath;
+        List<MethodNode> calls = new ArrayList<>();
 
-        BlockInfo(int id, String filePath, int originalLine) {
-            this.id = id;
-            this.filePath = filePath;
-            this.originalLine = originalLine;
-        }
-    }
-
-    static class MethodInfo {
-        final String className;
-        final String fullSignature;
-        final int startLine;
-        final int endLine;
-
-        MethodInfo(String className, String fullSignature, int startLine, int endLine) {
+        public MethodNode(String className, String methodName, int paramCount, String sourceCode, String filePath) {
             this.className = className;
-            this.fullSignature = fullSignature;
-            this.startLine = startLine;
-            this.endLine = endLine;
+            this.methodName = methodName;
+            this.paramCount = paramCount;
+            this.sourceCode = sourceCode;
+            this.filePath = filePath;
         }
 
-        String uniqueKey() {
-            return fullSignature + "@@" + startLine;
-        }
-    }
-
-    static class ThreadTrace {
-        final String name;
-        final int order;
-        final int blockCount;
-        final List<Integer> blockIds;
-        final List<String> mergedFrom;
-
-        ThreadTrace(String name, int order, int blockCount,
-                    List<Integer> blockIds, List<String> mergedFrom) {
-            this.name = name;
-            this.order = order;
-            this.blockCount = blockCount;
-            this.blockIds = blockIds;
-            this.mergedFrom = mergedFrom;
+        public String getFullSignature() {
+            return className + "." + methodName + " (params: " + paramCount + ")";
         }
     }
 
-    static Map<Integer, BlockInfo> parseMappingFile(String path) throws IOException {
-        Map<Integer, BlockInfo> map = new LinkedHashMap<>();
-        for (String line : Files.readAllLines(Paths.get(path), StandardCharsets.UTF_8)) {
-            line = line.trim();
-            if (line.isEmpty() || line.startsWith("#")) continue;
-            int eq = line.indexOf('=');
-            if (eq < 0) continue;
-            try {
-                int id = Integer.parseInt(line.substring(0, eq).trim());
-                String value = line.substring(eq + 1).trim();
-                int lastColon = value.lastIndexOf(':');
-                String filePath = value.substring(0, lastColon).trim();
-                int lineNum = Integer.parseInt(value.substring(lastColon + 1).trim());
-                map.put(id, new BlockInfo(id, filePath.replace('\\', '/'), lineNum));
-            } catch (Exception ignored) {}
+    public static void main(String[] args) {
+        // 修改：现在仅需 1 个参数
+        if (args.length < 1) {
+            System.err.println("Usage: java ThreadDependencyAnalyzer <pruned_directory_path>");
+            System.err.println("Example: java ThreadDependencyAnalyzer ./pruned");
+            System.exit(1);
         }
-        return map;
-    }
 
-    static List<ThreadTrace> parseLogFile(String path) throws IOException {
-        List<ThreadTrace> traces = new ArrayList<>();
-        List<String> lines = Files.readAllLines(Paths.get(path), StandardCharsets.UTF_8);
-
-        Pattern headerPat = Pattern.compile(
-            "\\[(.+?)\\].*?#(\\d+).*?count:\\s*(\\d+)",
-            Pattern.CASE_INSENSITIVE
-        );
-        Pattern mergedPat = Pattern.compile(
-            "[Mm]erged from\\s+\\d+\\s+threads:\\s*(.+?)$"
-        );
-
-        int i = 0;
-        while (i < lines.size()) {
-            String raw = lines.get(i).trim();
-            Matcher hm = headerPat.matcher(raw);
-            if (hm.find()) {
-                String threadName = hm.group(1);
-                int order = Integer.parseInt(hm.group(2));
-                int count = Integer.parseInt(hm.group(3));
-
-                List<String> mergedFrom = null;
-                Matcher mm = mergedPat.matcher(raw);
-                if (mm.find()) {
-                    mergedFrom = Arrays.stream(mm.group(1).split(","))
-                            .map(String::trim).filter(s -> !s.isEmpty())
-                            .collect(Collectors.toList());
-                }
-
-                StringBuilder buf = new StringBuilder();
-                i++;
-                while (i < lines.size()) {
-                    String l = lines.get(i).trim();
-                    if (l.isEmpty() || l.startsWith("#") || l.startsWith("[")) break;
-                    buf.append(" ").append(l);
-                    i++;
-                }
-
-                List<Integer> ids = new ArrayList<>();
-                for (String part : buf.toString().trim().split("\\s*->\\s*")) {
-                    part = part.trim();
-                    if (!part.isEmpty()) {
-                        try { ids.add(Integer.parseInt(part)); } catch (Exception ignored) {}
-                    }
-                }
-                traces.add(new ThreadTrace(threadName, order, count, ids, mergedFrom));
-            } else {
-                i++;
-            }
-        }
-        return traces;
-    }
-
-    static Map<Integer, MethodInfo> mapBlocksToMethods(Path prunedFile) {
-        Map<Integer, MethodInfo> blockToMethod = new HashMap<>();
-        if (!Files.exists(prunedFile)) return blockToMethod;
+        String prunedDirPath = args[0];
+        // 修改：直接硬编码输出到当前工作目录下的 final-output-calltree.md
+        String outputFilePath = "final-output-calltree.md";
 
         try {
-            ParserConfiguration cfg = new ParserConfiguration();
-            cfg.setLanguageLevel(ParserConfiguration.LanguageLevel.JAVA_17);
-            StaticJavaParser.setConfiguration(cfg);
-            CompilationUnit cu = StaticJavaParser.parse(prunedFile);
+            Path prunedDir = Paths.get(prunedDirPath);
+            if (!Files.exists(prunedDir) || !Files.isDirectory(prunedDir)) {
+                System.err.println("[ERROR] The directory does not exist: " + prunedDirPath);
+                return;
+            }
 
-            Pattern blockIdPattern = Pattern.compile("Executed Block ID:\\s*(\\d+)");
+            StringBuilder md = new StringBuilder();
+            md.append("# Thread Traces\n\n");
+            md.append("> **Data Schema & Legend:**\n");
+            md.append("> This section represents the execution call tree for each thread.\n");
+            md.append("> - **Call Tree**: Hierarchical execution flow. Each node contains the source file and pruned source code.\n\n");
 
-            for (Comment comment : cu.getAllComments()) {
-                Matcher m = blockIdPattern.matcher(comment.getContent());
-                if (m.find()) {
-                    int blockId = Integer.parseInt(m.group(1));
-                    Node startNode = comment.getCommentedNode().orElse(comment);
-                    MethodInfo mi = findEnclosingMethod(startNode);
-                    if (mi != null) {
-                        blockToMethod.put(blockId, mi);
+            List<Path> threadDirs = Files.list(prunedDir)
+                    .filter(Files::isDirectory)
+                    .sorted()
+                    .collect(Collectors.toList());
+
+            int order = 0;
+            for (Path threadDir : threadDirs) {
+                String threadName = threadDir.getFileName().toString();
+                System.out.println("Processing thread: " + threadName);
+
+                md.append("## ").append(threadName).append(" (Order: ").append(order++).append(")\n");
+
+                List<Path> javaFiles = Files.walk(threadDir)
+                        .filter(p -> p.toString().endsWith(".java"))
+                        .collect(Collectors.toList());
+
+                Map<String, MethodNode> methodMap = new HashMap<>();
+
+                Map<MethodNode, List<MethodCallInfo>> rawCallsMap = new HashMap<>();
+
+                for (Path javaFile : javaFiles) {
+                    try {
+                        CompilationUnit cu = StaticJavaParser.parse(javaFile);
+                        String relativePath = prunedDir.relativize(javaFile).toString().replace("\\", "/");
+
+                        cu.findAll(ClassOrInterfaceDeclaration.class).forEach(classDecl -> {
+                            String className = classDecl.getNameAsString();
+
+                            classDecl.findAll(MethodDeclaration.class).forEach(methodDecl -> {
+
+                                if (isEmptyMethod(methodDecl)) {
+                                    return;
+                                }
+
+                                String methodName = methodDecl.getNameAsString();
+                                int paramCount = methodDecl.getParameters().size();
+                                String sourceCode = methodDecl.toString();
+
+                                MethodNode node = new MethodNode(className, methodName, paramCount, sourceCode, relativePath);
+                                String signature = className + "." + methodName + "_" + paramCount;
+                                methodMap.put(signature, node);
+
+                                List<MethodCallInfo> callsInMethod = new ArrayList<>();
+                                methodDecl.findAll(MethodCallExpr.class).forEach(call -> {
+                                    callsInMethod.add(new MethodCallInfo(
+                                            call.getScope().map(Object::toString).orElse(null),
+                                            call.getNameAsString(),
+                                            call.getArguments().size()
+                                    ));
+                                });
+                                rawCallsMap.put(node, callsInMethod);
+                            });
+                        });
+                    } catch (Exception e) {
+                        System.err.println("Warning: Failed to parse file " + javaFile + " : " + e.getMessage());
                     }
                 }
+
+                Set<MethodNode> calledNodes = new HashSet<>();
+
+                for (Map.Entry<MethodNode, List<MethodCallInfo>> entry : rawCallsMap.entrySet()) {
+                    MethodNode caller = entry.getKey();
+                    List<MethodCallInfo> calls = entry.getValue();
+
+                    for (MethodCallInfo call : calls) {
+
+                        MethodNode callee = findMatchingMethod(call, methodMap, caller.className);
+                        if (callee != null && callee != caller) {
+                            caller.calls.add(callee);
+                            calledNodes.add(callee);
+                        }
+                    }
+                }
+
+                List<MethodNode> entryPoints = methodMap.values().stream()
+                        .filter(node -> !calledNodes.contains(node))
+                        .collect(Collectors.toList());
+
+                if (entryPoints.isEmpty() && !methodMap.isEmpty()) {
+
+                    entryPoints.addAll(methodMap.values());
+                }
+
+                for (MethodNode rootNode : entryPoints) {
+                    renderCallNode(rootNode, md, 0);
+                }
+
+                md.append("\n---\n\n");
             }
-        } catch (Exception e) {
-            System.err.println("[WARN] Parsing failed: " + prunedFile + " — " + e.getMessage());
+
+            Files.writeString(Paths.get(outputFilePath), md.toString(), StandardCharsets.UTF_8);
+            System.out.println("[SUCCESS] Markdown generated at: " + outputFilePath);
+
+        } catch (IOException e) {
+            System.err.println("[ERROR] File I/O Error: " + e.getMessage());
+            e.printStackTrace();
         }
-        return blockToMethod;
     }
 
-    private static MethodInfo findEnclosingMethod(Node node) {
-        Node current = node;
-        while (current != null) {
-            if (current instanceof MethodDeclaration md) return createMethodInfo(md);
-            if (current instanceof ConstructorDeclaration cd) return createMethodInfo(cd);
-            if (current instanceof InitializerDeclaration id) return createMethodInfo(id);
-            if (current instanceof FieldDeclaration fd) return createMethodInfo(fd);
-            if (current instanceof LambdaExpr le) return createMethodInfo(le);
-            current = current.getParentNode().orElse(null);
+    private static boolean isEmptyMethod(MethodDeclaration methodDecl) {
+
+        if (methodDecl.getBody().isEmpty()) {
+            return true;
         }
+
+        BlockStmt body = methodDecl.getBody().get();
+
+        return body.getStatements().isEmpty();
+    }
+
+    private static class MethodCallInfo {
+        String scope;
+        String name;
+        int argCount;
+
+        public MethodCallInfo(String scope, String name, int argCount) {
+            this.scope = scope;
+            this.name = name;
+            this.argCount = argCount;
+        }
+    }
+
+    private static MethodNode findMatchingMethod(MethodCallInfo call, Map<String, MethodNode> methodMap, String callerClassName) {
+
+        if (call.scope == null || "this".equals(call.scope) || "super".equals(call.scope)) {
+            String key = callerClassName + "." + call.name + "_" + call.argCount;
+            if (methodMap.containsKey(key)) {
+                return methodMap.get(key);
+            }
+        }
+
+        if (call.scope != null) {
+            String key = call.scope + "." + call.name + "_" + call.argCount;
+            if (methodMap.containsKey(key)) {
+                return methodMap.get(key);
+            }
+        }
+
+        for (MethodNode node : methodMap.values()) {
+            if (node.methodName.equals(call.name) && node.paramCount == call.argCount) {
+                return node;
+            }
+        }
+
         return null;
     }
 
-    private static MethodInfo createMethodInfo(Node node) {
-        String signature;
-        if (node instanceof MethodDeclaration md) {
-            signature = buildSignature(md);
-        } else if (node instanceof ConstructorDeclaration cd) {
-            signature = buildCtorSignature(cd);
-        } else if (node instanceof InitializerDeclaration id) {
-            signature = id.isStatic() ? "static initializer" : "instance initializer";
-        } else if (node instanceof FieldDeclaration fd) {
-            String vars = fd.getVariables().stream().map(v -> v.getNameAsString()).collect(Collectors.joining(", "));
-            signature = "Field initializer: " + vars;
-        } else if (node instanceof LambdaExpr le) {
-            String params = le.getParameters().stream().map(p -> p.toString()).collect(Collectors.joining(", "));
-            signature = "Lambda: (" + params + ") -> {...}";
+    private static void renderCallNode(MethodNode node, StringBuilder md, int level) {
+        String indent = "    ".repeat(level);
+        String contentIndent = indent + "    ";
+
+        if (node.filePath != null) {
+            md.append(indent).append("- *File:* `").append(node.filePath).append("`\n");
         } else {
-            signature = "<unknown>";
+            md.append(indent).append("- *(no file)*\n");
         }
 
-        int start = node.getBegin().isPresent() ? node.getBegin().get().line : 0;
-        int end = node.getEnd().isPresent() ? node.getEnd().get().line : 0;
-        return new MethodInfo(enclosingTypeName(node), signature, start, end);
-    }
+        if (node.sourceCode != null) {
+            String source = node.sourceCode.trim();
 
-    private static String buildSignature(MethodDeclaration md) {
-        StringBuilder sb = new StringBuilder();
-        String mods = md.getModifiers().stream()
-                .map(m -> m.getKeyword().asString()).collect(Collectors.joining(" "));
-        if (!mods.isEmpty()) sb.append(mods).append(" ");
-        if (md.getTypeParameters() != null && !md.getTypeParameters().isEmpty()) {
-            sb.append("<").append(md.getTypeParameters().stream()
-                    .map(Object::toString).collect(Collectors.joining(", "))).append("> ");
-        }
-        sb.append(md.getTypeAsString()).append(" ");
-        sb.append(md.getNameAsString()).append("(");
-        sb.append(md.getParameters().stream()
-                .map(p -> p.toString()).collect(Collectors.joining(", ")));
-        sb.append(")");
-        return sb.toString();
-    }
+            source = source.replaceAll("//\\s*\\[Executed Block ID:.*?\\]", "").trim();
 
-    private static String buildCtorSignature(ConstructorDeclaration cd) {
-        StringBuilder sb = new StringBuilder();
-        String mods = cd.getModifiers().stream()
-                .map(m -> m.getKeyword().asString()).collect(Collectors.joining(" "));
-        if (!mods.isEmpty()) sb.append(mods).append(" ");
-        sb.append(cd.getNameAsString()).append("(");
-        sb.append(cd.getParameters().stream()
-                .map(p -> p.toString()).collect(Collectors.joining(", ")));
-        sb.append(")");
-        return sb.toString();
-    }
-
-    private static String enclosingTypeName(Node node) {
-        Deque<String> parts = new ArrayDeque<>();
-        Node cur = node.getParentNode().orElse(null);
-        while (cur != null) {
-            if (cur instanceof ClassOrInterfaceDeclaration c) parts.addFirst(c.getNameAsString());
-            else if (cur instanceof EnumDeclaration e) parts.addFirst(e.getNameAsString());
-            else if (cur instanceof RecordDeclaration r) parts.addFirst(r.getNameAsString());
-            cur = cur.getParentNode().orElse(null);
-        }
-        return parts.isEmpty() ? "<anonymous>" : String.join("$", parts);
-    }
-
-    static String extractSource(Path filePath, int startLine, int endLine) {
-        if (startLine <= 0 || endLine <= 0) return "";
-        try {
-            List<String> lines = Files.readAllLines(filePath, StandardCharsets.UTF_8);
-            if (lines.isEmpty() || startLine > lines.size()) return "";
-            endLine = Math.min(endLine, lines.size());
-            List<String> slice = lines.subList(startLine - 1, endLine);
-            return dedent(slice);
-        } catch (IOException e) {
-            return "";
-        }
-    }
-
-    static String dedent(List<String> lines) {
-        int minIndent = Integer.MAX_VALUE;
-        for (String line : lines) {
-            if (line.isBlank()) continue;
-            int spaces = 0;
-            for (int i = 0; i < line.length(); i++) {
-                if (line.charAt(i) == ' ') spaces++;
-                else if (line.charAt(i) == '\t') spaces += 4;
-                else break;
+            md.append(contentIndent).append("```java\n");
+            for (String line : source.split("\n")) {
+                md.append(contentIndent).append(line).append("\n");
             }
-            minIndent = Math.min(minIndent, spaces);
+            md.append(contentIndent).append("```\n");
         }
-        if (minIndent <= 0 || minIndent == Integer.MAX_VALUE) return String.join("\n", lines);
-        
-        final int strip = minIndent;
-        return lines.stream().map(line -> {
-            if (line.isBlank()) return "";
-            int removed = 0, pos = 0;
-            while (pos < line.length() && removed < strip) {
-                char c = line.charAt(pos);
-                if (c == ' ') { removed++; pos++; }
-                else if (c == '\t') { removed += 4; pos++; }
-                else break;
-            }
-            return line.substring(pos);
-        }).collect(Collectors.joining("\n"));
-    }
 
-    static String extractRelativePath(String absolutePath) {
-        String norm = absolutePath.replace('\\', '/');
-        String[] markers = {"/src/main/java/", "/src/test/java/", "/src/"};
-        for (String marker : markers) {
-            int idx = norm.indexOf(marker);
-            if (idx >= 0) {
-                return norm.substring(idx + marker.length());
+        if (!node.calls.isEmpty()) {
+            md.append(contentIndent).append("*Calls:*\n");
+            for (MethodNode child : node.calls) {
+                renderCallNode(child, md, level + 1);
             }
         }
-        int lastSlash = norm.lastIndexOf('/');
-        return lastSlash >= 0 ? norm.substring(lastSlash + 1) : norm;
-    }
-
-    static Path resolvePrunedFilePath(Path prunedDir, String threadName, String originalPath) {
-        String fileName = Paths.get(originalPath).getFileName().toString();
-        Path baseThreadDir = prunedDir.resolve(sanitizeDirName(threadName));
-        
-        if (!Files.exists(baseThreadDir)) return null;
-
-        try (var stream = Files.walk(baseThreadDir)) {
-            return stream.filter(Files::isRegularFile)
-                         .filter(p -> p.getFileName().toString().equals(fileName))
-                         .findFirst()
-                         .orElse(null);
-        } catch (IOException e) {
-            return null;
-        }
-    }
-
-    private static String sanitizeDirName(String name) {
-        return name.replaceAll("[^a-zA-Z0-9_\\-.]", "_");
-    }
-
-    private static String compactIntegerArrays(String json) {
-        Pattern p = Pattern.compile("\\[([\\s\\d,]+)\\]");
-        Matcher m = p.matcher(json);
-        StringBuilder sb = new StringBuilder();
-        while (m.find()) {
-            String arrayContent = m.group(1);
-            String compacted = arrayContent.replaceAll("\\s+", "").replace(",", ", ");
-            m.appendReplacement(sb, "[" + compacted + "]");
-        }
-        m.appendTail(sb);
-        return sb.toString();
-    }
-
-    public static void main(String[] args) throws Exception {
-        if (args.length < 3) {
-            System.out.println("Usage: java -jar data-structuring-1.0-SNAPSHOT.jar <pruned_dir> <comment_mapping> <log_file>");
-            return;
-        }
-
-        Path prunedDir = Paths.get(args[0]);
-        String mappingPath = args[1];
-        String logPath = args[2];
-        
-        String baseOutputName = "final-output";
-
-
-        System.out.println("[1/2] Starting to parse logs and source code structure...");
-        Map<Integer, BlockInfo> blockMap = parseMappingFile(mappingPath);
-        List<ThreadTrace> traces = parseLogFile(logPath);
-
-        Map<String, Integer> fileBlockTotals = new HashMap<>();
-        for (BlockInfo bi : blockMap.values()) {
-            String rel = extractRelativePath(bi.filePath);
-            fileBlockTotals.merge(rel, 1, Integer::sum);
-        }
-
-        Map<String, Object> root = new LinkedHashMap<>();
-        List<Map<String, Object>> threadList = new ArrayList<>();
-
-        for (ThreadTrace trace : traces) {
-            Map<String, Object> tObj = new LinkedHashMap<>();
-            tObj.put("name", trace.name);
-            tObj.put("order", trace.order);
-            if (trace.mergedFrom != null) {
-                tObj.put("merged_from", trace.mergedFrom);
-            }
-            
-            // Restored block_trace for CallTreeAnalyzer to process executed blocks
-            tObj.put("block_trace", trace.blockIds);
-
-            List<String> fileOrder = new ArrayList<>();
-            Map<String, List<String>> methodOrderInFile = new HashMap<>();
-            Map<String, Map<String, List<Integer>>> fileMethodBlocks = new HashMap<>();
-            Map<String, Map<String, MethodInfo>> fileMethodInfos = new HashMap<>();
-            
-            Map<String, Map<Integer, MethodInfo>> fileToBlockMethodMap = new HashMap<>();
-            Map<String, Path> resolvedFiles = new HashMap<>();
-
-            for (int bid : trace.blockIds) {
-                BlockInfo bi = blockMap.get(bid);
-                if (bi == null) continue;
-
-                String relPath = extractRelativePath(bi.filePath);
-                
-                if (!fileOrder.contains(relPath)) {
-                    fileOrder.add(relPath);
-                    methodOrderInFile.put(relPath, new ArrayList<>());
-                    fileMethodBlocks.put(relPath, new HashMap<>());
-                    fileMethodInfos.put(relPath, new HashMap<>());
-                    
-                    Path pFile = resolvePrunedFilePath(prunedDir, trace.name, bi.filePath);
-                    if (pFile != null) {
-                        resolvedFiles.put(relPath, pFile);
-                        fileToBlockMethodMap.put(relPath, mapBlocksToMethods(pFile));
-                    } else {
-                        fileToBlockMethodMap.put(relPath, Collections.emptyMap());
-                    }
-                }
-
-                MethodInfo mi = fileToBlockMethodMap.get(relPath).get(bid);
-                String methodKey = (mi != null) ? mi.uniqueKey() : "<unknown>@@block:" + bid;
-
-                if (!methodOrderInFile.get(relPath).contains(methodKey)) {
-                    methodOrderInFile.get(relPath).add(methodKey);
-                }
-
-                fileMethodBlocks.get(relPath).computeIfAbsent(methodKey, k -> new ArrayList<>()).add(bid);
-                if (mi != null) {
-                    fileMethodInfos.get(relPath).putIfAbsent(methodKey, mi);
-                }
-            }
-
-            List<Map<String, Object>> filesArray = new ArrayList<>();
-
-            for (String relPath : fileOrder) {
-                Map<String, Object> fObj = new LinkedHashMap<>();
-                fObj.put("path", relPath);
-                
-                Path actualFile = resolvedFiles.get(relPath);
-                
-                if (fileBlockTotals.containsKey(relPath)) {
-                    fObj.put("blocks_total", fileBlockTotals.get(relPath));
-                }
-
-                List<Map<String, Object>> methodsArray = new ArrayList<>();
-                
-                for (String methodKey : methodOrderInFile.get(relPath)) {
-                    MethodInfo mi = fileMethodInfos.get(relPath).get(methodKey);
-
-                    Map<String, Object> mObj = new LinkedHashMap<>();
-                    
-                    if (mi != null) {
-                        mObj.put("line_start", mi.startLine);
-                        mObj.put("source", actualFile != null ? extractSource(actualFile, mi.startLine, mi.endLine) : "");
-                    } else {
-                        mObj.put("line_start", 0);
-                        mObj.put("source", "");
-                    }
-                    methodsArray.add(mObj);
-                }
-
-                fObj.put("methods", methodsArray);
-                filesArray.add(fObj);
-            }
-
-            tObj.put("files", filesArray);
-            threadList.add(tObj);
-        }
-
-        root.put("threads", threadList);
-
-        Gson gson = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
-        String intermediateJson = gson.toJson(root);
-        intermediateJson = compactIntegerArrays(intermediateJson);
-
-        System.out.println("[2/2] Generating standalone data files...");
-
-        String callTreeOnlyOutput = CallTreeAnalyzer.analyze(intermediateJson, null);
-        String ctPath = baseOutputName + "-calltree.json";
-        // String ctMdPath = baseOutputName + "-calltree.md";
-        Files.writeString(Paths.get(ctPath), callTreeOnlyOutput, StandardCharsets.UTF_8);
-        // MarkdownGenerator.generate(callTreeOnlyOutput, ctMdPath);
-        // System.out.println(" - Call Tree JSON & MD generated: " + ctPath + " / " + ctMdPath);
-
-        System.out.println("==================================================");
-        System.out.println("All analysis tasks have been completed!");
     }
 }

@@ -106,23 +106,6 @@ def process_logs(
     else:
         raise ValueError(f"Unsupported language: {language}")
     
-    # Execute Markdown Generator
-    if not data_structuring_jar:
-        data_structuring_jar = str(PROJECT_ROOT / "core" / "data-structuring" / "target" / "data-structuring-1.0-SNAPSHOT.jar")
-
-    print("Executing Markdown Generator...")
-    markdown_gen_cmd = [
-        "java", "-cp", data_structuring_jar,
-        "com.example.instrumentor.data.structuring.MarkdownGenerator",
-        "final-output-calltree.json",
-        "final-output-calltree.md"
-    ]
-    try:
-        env = os.environ.copy()
-        subprocess.run(markdown_gen_cmd, env=env, check=True)
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Error executing Markdown Generator: {e}")    
-
     print("Log processing, data structuring, and source code restoration completed successfully!")
 
 
