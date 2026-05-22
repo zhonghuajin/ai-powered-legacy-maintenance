@@ -1,6 +1,7 @@
 import importlib
 import os
 import sys
+import time
 import subprocess
 import socket
 import re
@@ -461,13 +462,6 @@ def startup_log_manager_server(work_dir, proj_path=None):
             f"Failed to import log_manager module from {server_dir}: {e}", Colors.RED)
         return False
 
-
-import os
-import shutil
-import glob
-import json
-import sys
-import time  # 导入 time 模块用于等待
 
 def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
     print_color(

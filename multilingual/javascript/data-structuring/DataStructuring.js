@@ -142,7 +142,7 @@ function processCallNode(node, level) {
 
   if (node.source) {
     const cleaned = cleanSource(node.source);
-    md += `${contentIndent}\`\`\`java\n`;
+    md += `${contentIndent}\`\`\`javascript\n`;
     const lines = cleaned.split('\n');
     for (const line of lines) {
       md += `${contentIndent}${line}\n`;
