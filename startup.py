@@ -10,6 +10,8 @@ import sys
 import json
 import subprocess
 import argparse
+import platform
+import webbrowser
 
 from print_utils.utils import Colors, print_color, pause_for_next_step
 from enginerring.work_flow.prechecks import (
@@ -36,23 +38,41 @@ from enginerring.work_flow.workflow_steps import (
 
 from enginerring.shadow_project_management.full_instrumentation import commit_instrumentation
 from enginerring.project_manager.project_manager import create_or_select_project
-
 from enginerring.scenario_manager.generate_scenario_description import generate_scenario_description
+
+
+def get_single_char_fallback():
+    """
+    Cross-platform single character reader function as a fallback.
+    """
+    if os.name == 'nt':
+        import msvcrt
+        ch = msvcrt.getch()
+        try:
+            return ch.decode('utf-8')
+        except Exception:
+            return str(ch)
+    else:
+        import tty
+        import termios
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(sys.stdin.fileno())
+            ch = sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        return ch
+
 
 def switch_to_source_branch(proj_path):
     """
     Read the project config.json and checkout the original_git_root
     repository to its configured source_branch.
-    Before switching, if there are any uncommitted changes, add them
-    and amend the last commit (git add . && git commit --amend --no-edit).
-
-    Args:
-        proj_path: Path to the project directory containing config.json
     """
     config_path = os.path.join(proj_path, 'config.json')
     if not os.path.exists(config_path):
-        print_color(
-            '[Branch Switch] config.json not found, skipping branch switch.', Colors.YELLOW)
+        print_color('[Branch Switch] config.json not found, skipping branch switch.', Colors.YELLOW)
         return
 
     with open(config_path, 'r', encoding='utf-8') as f:
@@ -62,8 +82,7 @@ def switch_to_source_branch(proj_path):
     source_branch = config.get('source_branch', 'master')
 
     if not git_root:
-        print_color(
-            '[Branch Switch] original_git_root is empty, skipping branch switch.', Colors.YELLOW)
+        print_color('[Branch Switch] original_git_root is empty, skipping branch switch.', Colors.YELLOW)
         return
 
     try:
@@ -90,24 +109,12 @@ def switch_to_source_branch(proj_path):
                 capture_output=True,
                 text=True
             )
-            print_color(
-                '[Branch Switch] Changes committed via amend.',
-                Colors.GREEN
-            )
+            print_color('[Branch Switch] Changes committed via amend.', Colors.GREEN)
     except subprocess.CalledProcessError as e:
-        print_color(
-            f'[Branch Switch] Failed to handle uncommitted changes: {e.stderr.strip()}',
-            Colors.RED
-        )
-        print_color(
-            '[Branch Switch] Continuing with the workflow despite the error.',
-            Colors.YELLOW
-        )
+        print_color(f'[Branch Switch] Failed to handle uncommitted changes: {e.stderr.strip()}', Colors.RED)
+        print_color('[Branch Switch] Continuing with the workflow despite the error.', Colors.YELLOW)
 
-    print_color(
-        f'[Branch Switch] Switching {git_root} to branch "{source_branch}" ...',
-        Colors.CYAN
-    )
+    print_color(f'[Branch Switch] Switching {git_root} to branch "{source_branch}" ...', Colors.CYAN)
     try:
         result = subprocess.run(
             ['git', '-C', git_root, 'checkout', source_branch],
@@ -115,23 +122,111 @@ def switch_to_source_branch(proj_path):
             capture_output=True,
             text=True
         )
-        print_color(
-            f'[Branch Switch] Successfully switched to {source_branch}.',
-            Colors.GREEN
-        )
+        print_color(f'[Branch Switch] Successfully switched to {source_branch}.', Colors.GREEN)
     except subprocess.CalledProcessError as e:
-        print_color(
-            f'[Branch Switch] Failed to switch branch: {e.stderr.strip()}',
-            Colors.RED
-        )
-        print_color(
-            '[Branch Switch] You may have uncommitted changes or the branch does not exist.',
-            Colors.RED
-        )
-        print_color(
-            '[Branch Switch] Continuing with the workflow despite the branch switch failure.',
-            Colors.YELLOW
-        )
+        print_color(f'[Branch Switch] Failed to switch branch: {e.stderr.strip()}', Colors.RED)
+        print_color('[Branch Switch] You may have uncommitted changes or the branch does not exist.', Colors.RED)
+        print_color('[Branch Switch] Continuing with the workflow despite the branch switch failure.', Colors.YELLOW)
+
+
+def run_initial_startup_verification(work_dir, proj_path):
+    print_color("\n=======================================================", Colors.CYAN)
+    print_color("      Running Initial Startup Verification...          ", Colors.CYAN)
+    print_color("=======================================================", Colors.CYAN)
+
+    config_path = os.path.join(proj_path, 'config.json')
+    config_data = {}
+    git_root = work_dir
+
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config_data = json.load(f)
+                git_root = config_data.get('original_git_root', work_dir)
+        except Exception as e:
+            print_color(f"[WARN] Failed to load config.json: {e}", Colors.YELLOW)
+
+    config_key = "startup_command_initial"
+    startup_config = config_data.get(config_key)
+    choice = ""
+    value = ""
+
+    if startup_config and isinstance(startup_config, dict):
+        choice = startup_config.get("type", "")
+        value = startup_config.get("value", "")
+        print_color(f"\n[Auto Verification] Found saved configuration for '{config_key}' (Type {choice}): {value}", Colors.GREEN)
+    else:
+        print_color("\n========================================", Colors.YELLOW)
+        print_color(f" Verification / Startup Configuration Required ({config_key}) ", Colors.YELLOW)
+        print_color("========================================", Colors.YELLOW)
+        print_color("Select verification/startup method:", Colors.CYAN)
+        print_color("[1] Run a project startup command in a new terminal", Colors.CYAN)
+        print_color("[2] Open a URL in the browser (e.g., for hot-reload)", Colors.CYAN)
+        print_color("Press [1] or [2] to choose instantly...", Colors.YELLOW)
+
+        get_char_func = globals().get('get_single_char') or get_single_char_fallback
+
+        while choice not in ["1", "2"]:
+            try:
+                choice = get_char_func()
+                if isinstance(choice, bytes):
+                    choice = choice.decode('utf-8', errors='ignore')
+                choice = choice.strip()
+            except Exception:
+                choice = input("Enter choice (1 or 2): ").strip()
+
+        print_color(f"\n[Selected Option {choice}] Proceeding...", Colors.GREEN)
+
+        if choice == "1":
+            while not value:
+                value = input("Enter the project startup command: ").strip()
+                if not value:
+                    print_color("[Warning] Startup command cannot be empty.", Colors.YELLOW)
+        elif choice == "2":
+            while not value:
+                value = input("Enter the URL to open in browser (e.g., http://localhost:8080): ").strip()
+                if not value:
+                    print_color("[Warning] URL cannot be empty.", Colors.YELLOW)
+
+        config_data[config_key] = {
+            "type": choice,
+            "value": value
+        }
+        if config_path and os.path.exists(config_path):
+            try:
+                with open(config_path, "w", encoding="utf-8") as f:
+                    json.dump(config_data, f, indent=4, ensure_ascii=False)
+                print_color(f"[Config] Successfully saved {config_key} to config.json", Colors.GREEN)
+            except Exception as e:
+                print_color(f"[Error] Failed to save {config_key} to config.json: {e}", Colors.RED)
+
+    process_to_wait = None
+    if choice == "1":
+        print_color(f"[Info] Opening a new terminal window to execute: {value}", Colors.GREEN)
+        current_os = platform.system()
+        try:
+            if current_os == 'Windows':
+                process_to_wait = subprocess.Popen(f'start cmd /k "{value}"', shell=True, cwd=git_root)
+            elif current_os == 'Darwin':
+                applescript = f'tell application "Terminal" to do script "cd {git_root} && {value}"'
+                process_to_wait = subprocess.Popen(['osascript', '-e', applescript])
+            else:
+                process_to_wait = subprocess.Popen(['x-terminal-emulator', '-e', f'sh -c "cd {git_root} && {value}; exec sh"'])
+        except Exception as e:
+            print_color(f"[Error] Failed to launch terminal window: {e}", Colors.RED)
+
+    elif choice == "2":
+        if not value.startswith(("http://", "https://")):
+            value = "http://" + value
+        print_color(f"[Info] Opening browser to: {value}", Colors.GREEN)
+        try:
+            webbrowser.open(value)
+        except Exception as e:
+            print_color(f"[Error] Failed to open browser: {e}", Colors.RED)
+
+    print_color("\n[Verification] Startup command triggered successfully.", Colors.GREEN)
+    input("Press Enter once your project has successfully started to proceed to Log Manager Server...")
+
 
 def check_if_ai_will_modify(work_dir, script_name):
     """
@@ -158,6 +253,7 @@ def check_if_ai_will_modify(work_dir, script_name):
 
     return False
 
+
 def main():
     parser = argparse.ArgumentParser(description="Instrumentor Test Bug Fix Workflow Quickstart Script")
     parser.add_argument(
@@ -165,7 +261,6 @@ def main():
         action='store_true',
         help="Pause between workflow steps."
     )
-    # Added option: --interactive-ip. If not specified, the system will auto-simulate Enter.
     parser.add_argument(
         '--interactive-ip',
         action='store_true',
@@ -173,7 +268,6 @@ def main():
     )
     args = parser.parse_args()
 
-    # Pass the option state to the environment variables for log_manager to consume
     if args.interactive_ip:
         os.environ['INTERACTIVE_IP'] = 'true'
     else:
@@ -186,14 +280,11 @@ def main():
     work_dir = os.path.abspath(os.getcwd())
     ask_llm_dir = os.path.join(work_dir, "enginerring", "ask_llm")
 
-    print_color(
-        "=======================================================", Colors.CYAN)
+    print_color("=======================================================", Colors.CYAN)
     print_color("      Enjoy the Convenience of LLMs.     ", Colors.CYAN)
-    print_color(
-        "=======================================================", Colors.CYAN)
+    print_color("=======================================================", Colors.CYAN)
     print(f"Current working directory: {work_dir}")
-    print_color(
-        "=======================================================\n", Colors.CYAN)
+    print_color("=======================================================\n", Colors.CYAN)
 
     print_disclaimer()
     check_java_version()
@@ -206,16 +297,11 @@ def main():
         print_color("=======================================================\n", Colors.CYAN)
 
         proj_path, root_path, is_new_project = create_or_select_project(work_dir)
-
         target_language = ensure_language_selected(proj_path)
 
         while True:
-
             selected_script = select_ai_prompt_script(work_dir, target_language)
-
             has_ai_marker = check_if_ai_will_modify(work_dir, selected_script)
-
-            # Modified: Pass proj_path to prepare_ai_prompt_interactive
             prompt_context = prepare_ai_prompt_interactive(work_dir, selected_script, proj_path=proj_path, save_context=has_ai_marker)
 
             maybe_pause("Project and Environment Setup", "Setup Shadow Branch")
@@ -227,37 +313,34 @@ def main():
                 pass
             else:
                 if instrument_mode == "incremental":
-                    print_color(
-                        "\n=======================================================", Colors.YELLOW)
+                    print_color("\n=======================================================", Colors.YELLOW)
                     print_color("  *** ATTENTION ***", Colors.YELLOW)
                     print_color("  Incremental instrumentation completed!", Colors.YELLOW)
                     print_color("  Please RECOMPILE (if necessary), RESTART the target project, and PERFORM operations to trigger logs.", Colors.YELLOW)
-                    print_color(
-                        "=======================================================\n", Colors.YELLOW)
+                    print_color("=======================================================\n", Colors.YELLOW)
                 elif instrument_mode == "full":
                     handle_instrumentation_dependencies(
                         work_dir, proj_path, root_path, ask_llm_dir, target_language)
                     commit_instrumentation(root_path)
-                    print_color(
-                        "\n=======================================================", Colors.YELLOW)
+                    print_color("\n=======================================================", Colors.YELLOW)
                     print_color("  *** ATTENTION ***", Colors.YELLOW)
-                    print_color(
-                        "  Instrumentation and Dependency Injection have been completed!", Colors.YELLOW)
-                    print_color(
-                        "  Please RECOMPILE (if necessary), RESTART the target project, and PERFORM operations to trigger logs.", Colors.YELLOW)
-                    print_color(
-                        "=======================================================\n", Colors.YELLOW)
+                    print_color("  Instrumentation and Dependency Injection have been completed!", Colors.YELLOW)
+                    print_color("  Please RECOMPILE (if necessary), RESTART the target project, and PERFORM operations to trigger logs.", Colors.YELLOW)
+                    print_color("=======================================================\n", Colors.YELLOW)
 
-            maybe_pause("Setup Shadow Branch & Instrumentation",
-                        "Startup Log Manager Server")
+            maybe_pause("Setup Shadow Branch & Instrumentation", "Startup Log Manager Server")
 
+            # -----------------------------------------------------------------
+            # 1) & 2) 在启动日志管理服务前，执行新实现的初始启动校验（新控制台/浏览器）
+            # -----------------------------------------------------------------
+            run_initial_startup_verification(work_dir, proj_path=proj_path)
+
+            # 正常启动日志管理服务
             is_flushed = startup_log_manager_server(work_dir, proj_path=proj_path)
 
-            maybe_pause("Startup Log Manager Server",
-                        "Analyze Logs and Extract Denoised Data")
+            maybe_pause("Startup Log Manager Server", "Analyze Logs and Extract Denoised Data")
 
             switch_to_source_branch(proj_path)
-
             analyze_logs(work_dir, proj_path=proj_path, auto_analyze=is_flushed)
 
             maybe_pause("Log Analysis", "Generate AI Prompt")
@@ -265,7 +348,6 @@ def main():
             execute_ai_prompt(work_dir, selected_script, prompt_context)
 
             if has_ai_marker:
-
                 maybe_pause("Generate AI Prompt", "Ask LLM for Task Analysis")
                 ask_llm_for_localization(ask_llm_dir)
 
@@ -276,18 +358,13 @@ def main():
                 ask_llm_for_code_fix(ask_llm_dir)
 
                 maybe_pause("Ask LLM for Code Modification", "Apply Changes to Source Code")
-
                 apply_fix(work_dir, proj_path, prompt_context)
 
-                print_color(
-                    "\n=======================================================", Colors.MAGENTA)
-                print_color(
-                    "  Workflow execution completed successfully. The code has been updated.", Colors.GREEN)
-                print_color(
-                    "=======================================================", Colors.MAGENTA)
+                print_color("\n=======================================================", Colors.MAGENTA)
+                print_color("  Workflow execution completed successfully. The code has been updated.", Colors.GREEN)
+                print_color("=======================================================", Colors.MAGENTA)
 
             elif selected_script:
-
                 maybe_pause("Generate AI Prompt", "Execute General LLM Task")
                 print_color(f"\n>>> Executing general LLM task for {selected_script}...", Colors.CYAN)
 
@@ -312,12 +389,9 @@ def main():
 
                     os.chdir(original_cwd)
 
-                    print_color(
-                        "\n=======================================================", Colors.MAGENTA)
-                    print_color(
-                        "  General LLM task execution completed successfully.", Colors.GREEN)
-                    print_color(
-                        "=======================================================", Colors.MAGENTA)
+                    print_color("\n=======================================================", Colors.MAGENTA)
+                    print_color("  General LLM task execution completed successfully.", Colors.GREEN)
+                    print_color("=======================================================", Colors.MAGENTA)
 
                 except ImportError as e:
                     print_color(f"[!] Failed to import run.py from {ask_llm_dir}: {e}", Colors.RED)
@@ -359,6 +433,7 @@ def main():
 
             os.chdir(work_dir)
             print_color("\n[!] Workflow finished. Returning to Select Prompt Generator Script... (Press Ctrl+C to exit)\n", Colors.CYAN)
+
 
 if __name__ == "__main__":
     try:
