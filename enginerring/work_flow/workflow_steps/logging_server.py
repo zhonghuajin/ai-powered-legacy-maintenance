@@ -10,6 +10,20 @@ from print_utils.utils import Colors, print_color
 
 def startup_log_manager_server(work_dir, proj_path=None):
     print_color("\n>>> Starting Log Manager Server...", Colors.CYAN)
+    
+    # Check if we should skip Manager Server interactions
+    if proj_path:
+        config_file = os.path.join(proj_path, 'config.json')
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                if config.get('skip_log_and_manager') is True:
+                    print_color("[Skip] Verification failed previously. Skipping Log Manager Server.", Colors.YELLOW)
+                    return False
+            except Exception as e:
+                print_color(f"[Warning] Failed to read config.json: {e}", Colors.YELLOW)
+
     if proj_path:
         config_file = os.path.join(proj_path, 'config.json')
         if os.path.exists(config_file):
@@ -89,6 +103,19 @@ def startup_log_manager_server(work_dir, proj_path=None):
 def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
     print_color(
         "\n>>> Analyzing logs and extracting denoised data...", Colors.CYAN)
+
+    # Check if we should skip Log Analysis interactions
+    if proj_path:
+        config_file = os.path.join(proj_path, 'config.json')
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                if config.get('skip_log_and_manager') is True:
+                    print_color("[Skip] Verification failed previously. Skipping Log Analysis.", Colors.YELLOW)
+                    return
+            except Exception as e:
+                print_color(f"[Warning] Failed to read config.json: {e}", Colors.YELLOW)
 
     if auto_analyze:
         print_color(

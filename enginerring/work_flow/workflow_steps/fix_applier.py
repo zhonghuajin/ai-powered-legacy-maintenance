@@ -88,10 +88,9 @@ def apply_fix(work_dir, proj_path=None, prompt_context=None):
             print("  2. Skip verification")
             print_color("========================================", Colors.YELLOW)
 
-            # 直接引用 common.get_single_char()，并即时回显用户按下的键
             print("Enter your choice (1-2): ", end="", flush=True)
             choice = common.get_single_char().strip()
-            print(choice)  # 打印按下的字符并换行
+            print(choice)
 
             run_verification = False
             process_to_wait = None
@@ -123,7 +122,29 @@ def apply_fix(work_dir, proj_path=None, prompt_context=None):
                 satisfied = input("\nDid the code fix meet your expectations? (yes/no): ").strip().lower()
                 if satisfied in ['yes', 'y']:
                     print_color("[Success] Verification passed! Proceeding to next step.", Colors.GREEN)
+                    
+                    # Reset the state so that the workflow runs normally
+                    if config_path and os.path.exists(config_path):
+                        try:
+                            with open(config_path, "r", encoding="utf-8") as f:
+                                config_data = json.load(f)
+                            config_data["skip_log_and_manager"] = False
+                            with open(config_path, "w", encoding="utf-8") as f:
+                                json.dump(config_data, f, indent=4)
+                        except Exception as e:
+                            print_color(f"[Error] Failed to update config.json: {e}", Colors.RED)
                 else:
+                    # Set the state to True to skip Manager Server and Log Analysis on subsequent iterations
+                    if config_path and os.path.exists(config_path):
+                        try:
+                            with open(config_path, "r", encoding="utf-8") as f:
+                                config_data = json.load(f)
+                            config_data["skip_log_and_manager"] = True
+                            with open(config_path, "w", encoding="utf-8") as f:
+                                json.dump(config_data, f, indent=4)
+                        except Exception as e:
+                            print_color(f"[Error] Failed to update config.json: {e}", Colors.RED)
+
                     if saved_commit and git_root:
                         print_color(f"\n[Rollback] Reverting changes to commit: {saved_commit}...", Colors.RED)
                         try:
