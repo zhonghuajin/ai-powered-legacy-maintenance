@@ -9,6 +9,7 @@ import platform
 import glob
 import shutil
 import json
+import builtins
 from print_utils.utils import Colors, print_color
 
 from .prechecks import setup_windows_proxy
@@ -19,8 +20,13 @@ from enginerring.dependency_handler.scan_deps import find_project_files
 from enginerring.dependency_handler.prompt_organizer import generate_prompt
 from enginerring.dependency_handler.dependency_injector import run_injection
 
+_original_get_single_char = None
 
 def get_single_char():
+    global _original_get_single_char
+    if _original_get_single_char is not None:
+        return _original_get_single_char()
+
     if os.name == 'nt':
         import msvcrt
         return msvcrt.getch().decode('utf-8', errors='ignore')
@@ -35,7 +41,7 @@ def get_single_char():
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         return ch
-    
+
 def ensure_language_selected(proj_path):
     """
     Ensure the target programming language is selected and saved in config.json.
@@ -44,7 +50,7 @@ def ensure_language_selected(proj_path):
     target_language = 'java'
     config = {}
     config_file = ""
-    
+
     if proj_path:
         config_file = os.path.join(proj_path, 'config.json')
         if os.path.exists(config_file):
@@ -55,18 +61,18 @@ def ensure_language_selected(proj_path):
                 print_color(f"[WARN] Could not read config for language selection: {e}", Colors.YELLOW)
 
         target_language = config.get('language')
-        
+
         if not target_language:
             detect_dir = config.get('original_git_root', proj_path)
             print_color(f"\n>>> Auto-detecting project language in {detect_dir}...", Colors.CYAN)
-            
+
             detected_langs = detect_project_languages(detect_dir)
-            
+
             if len(detected_langs) == 1:
                 auto_lang = detected_langs.pop().lower()
                 if '/' in auto_lang:
                     auto_lang = auto_lang.split('/')[0]
-                    
+
                 target_language = auto_lang
                 config['language'] = target_language
                 try:
@@ -76,7 +82,7 @@ def ensure_language_selected(proj_path):
                 except Exception as e:
                     print_color(f"[WARN] Could not save auto-detected language to config: {e}", Colors.YELLOW)
                 return target_language
-            
+
             elif len(detected_langs) > 1:
                 print_color(f"[Auto-Detect] Multiple languages detected: {', '.join(detected_langs)}. Falling back to manual selection.", Colors.YELLOW)
             else:
@@ -102,7 +108,6 @@ def ensure_language_selected(proj_path):
             print_color(f"[Info] Using configured language: {target_language.upper()}", Colors.GREEN)
 
     return target_language
-
 
 def instrument_code(work_dir, proj_path=None, git_root=None, is_new_project=False):
     print_color(
@@ -207,7 +212,6 @@ def instrument_code(work_dir, proj_path=None, git_root=None, is_new_project=Fals
 
     return mode_arg, is_skipped
 
-
 def _move_instrumentation_outputs_to_project(work_dir, proj_path):
     """Move event_dictionary.txt and comment-mapping.txt from work_dir to proj_path."""
     files_to_move = ["event_dictionary.txt", "comment-mapping.txt"]
@@ -221,7 +225,6 @@ def _move_instrumentation_outputs_to_project(work_dir, proj_path):
             print_color(
                 f"[WARN] {filename} not found in working directory, skip.", Colors.YELLOW)
 
-
 def handle_instrumentation_dependencies(work_dir, proj_path, git_root, ask_llm_dir, target_language=None):
     """
     Handle dependency addition after instrumentation:
@@ -232,10 +235,8 @@ def handle_instrumentation_dependencies(work_dir, proj_path, git_root, ask_llm_d
     """
     print_color("\n>>> Handling Instrumentation Dependencies...", Colors.CYAN)
 
-    # 1. Get files_input
     files_input = find_project_files(git_root)
 
-    # Check for PHP project without composer.json
     if target_language == 'php':
         has_composer = any(f.endswith('composer.json')
                            for f in (files_input or []))
@@ -272,7 +273,7 @@ def handle_instrumentation_dependencies(work_dir, proj_path, git_root, ask_llm_d
                                     continue
 
                                 match_namespace = re.search(
-                                    r'namespace\s+[a-zA-Z0-9_\]+\s*;', content, re.IGNORECASE)
+                                    r'namespace\s+[a-zA-Z0-9_]+\s*;', content, re.IGNORECASE)
                                 match_declare = re.search(
                                     r'declare\s*\([^)]+\)\s*;', content, re.IGNORECASE)
                                 match_php = re.search(
@@ -306,7 +307,6 @@ def handle_instrumentation_dependencies(work_dir, proj_path, git_root, ask_llm_d
         print_color("[-] No dependency management files found.", Colors.YELLOW)
         return
 
-    # 2. Get whitelist_input
     config_path = os.path.join(proj_path, "config.json")
     whitelist_input = []
     if os.path.exists(config_path):
@@ -314,7 +314,6 @@ def handle_instrumentation_dependencies(work_dir, proj_path, git_root, ask_llm_d
             config_data = json.load(f)
             whitelist_input = config_data.get("original-target-folders", [])
 
-    # 3. Get dependency_input
     snippets_json_path = os.path.join(
         work_dir, "enginerring", "dependency_handler", "dependency_snippets.json")
     dependency_input = ""
@@ -336,10 +335,8 @@ def handle_instrumentation_dependencies(work_dir, proj_path, git_root, ask_llm_d
                 dependency_input = snippets.get(
                     "pom.xml", "<dependency>...</dependency>")
 
-    # 4. Generate Prompt
     prompt = generate_prompt(files_input, whitelist_input, dependency_input)
 
-    # Write prompt for LLM
     prompt_file = os.path.join(ask_llm_dir, "dependency_prompt.txt")
     with open(prompt_file, "w", encoding="utf-8") as f:
         f.write(prompt)
@@ -347,7 +344,6 @@ def handle_instrumentation_dependencies(work_dir, proj_path, git_root, ask_llm_d
     print_color(
         f"[+] Dependency prompt generated at {prompt_file}", Colors.GREEN)
 
-    # 5. Invoke LLM
     llm_response_file = os.path.join(
         ask_llm_dir, "dependency_llm_response.txt")
 
@@ -377,12 +373,10 @@ def handle_instrumentation_dependencies(work_dir, proj_path, git_root, ask_llm_d
 
     os.chdir(original_cwd)
 
-    # 6. Inject dependencies
     print_color(
         "\n>>> Parsing LLM response and injecting dependencies...", Colors.CYAN)
 
     run_injection(llm_response_file, snippets_json_path, work_dir)
-
 
 def startup_log_manager_server(work_dir, proj_path=None):
     print_color("\n>>> Starting Log Manager Server...", Colors.CYAN)
@@ -462,7 +456,6 @@ def startup_log_manager_server(work_dir, proj_path=None):
             f"Failed to import log_manager module from {server_dir}: {e}", Colors.RED)
         return False
 
-
 def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
     print_color(
         "\n>>> Analyzing logs and extracting denoised data...", Colors.CYAN)
@@ -532,14 +525,14 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
             key=os.path.getmtime,
             reverse=True
         )
-        
+
         if log_files:
             break
-            
+
         wait_count += 1
         print_color(
             f"[WAIT] No log files found in {search_dir} yet. "
-            f"Waiting for Step 2 to generate logs... (Waited {wait_count * 3}s)", 
+            f"Waiting for Step 2 to generate logs... (Waited {wait_count * 3}s)",
             Colors.YELLOW
         )
         time.sleep(3)
@@ -634,16 +627,16 @@ def select_ai_prompt_script(work_dir, target_language=None):
 
     choice = ""
     prompt_msg = f"Enter your choice (1-{len(scripts)}): "
-    
+
     while True:
         if len(scripts) < 10:
             print(prompt_msg, end='', flush=True)
             choice = get_single_char()
-            
+
             if choice == '\x03':
                 print("\n")
                 raise KeyboardInterrupt
-                
+
             print(choice)
             choice = choice.strip()
         else:
@@ -651,15 +644,14 @@ def select_ai_prompt_script(work_dir, target_language=None):
 
         if choice.isdigit() and 1 <= int(choice) <= len(scripts):
             break
-        
+
         if len(scripts) < 10:
-            print() 
+            print()
         print_color("[!] Invalid choice, please try again.", Colors.RED)
 
     selected_script = scripts[int(choice) - 1]
     print_color(f"\n[Info] Selected script: {selected_script}", Colors.GREEN)
     return selected_script
-
 
 def prepare_ai_prompt_interactive(work_dir, selected_script, proj_path=None, save_context=True):
     """
@@ -686,7 +678,7 @@ def prepare_ai_prompt_interactive(work_dir, selected_script, proj_path=None, sav
 
         if hasattr(module, 'prepare_prompt'):
             prompt_context = module.prepare_prompt()
-            
+
             if prompt_context and save_context:
                 target_dir = proj_path if proj_path else work_dir
                 context_file_path = os.path.join(target_dir, 'last_prompt_context.json')
@@ -708,7 +700,6 @@ def prepare_ai_prompt_interactive(work_dir, selected_script, proj_path=None, sav
 
     return prompt_context
 
-
 def _post_process_other_trace_data(work_dir, selected_script):
     """
     Scan the selected prompt generator script for the --OTHER_TRACE_DATA-- placeholder.
@@ -716,30 +707,30 @@ def _post_process_other_trace_data(work_dir, selected_script):
     """
     if not selected_script:
         return
-        
+
     script_path = os.path.join(work_dir, "enginerring", "scenario_data_ai_app", selected_script)
-    
+
     try:
         with open(script_path, 'r', encoding='utf-8') as f:
             script_content = f.read()
     except Exception as e:
         print_color(f'[WARN] Could not read selected script {selected_script}: {e}', Colors.YELLOW)
         return
-        
+
     if '--OTHER_TRACE_DATA--' in script_content:
         print_color('\n[!] Detected --OTHER_TRACE_DATA-- placeholder in the selected script. Need to inject trace data from another scenario.', Colors.YELLOW)
-        
+
         projects_dir = os.path.join(work_dir, 'projects')
         scenarios = []
         if os.path.exists(projects_dir):
             for root, dirs, files in os.walk(projects_dir):
                 if 'final-output-calltree.md' in files:
                     scenarios.append(root)
-        
+
         if not scenarios:
             print_color('[WARN] No scenarios found with final-output-calltree.md.', Colors.RED)
             return
-            
+
         print_color('\n========================================', Colors.CYAN)
         print_color(' Select Another Scenario for Trace Data ', Colors.CYAN)
         print_color('========================================', Colors.CYAN)
@@ -747,29 +738,29 @@ def _post_process_other_trace_data(work_dir, selected_script):
             rel_path = os.path.relpath(scenario, projects_dir)
             print(f"  {i}. {rel_path}")
         print_color('========================================', Colors.CYAN)
-        
+
         choice = input(f'Enter your choice (1-{len(scenarios)}): ').strip()
         if choice.isdigit() and 1 <= int(choice) <= len(scenarios):
             selected_scenario_dir = scenarios[int(choice) - 1]
             trace_file_path = os.path.join(selected_scenario_dir, 'final-output-calltree.md')
-            
+
             try:
                 with open(trace_file_path, 'r', encoding='utf-8') as tf:
                     trace_data = tf.read()
-                
+
                 other_trace_data_header = f"\n\n=========================================\n### Trace Data from Other Scenario: {os.path.basename(selected_scenario_dir)}\n=========================================\n"
                 reference_note = "\n\n> **Note**: This is runtime data from another scenario and may be helpful as a reference for the current implementation requirements.\n=========================================\n"
                 replacement = other_trace_data_header + trace_data + reference_note
-                
+
                 prompt_file = os.path.join(work_dir, 'AI_Task_Prompt.md')
-                
+
                 if not os.path.exists(prompt_file):
                     raise FileNotFoundError(f"Expected prompt file not found: {prompt_file}")
-                    
+
                 try:
                     with open(prompt_file, 'r', encoding='utf-8') as f:
                         content = f.read()
-                        
+
                     if '--OTHER_TRACE_DATA--' in content:
                         new_content = content.replace('--OTHER_TRACE_DATA--', replacement)
                         with open(prompt_file, 'w', encoding='utf-8') as f:
@@ -781,7 +772,6 @@ def _post_process_other_trace_data(work_dir, selected_script):
                 print_color(f'[!] Failed to read trace data or process prompt file: {e}', Colors.RED)
         else:
             print_color('[!] Invalid choice, skipping trace data injection.', Colors.RED)
-
 
 def execute_ai_prompt(work_dir, selected_script, prompt_context=None):
     """
@@ -839,7 +829,6 @@ def execute_ai_prompt(work_dir, selected_script, prompt_context=None):
     finally:
         os.chdir(original_cwd)
 
-
 def ask_llm_for_localization(ask_llm_dir):
     print_color("\n>>> Asking LLM for Task Analysis...", Colors.CYAN)
     setup_windows_proxy()
@@ -873,7 +862,6 @@ def ask_llm_for_localization(ask_llm_dir):
         if 'original_cwd' in locals():
             os.chdir(original_cwd)
 
-
 def generate_fix_prompt(work_dir, proj_path=None):
     print_color("\n>>> Generating Fix Prompt...", Colors.CYAN)
 
@@ -903,7 +891,6 @@ def generate_fix_prompt(work_dir, proj_path=None):
         print_color(f"[!] Error generating fix prompt: {e}", Colors.RED)
         if 'original_cwd' in locals():
             os.chdir(original_cwd)
-
 
 def ask_llm_for_code_fix(ask_llm_dir):
     print_color("\n>>> Asking LLM for Code Fix...", Colors.CYAN)
@@ -939,8 +926,8 @@ def ask_llm_for_code_fix(ask_llm_dir):
         if 'original_cwd' in locals():
             os.chdir(original_cwd)
 
-
 def apply_fix(work_dir, proj_path=None, prompt_context=None):
+    global _original_get_single_char
     print_color("\n>>> Applying Fix to Source Code...", Colors.CYAN)
 
     fix_bug_dir = os.path.join(work_dir, "enginerring", "fix_bug")
@@ -959,24 +946,134 @@ def apply_fix(work_dir, proj_path=None, prompt_context=None):
         fixed_code_path = os.path.join(work_dir, "output.md")
 
         base_dirs = []
+        config_data = {}
+        config_path = ""
+        git_root = ""
+
         if proj_path:
             config_path = os.path.join(proj_path, "config.json")
             if os.path.exists(config_path):
                 with open(config_path, "r", encoding="utf-8") as f:
                     config_data = json.load(f)
                     base_dirs = config_data.get("original-target-folders", [])
+                    git_root = config_data.get("original_git_root", "")
 
         if not base_dirs:
             base_dirs = ["."]
             print_color(
                 "[Warning] No original-target-folders found in config.json, using current directory.", Colors.YELLOW)
 
+        saved_commit = None
+        if git_root and os.path.exists(git_root):
+            try:
+                commit_id = subprocess.check_output(
+                    ['git', 'rev-parse', 'HEAD'],
+                    cwd=git_root,
+                    stderr=subprocess.DEVNULL
+                ).decode('utf-8').strip()
+
+                config_data['current_commit'] = commit_id
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    json.dump(config_data, f, indent=4)
+                saved_commit = commit_id
+                print_color(f"[Git Record] Saved current commit '{commit_id}' to config.json", Colors.GREEN)
+            except Exception as e:
+                print_color(f"[Git Warning] Failed to record git commit: {e}", Colors.YELLOW)
+
         fix_applier.run_apply_fix(
-            fixed_code_path=fixed_code_path, 
-            base_dirs=base_dirs, 
-            prompt_context=prompt_context, 
+            fixed_code_path=fixed_code_path,
+            base_dirs=base_dirs,
+            prompt_context=prompt_context,
             proj_path=proj_path
         )
+
+        has_changes = False
+        if git_root and os.path.exists(git_root):
+            try:
+                status_out = subprocess.check_output(
+                    ['git', 'status', '--porcelain'],
+                    cwd=git_root
+                ).decode('utf-8').strip()
+                if status_out:
+                    has_changes = True
+            except Exception as e:
+                print_color(f"[Git Warning] Failed to check git status: {e}", Colors.YELLOW)
+
+        if has_changes:
+            print_color("\n========================================", Colors.YELLOW)
+            print_color(" Verification Options (Changes Detected) ", Colors.YELLOW)
+            print_color("========================================", Colors.YELLOW)
+            print("  1. Enter project startup command and verify")
+            print("  2. Skip verification")
+            print_color("========================================", Colors.YELLOW)
+
+            choice = input("Enter your choice (1-2): ").strip()
+
+            run_verification = False
+            process_to_wait = None
+
+            if choice == '1':
+                cmd = input("Enter the project startup command: ").strip()
+                if cmd:
+                    run_verification = True
+                    print_color(f"[Info] Opening a new terminal window to execute: {cmd}", Colors.GREEN)
+                    current_os = platform.system()
+                    try:
+                        if current_os == 'Windows':
+                            process_to_wait = subprocess.Popen(f'start cmd /k "{cmd}"', shell=True, cwd=git_root)
+                        elif current_os == 'Darwin':
+                            applescript = f'tell application "Terminal" to do script "cd {git_root} && {cmd}"'
+                            process_to_wait = subprocess.Popen(['osascript', '-e', applescript])
+                        else:
+                            process_to_wait = subprocess.Popen(['x-terminal-emulator', '-e', f'sh -c "cd {git_root} && {cmd}; exec sh"'])
+                    except Exception as e:
+                        print_color(f"[Error] Failed to launch terminal window: {e}", Colors.RED)
+
+            if run_verification:
+                if process_to_wait:
+                    print_color("[Info] Waiting for the terminal window to close...", Colors.YELLOW)
+                    process_to_wait.wait()
+                else:
+                    input("Press Enter once you have finished verification...")
+
+                satisfied = input("\nDid the code fix meet your expectations? (yes/no): ").strip().lower()
+                if satisfied in ['yes', 'y']:
+                    print_color("[Success] Verification passed! Proceeding to next step.", Colors.GREEN)
+                else:
+                    if saved_commit and git_root:
+                        print_color(f"\n[Rollback] Reverting changes to commit: {saved_commit}...", Colors.RED)
+                        try:
+                            subprocess.run(['git', 'reset', '--hard', saved_commit], cwd=git_root, check=True)
+                            subprocess.run(['git', 'clean', '-fd'], cwd=git_root, check=True)
+                            print_color("[Rollback] Successfully reverted local workspace.", Colors.GREEN)
+                        except Exception as e:
+                            print_color(f"[Error] Rollback failed: {e}", Colors.RED)
+
+                    original_input = builtins.input
+
+                    def simulated_input(prompt=""):
+                        prompt_str = str(prompt)
+                        if "choose action" in prompt_str.lower() or "scenario" in prompt_str.lower():
+                            print(prompt_str + "1 (auto-selected due to failed verification)")
+
+                            builtins.input = original_input
+                            global _original_get_single_char
+                            _original_get_single_char = None
+                            return "1"
+                        return original_input(prompt)
+
+                    def simulated_get_single_char():
+                        print("1 (auto-selected due to failed verification)")
+
+                        builtins.input = original_input
+                        global _original_get_single_char
+                        _original_get_single_char = None
+                        return "1"
+
+                    builtins.input = simulated_input
+                    _original_get_single_char = simulated_get_single_char
+
+                    print_color("[Info] Verification failed. Automated rollback complete. Returning to prompt generator selection...", Colors.YELLOW)
 
         os.chdir(original_cwd)
     except ImportError as e:
