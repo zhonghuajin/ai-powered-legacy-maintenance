@@ -82,35 +82,31 @@ def apply_fix(work_dir, proj_path=None, prompt_context=None):
 
         if has_changes:
             print_color("\n========================================", Colors.YELLOW)
-            print_color(" Verification Options (Changes Detected) ", Colors.YELLOW)
-            print_color("========================================", Colors.YELLOW)
-            print("  1. Enter project startup command and verify")
-            print("  2. Skip verification")
+            print_color(" Verification Required (Changes Detected) ", Colors.YELLOW)
             print_color("========================================", Colors.YELLOW)
 
-            print("Enter your choice (1-2): ", end="", flush=True)
-            choice = common.get_single_char().strip()
-            print(choice)
+            # 强制要求用户输入启动命令，不允许为空
+            cmd = ""
+            while not cmd:
+                cmd = input("Enter the project startup command to verify changes: ").strip()
+                if not cmd:
+                    print_color("[Warning] Startup command cannot be empty. Verification is mandatory.", Colors.YELLOW)
 
-            run_verification = False
+            run_verification = True
             process_to_wait = None
 
-            if choice == '1':
-                cmd = input("Enter the project startup command: ").strip()
-                if cmd:
-                    run_verification = True
-                    print_color(f"[Info] Opening a new terminal window to execute: {cmd}", Colors.GREEN)
-                    current_os = platform.system()
-                    try:
-                        if current_os == 'Windows':
-                            process_to_wait = subprocess.Popen(f'start cmd /k "{cmd}"', shell=True, cwd=git_root)
-                        elif current_os == 'Darwin':
-                            applescript = f'tell application "Terminal" to do script "cd {git_root} && {cmd}"'
-                            process_to_wait = subprocess.Popen(['osascript', '-e', applescript])
-                        else:
-                            process_to_wait = subprocess.Popen(['x-terminal-emulator', '-e', f'sh -c "cd {git_root} && {cmd}; exec sh"'])
-                    except Exception as e:
-                        print_color(f"[Error] Failed to launch terminal window: {e}", Colors.RED)
+            print_color(f"[Info] Opening a new terminal window to execute: {cmd}", Colors.GREEN)
+            current_os = platform.system()
+            try:
+                if current_os == 'Windows':
+                    process_to_wait = subprocess.Popen(f'start cmd /k "{cmd}"', shell=True, cwd=git_root)
+                elif current_os == 'Darwin':
+                    applescript = f'tell application "Terminal" to do script "cd {git_root} && {cmd}"'
+                    process_to_wait = subprocess.Popen(['osascript', '-e', applescript])
+                else:
+                    process_to_wait = subprocess.Popen(['x-terminal-emulator', '-e', f'sh -c "cd {git_root} && {cmd}; exec sh"'])
+            except Exception as e:
+                print_color(f"[Error] Failed to launch terminal window: {e}", Colors.RED)
 
             if run_verification:
                 if process_to_wait:
