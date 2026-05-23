@@ -6,6 +6,7 @@ import socket
 import requests
 import concurrent.futures
 import re
+import time
 from flask import Flask, request, jsonify
 from print_utils.utils import Colors, print_color
 
@@ -93,6 +94,10 @@ def scan_ports():
     active_endpoints = []
     local_ip = get_local_ip()
 
+    # Add a short delay to allow background services to fully spin up
+    print_color("\nWaiting 3 seconds for target services to initialize...", Colors.YELLOW)
+    time.sleep(3)
+
     print_color("\nStarting port scan (19898 - 19997)...", Colors.CYAN)
     for ip in target_ips:
         found_any = False
@@ -131,9 +136,17 @@ def input_target_ips():
     global target_ips
     prompt_msg = f"{Colors.MAGENTA}Enter IPs separated by ';' (press Enter for default: localhost): {Colors.RESET}"
 
+    # Check if interactive mode is requested. Default is false (auto-simulate Enter)
+    interactive = os.environ.get('INTERACTIVE_IP', 'false') == 'true'
+
     while True:
         try:
-            ip_str = input(prompt_msg).strip()
+            if not interactive:
+                # Print prompt message and simulate an empty string (Enter key)
+                print_color(f"{prompt_msg}(Auto-simulating Enter for default: localhost)", Colors.MAGENTA)
+                ip_str = ""
+            else:
+                ip_str = input(prompt_msg).strip()
         except (KeyboardInterrupt, EOFError):
             print_color("\nInterrupt signal detected, returning...", Colors.RED)
             return False
@@ -219,6 +232,8 @@ def scan_and_manage():
                 print_color("Exiting log manager CLI and returning to main flow...", Colors.RED)
                 return False
             elif cmd_input == 'reip':
+                # Force interactive mode when user explicitly triggers reip
+                os.environ['INTERACTIVE_IP'] = 'true'
                 input_target_ips()
                 continue
             elif cmd_input == '':

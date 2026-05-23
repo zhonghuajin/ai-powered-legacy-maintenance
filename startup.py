@@ -165,7 +165,19 @@ def main():
         action='store_true',
         help="Pause between workflow steps."
     )
+    # Added option: --interactive-ip. If not specified, the system will auto-simulate Enter.
+    parser.add_argument(
+        '--interactive-ip',
+        action='store_true',
+        help="Prompt interactively for target IPs. If not specified, will auto-simulate Enter."
+    )
     args = parser.parse_args()
+
+    # Pass the option state to the environment variables for log_manager to consume
+    if args.interactive_ip:
+        os.environ['INTERACTIVE_IP'] = 'true'
+    else:
+        os.environ['INTERACTIVE_IP'] = 'false'
 
     def maybe_pause(completed_step, next_step):
         if args.pause:
