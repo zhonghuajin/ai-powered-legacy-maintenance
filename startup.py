@@ -130,15 +130,28 @@ def switch_to_source_branch(proj_path):
 
 
 def run_initial_startup_verification(work_dir, proj_path):
+    # Check if we should skip Initial Startup Verification
+    if proj_path:
+        config_path = os.path.join(proj_path, 'config.json')
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                if config.get('skip_log_and_manager') is True:
+                    print_color("[Skip] Verification failed previously. Skipping Initial Startup Verification.", Colors.YELLOW)
+                    return False
+            except Exception as e:
+                print_color(f"[Warning] Failed to read config.json: {e}", Colors.YELLOW)
+
     print_color("\n=======================================================", Colors.CYAN)
     print_color("      Running Initial Startup Verification...          ", Colors.CYAN)
     print_color("=======================================================", Colors.CYAN)
 
-    config_path = os.path.join(proj_path, 'config.json')
+    config_path = os.path.join(proj_path, 'config.json') if proj_path else None
     config_data = {}
     git_root = work_dir
 
-    if os.path.exists(config_path):
+    if config_path and os.path.exists(config_path):
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 config_data = json.load(f)
@@ -226,6 +239,7 @@ def run_initial_startup_verification(work_dir, proj_path):
 
     print_color("\n[Verification] Startup command triggered successfully.", Colors.GREEN)
     input("Press Enter once your project has successfully started to proceed to Log Manager Server...")
+    return True
 
 
 def check_if_ai_will_modify(work_dir, script_name):
@@ -330,12 +344,8 @@ def main():
 
             maybe_pause("Setup Shadow Branch & Instrumentation", "Startup Log Manager Server")
 
-            # -----------------------------------------------------------------
-            # 1) & 2) 在启动日志管理服务前，执行新实现的初始启动校验（新控制台/浏览器）
-            # -----------------------------------------------------------------
             run_initial_startup_verification(work_dir, proj_path=proj_path)
 
-            # 正常启动日志管理服务
             is_flushed = startup_log_manager_server(work_dir, proj_path=proj_path)
 
             maybe_pause("Startup Log Manager Server", "Analyze Logs and Extract Denoised Data")
