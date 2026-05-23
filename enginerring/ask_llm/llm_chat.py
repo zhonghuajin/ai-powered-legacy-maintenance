@@ -17,6 +17,7 @@ import argparse
 from datetime import datetime
 from typing import Iterator, Optional
 
+import httpx
 from openai import OpenAI
 import anthropic
 from dotenv import load_dotenv
@@ -143,10 +144,25 @@ class LLMClient:
                 f"Please set it in .env or environment."
             )
 
+        domestic_providers = ["deepseek", "deepseek-v4pro", "glm", "kimi", "qwen"]
+
         if self.cfg["sdk"] == "anthropic":
             self.client = anthropic.Anthropic(api_key=api_key)
         else:
-            self.client = OpenAI(api_key=api_key, base_url=self.cfg["base_url"])
+            if self.provider in domestic_providers:
+                # Force bypass of system proxies for domestic providers to prevent VPN conflicts
+                http_client = httpx.Client(trust_env=False)
+                self.client = OpenAI(
+                    api_key=api_key,
+                    base_url=self.cfg["base_url"],
+                    http_client=http_client
+                )
+                print(f"{C.DIM}[*] Bypassing system proxy for {self.provider} (direct connection){C.RESET}")
+            else:
+                self.client = OpenAI(
+                    api_key=api_key,
+                    base_url=self.cfg["base_url"]
+                )
 
     # --------------------------- public API --------------------------------
     def chat(self, user_msg: str, stream: bool = True) -> str:
