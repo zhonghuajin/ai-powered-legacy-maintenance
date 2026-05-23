@@ -5,8 +5,35 @@ import platform
 import builtins
 import importlib
 import subprocess
+import webbrowser  # Import built-in module for opening browser
 from print_utils.utils import Colors, print_color
 from . import common
+
+def get_single_char_fallback():
+    """
+    Cross-platform single character reader function as a fallback.
+    Used if get_single_char is not provided in the common module.
+    """
+    import sys
+    if os.name == 'nt':
+        import msvcrt
+        # msvcrt.getch() returns bytes
+        ch = msvcrt.getch()
+        try:
+            return ch.decode('utf-8')
+        except Exception:
+            return str(ch)
+    else:
+        import tty
+        import termios
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(sys.stdin.fileno())
+            ch = sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        return ch
 
 def apply_fix(work_dir, proj_path=None, prompt_context=None):
     print_color("\n>>> Applying Fix to Source Code...", Colors.CYAN)
@@ -85,35 +112,77 @@ def apply_fix(work_dir, proj_path=None, prompt_context=None):
             print_color(" Verification Required (Changes Detected) ", Colors.YELLOW)
             print_color("========================================", Colors.YELLOW)
 
-            # 强制要求用户输入启动命令，不允许为空
-            cmd = ""
-            while not cmd:
-                cmd = input("Enter the project startup command to verify changes: ").strip()
-                if not cmd:
-                    print_color("[Warning] Startup command cannot be empty. Verification is mandatory.", Colors.YELLOW)
+            # Let user choose verification method
+            print_color("Select verification method:", Colors.CYAN)
+            print_color("[1] Run a project startup command in a new terminal", Colors.CYAN)
+            print_color("[2] Open a URL in the browser (e.g., for Tomcat/Apache hot-reload)", Colors.CYAN)
+            print_color("Press [1] or [2] to choose instantly...", Colors.YELLOW)
+
+            # Prefer the single-character read function from common module, otherwise use fallback
+            get_char_func = getattr(common, 'get_single_char', None) or getattr(common, '_original_get_single_char', None) or get_single_char_fallback
+
+            choice = ""
+            while choice not in ["1", "2"]:
+                try:
+                    choice = get_char_func()
+                    if isinstance(choice, bytes):
+                        choice = choice.decode('utf-8', errors='ignore')
+                    choice = choice.strip()
+                except Exception:
+                    # Fallback to standard input() if single-character read fails
+                    choice = input("Enter choice (1 or 2): ").strip()
+
+            print_color(f"\n[Selected Option {choice}] Proceeding...", Colors.GREEN)
 
             run_verification = True
             process_to_wait = None
 
-            print_color(f"[Info] Opening a new terminal window to execute: {cmd}", Colors.GREEN)
-            current_os = platform.system()
-            try:
-                if current_os == 'Windows':
-                    process_to_wait = subprocess.Popen(f'start cmd /k "{cmd}"', shell=True, cwd=git_root)
-                elif current_os == 'Darwin':
-                    applescript = f'tell application "Terminal" to do script "cd {git_root} && {cmd}"'
-                    process_to_wait = subprocess.Popen(['osascript', '-e', applescript])
-                else:
-                    process_to_wait = subprocess.Popen(['x-terminal-emulator', '-e', f'sh -c "cd {git_root} && {cmd}; exec sh"'])
-            except Exception as e:
-                print_color(f"[Error] Failed to launch terminal window: {e}", Colors.RED)
+            if choice == "1":
+                # Force user to enter startup command, empty values are not allowed
+                cmd = ""
+                while not cmd:
+                    cmd = input("Enter the project startup command to verify changes: ").strip()
+                    if not cmd:
+                        print_color("[Warning] Startup command cannot be empty. Verification is mandatory.", Colors.YELLOW)
+
+                print_color(f"[Info] Opening a new terminal window to execute: {cmd}", Colors.GREEN)
+                current_os = platform.system()
+                try:
+                    if current_os == 'Windows':
+                        process_to_wait = subprocess.Popen(f'start cmd /k "{cmd}"', shell=True, cwd=git_root)
+                    elif current_os == 'Darwin':
+                        applescript = f'tell application "Terminal" to do script "cd {git_root} && {cmd}"'
+                        process_to_wait = subprocess.Popen(['osascript', '-e', applescript])
+                    else:
+                        process_to_wait = subprocess.Popen(['x-terminal-emulator', '-e', f'sh -c "cd {git_root} && {cmd}; exec sh"'])
+                except Exception as e:
+                    print_color(f"[Error] Failed to launch terminal window: {e}", Colors.RED)
+
+            elif choice == "2":
+                # Force user to enter the URL
+                url = ""
+                while not url:
+                    url = input("Enter the URL to open in browser (e.g., http://localhost:8080): ").strip()
+                    if not url:
+                        print_color("[Warning] URL cannot be empty.", Colors.YELLOW)
+                
+                # Prepend protocol header if missing
+                if not url.startswith(("http://", "https://")):
+                    url = "http://" + url
+
+                print_color(f"[Info] Opening browser to: {url}", Colors.GREEN)
+                try:
+                    webbrowser.open(url)
+                except Exception as e:
+                    print_color(f"[Error] Failed to open browser: {e}", Colors.RED)
 
             if run_verification:
-                if process_to_wait:
+                if choice == "1" and process_to_wait:
                     print_color("[Info] Waiting for the terminal window to close...", Colors.YELLOW)
                     process_to_wait.wait()
                 else:
-                    input("Press Enter once you have finished verification...")
+                    # If opening a browser, or if terminal process cannot be awaited, let user press Enter manually
+                    input("Press Enter once you have finished verification in your browser/terminal...")
 
                 satisfied = input("\nDid the code fix meet your expectations? (yes/no): ").strip().lower()
                 if satisfied in ['yes', 'y']:
