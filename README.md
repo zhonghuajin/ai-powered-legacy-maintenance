@@ -39,9 +39,66 @@ This project focuses on:
 - **Context reduction** — Remove theoretically related but behaviorally irrelevant code
 - **AI-oriented context building** — Organize context in a form that is easier for models to reason about
 
+### ⚠️ Important Usage Notes
+
+To ensure the accurate collection of runtime evidence and prevent conflicts, please adhere to the following guidelines:
+
+1. **First-Time Initialization**  
+   Before running the tool for the first time, you must initialize the environment. Run the initialization script by executing:
+   ```bash
+   python init.py
+   ```
+
+2. **No Manual Intervention During Execution**  
+   While the tool is running, **do not manually modify any code** and **do not manually start or restart the project**. All code modifications, environment setups, and project executions must be handled entirely by this tool.
+
 ### 🚀 Getting Started
 
-_Coming soon — installation and quickstart instructions._
+Follow these steps to set up and run the automated instrumentation and bug-fixing workflow.
+
+#### 📋 Prerequisites
+
+Before running the tool, ensure you have the following installed and configured:
+- **Python 3.8+**
+- **Java JDK** (required for instrumentation of Java-based target codebases)
+- **Git** (installed and configured in your system path)
+- **LLM API Credentials** (an active API key for your preferred LLM provider, e.g., OpenAI, Anthropic, or DeepSeek)
+
+---
+
+#### 🛠️ Step 1: Initialize the Environment
+
+Before executing the workflow for the first time, you must run the initialization script to set up configurations, dependencies, and your LLM environment:
+
+```bash
+python init.py
+```
+*Follow the on-screen prompts to configure your LLM provider and save your API keys.*
+
+---
+
+#### 🏃 Step 2: Run the Workflow
+
+Launch the interactive quickstart workflow by running `startup.py`:
+
+```bash
+python startup.py
+```
+
+##### Command-Line Options
+
+You can customize the execution of the workflow using the following optional flags:
+
+*   **`--pause`**: Enables manual pauses between workflow steps. This is highly recommended for first-time users who want to inspect the intermediate outputs (such as instrumented code, generated prompts, and logs) before proceeding to the next step.
+    ```bash
+    python startup.py --pause
+    ```
+*   **`--interactive-ip`**: Prompts you interactively to input target IP addresses. If omitted, the tool will automatically simulate pressing `Enter` to use default network configurations.
+    ```bash
+    python startup.py --interactive-ip
+    ```
+
+---
 
 ### 📄 License
 
