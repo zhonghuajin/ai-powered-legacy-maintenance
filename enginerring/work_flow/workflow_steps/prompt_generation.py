@@ -5,8 +5,19 @@ import importlib
 from print_utils.utils import Colors, print_color
 from .common import get_single_char
 
+# Global variable to cache the selected script during the application's runtime
+_cached_selected_script = None
+
 def select_ai_prompt_script(work_dir, target_language=None):
+    global _cached_selected_script
+
     print_color("\n>>> Pre-selecting AI Prompt Generator...", Colors.CYAN)
+
+    # If a script has already been selected in a previous iteration, reuse it
+    if _cached_selected_script:
+        print_color(f"[Info] Using previously selected script (Cached): {_cached_selected_script}", Colors.GREEN)
+        return _cached_selected_script
+
     ai_app_path = os.path.join(work_dir, "enginerring", "scenario_data_ai_app")
 
     if not os.path.exists(ai_app_path):
@@ -59,6 +70,9 @@ def select_ai_prompt_script(work_dir, target_language=None):
 
     selected_script = scripts[int(choice) - 1]
     print_color(f"\n[Info] Selected script: {selected_script}", Colors.GREEN)
+    
+    # Save the choice to the cache
+    _cached_selected_script = selected_script
     return selected_script
 
 def prepare_ai_prompt_interactive(work_dir, selected_script, proj_path=None, save_context=True):
