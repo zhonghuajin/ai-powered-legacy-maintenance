@@ -58,15 +58,17 @@ def create_or_select_project(work_dir, preselected_proj_path=None):
     if not existing_projects:
         print_color(
             "No existing projects found. Let's create a new one.", Colors.CYAN)
-        proj_path, root_path = _create_new_project(work_dir, projects_dir)
+        proj_path, root_path = _create_and_initialize_new_project(work_dir, projects_dir)
         is_new_project = True
+        return proj_path, root_path, is_new_project
     else:
         proj_path, root_path, is_new_project = _select_or_create_project(
             work_dir, projects_dir, existing_projects
         )
 
-    # Manage target folders for the selected/created project
-    _manage_target_folders(proj_path)
+    # Manage target folders for the selected/created project (if not already handled during creation)
+    if not is_new_project:
+        _manage_target_folders(proj_path)
 
     return proj_path, root_path, is_new_project
 
@@ -86,6 +88,7 @@ def _getch():
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         return ch
+
 
 def _select_or_create_project(work_dir, projects_dir, existing_projects):
     """
@@ -123,7 +126,7 @@ def _select_or_create_project(work_dir, projects_dir, existing_projects):
                     )
                     return selected_proj_path, selected_root, False
                 elif num == total_options:
-                    proj_path, git_root = _create_new_project(work_dir, projects_dir)
+                    proj_path, git_root = _create_and_initialize_new_project(work_dir, projects_dir)
                     return proj_path, git_root, True
                 else:
                     print_color("Invalid choice. Try again.", Colors.RED)
@@ -145,40 +148,125 @@ def _is_valid_git_root(path):
     return os.path.exists(git_dir)
 
 
-def _create_new_project(work_dir, projects_dir):
+def _get_git_root(path):
     """
-    Helper to create a new project.
+    Resolve the Git repository root directory from a given file or folder path.
+    Returns the absolute path to the Git root, or None if it fails.
+    """
+    if not path:
+        return None
+    
+    # If path is a file, get its containing directory
+    search_dir = path if os.path.isdir(path) else os.path.dirname(path)
+    if not os.path.isdir(search_dir):
+        return None
+
+    try:
+        root = subprocess.check_output(
+            ["git", "-C", search_dir, "rev-parse", "--show-toplevel"],
+            stderr=subprocess.DEVNULL
+        ).decode("utf-8").strip()
+        return os.path.abspath(root)
+    except Exception:
+        return None
+
+
+def _create_and_initialize_new_project(work_dir, projects_dir):
+    """
+    High-level flow to create a new project.
+    1. Prompts the user for target paths first using a temporary directory.
+    2. Automatically resolves the Git root directory from the input paths.
+    3. Falls back to manual input if automatic resolution fails.
+    4. Migrates target paths to the final project directory.
+    """
+    # Create a temporary directory to collect target paths first
+    temp_proj_name = "temp_init_project"
+    temp_proj_path = os.path.join(projects_dir, temp_proj_name)
+    os.makedirs(temp_proj_path, exist_ok=True)
+
+    # Prompt user for target paths
+    _manage_target_folders(temp_proj_path)
+
+    # Read the entered paths
+    target_file = os.path.join(temp_proj_path, "target-folders.txt")
+    paths = _read_target_folders(target_file)
+
+    # Attempt to automatically resolve Git root from the entered paths
+    detected_git_root = None
+    if paths:
+        for p in paths:
+            detected_git_root = _get_git_root(p)
+            if detected_git_root:
+                break
+
+    # Pass the resolved git root (or None) to the project creation logic
+    proj_path, git_root = _create_new_project(work_dir, projects_dir, detected_git_root)
+
+    # Migrate the target-folders.txt to the final project folder
+    final_target_file = os.path.join(proj_path, "target-folders.txt")
+    if os.path.exists(target_file) and paths:
+        if os.path.exists(final_target_file):
+            os.remove(final_target_file)
+        os.rename(target_file, final_target_file)
+        _sync_config_original_targets(proj_path, paths)
+    else:
+        # If no paths were entered, ensure any empty target-folders.txt is written
+        _write_target_folders(final_target_file, [])
+
+    # Clean up the temporary directory
+    try:
+        if os.path.exists(temp_proj_path):
+            shutil.rmtree(temp_proj_path)
+    except Exception:
+        pass
+
+    return proj_path, git_root
+
+
+def _create_new_project(work_dir, projects_dir, pre_detected_git_root=None):
+    """
+    Helper to create a new project directory and save config.json.
+    If pre_detected_git_root is provided and valid, bypasses manual input.
     Returns (proj_path, root_path).
     """
     print_color("\n--- Create a New Project ---", Colors.CYAN)
     print()
-    print_color("========================================", Colors.YELLOW)
-    print_color(" IMPORTANT PATH EXPLANATION", Colors.YELLOW)
-    print_color("========================================", Colors.YELLOW)
-    print_color(" The path requested here is the Git root directory of the target project.", Colors.YELLOW)
-    print_color(" It is NOT the same as the paths listed in target source folders.", Colors.YELLOW)
-    print_color(" The paths in target source folders are the specific source folders to instrument.", Colors.YELLOW)
-    print_color(" The path entered below must be the top-level Git repository root that contains those folders.", Colors.YELLOW)
-    print_color("========================================", Colors.YELLOW)
 
     git_root = ""
-    while not git_root:
-        git_root = input(
-            "Please enter the Git repository root directory of the project: ").strip()
-        if not git_root:
-            print_color("Path cannot be empty.", Colors.RED)
-        elif not os.path.isdir(git_root):
-            print_color(
-                "The specified directory does not exist. Please enter a valid path.", Colors.RED
-            )
-            git_root = ""
-        elif not _is_valid_git_root(git_root):
-            print_color(
-                "The specified directory is not a valid Git repository root (missing '.git' folder/file).", Colors.RED
-            )
-            git_root = ""
-        else:
-            git_root = os.path.abspath(git_root)
+    # If we successfully auto-detected the git root, skip manual input
+    if pre_detected_git_root and _is_valid_git_root(pre_detected_git_root):
+        git_root = pre_detected_git_root
+        print_color(f"[Auto-Detect] Successfully resolved Git repository root: {git_root}", Colors.GREEN)
+    else:
+        if pre_detected_git_root:
+            print_color("[Auto-Detect] Resolved path is not a valid Git repository root.", Colors.YELLOW)
+
+        print_color("========================================", Colors.YELLOW)
+        print_color(" IMPORTANT PATH EXPLANATION", Colors.YELLOW)
+        print_color("========================================", Colors.YELLOW)
+        print_color(" The path requested here is the Git root directory of the target project.", Colors.YELLOW)
+        print_color(" It is NOT the same as the paths listed in target source folders.", Colors.YELLOW)
+        print_color(" The paths in target source folders are the specific source folders to instrument.", Colors.YELLOW)
+        print_color(" The path entered below must be the top-level Git repository root that contains those folders.", Colors.YELLOW)
+        print_color("========================================", Colors.YELLOW)
+
+        while not git_root:
+            git_root = input(
+                "Please enter the Git repository root directory of the project: ").strip()
+            if not git_root:
+                print_color("Path cannot be empty.", Colors.RED)
+            elif not os.path.isdir(git_root):
+                print_color(
+                    "The specified directory does not exist. Please enter a valid path.", Colors.RED
+                )
+                git_root = ""
+            elif not _is_valid_git_root(git_root):
+                print_color(
+                    "The specified directory is not a valid Git repository root (missing '.git' folder/file).", Colors.RED
+                )
+                git_root = ""
+            else:
+                git_root = os.path.abspath(git_root)
 
     print_color(f"Using saved Git repository root directory: {git_root}", Colors.GREEN)
 
