@@ -18,6 +18,7 @@ from pathlib import Path
 # Dynamically resolve the project root (one level up from 'enginerring' folder)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+
 def process_logs(
     language="java",
     log_file=None,
@@ -40,11 +41,13 @@ def process_logs(
     # --- Resolve target folders (same pattern as PowerShell) ---
     if target_folders:
         target_folders_list = target_folders
-        print(f"Using {len(target_folders_list)} target folder(s) from function argument.")
+        print(
+            f"Using {len(target_folders_list)} target folder(s) from function argument.")
     else:
         target_folders_file = target_folders_file or ".\\target-folders.txt"
         if not os.path.isfile(target_folders_file):
-            raise FileNotFoundError(f"Target folders file does not exist: {target_folders_file}")
+            raise FileNotFoundError(
+                f"Target folders file does not exist: {target_folders_file}")
         with open(target_folders_file, "r", encoding="utf-8") as f:
             lines = f.readlines()
         target_folders_list = [
@@ -52,8 +55,10 @@ def process_logs(
             if line.strip() and not line.strip().startswith("#")
         ]
         if not target_folders_list:
-            raise ValueError(f"No target folders found in file: {target_folders_file}")
-        print(f"Loaded {len(target_folders_list)} target folder(s) from file: {target_folders_file}")
+            raise ValueError(
+                f"No target folders found in file: {target_folders_file}")
+        print(
+            f"Loaded {len(target_folders_list)} target folder(s) from file: {target_folders_file}")
 
     # Validate each folder exists
     for folder in target_folders_list:
@@ -69,12 +74,14 @@ def process_logs(
     if not comment_mapping_file:
         raise ValueError("comment_mapping_file parameter is required")
     if not os.path.isfile(comment_mapping_file):
-        raise FileNotFoundError(f"Comment mapping file does not exist: {comment_mapping_file}")
+        raise FileNotFoundError(
+            f"Comment mapping file does not exist: {comment_mapping_file}")
     if not events_file:
         raise ValueError("events_file parameter is required")
 
     # Print configuration summary
-    print(f"Starting log processing and data structuring for language: {language}...")
+    print(
+        f"Starting log processing and data structuring for language: {language}...")
     print(f"  TargetFolders:      {'; '.join(target_folders_list)}")
     print(f"  LogFile:            {log_file}")
     print(f"  CommentMappingFile: {comment_mapping_file}")
@@ -85,37 +92,39 @@ def process_logs(
     # Route based on programming language
     if language == "java":
         _process_java_logs(
-            target_folders_list, log_file, comment_mapping_file, events_file, 
+            target_folders_list, log_file, comment_mapping_file, events_file,
             pruned_folder, event_dictionary_file, block_pruner_jar, data_structuring_jar
         )
     elif language == "python":
         _process_python_logs(
-            target_folders_list, log_file, comment_mapping_file, events_file, 
+            target_folders_list, log_file, comment_mapping_file, events_file,
             pruned_folder, event_dictionary_file
         )
     elif language == "php":
         _process_php_logs(
-            target_folders_list, log_file, comment_mapping_file, events_file, 
+            target_folders_list, log_file, comment_mapping_file, events_file,
             pruned_folder, event_dictionary_file
         )
     elif language in ["javascript", "js"]:
         _process_javascript_logs(
-            target_folders_list, log_file, comment_mapping_file, events_file, 
+            target_folders_list, log_file, comment_mapping_file, events_file,
             pruned_folder, event_dictionary_file
         )
     else:
         raise ValueError(f"Unsupported language: {language}")
-    
+
     print("Log processing, data structuring, and source code restoration completed successfully!")
 
 
 def _process_java_logs(target_folders_list, log_file, comment_mapping_file, events_file, pruned_folder, event_dictionary_file, block_pruner_jar, data_structuring_jar):
     """Specific logic for processing Java logs using JAR files."""
-    
+
     if not block_pruner_jar:
-        block_pruner_jar = str(PROJECT_ROOT / "core" / "block-pruner" / "target" / "block-pruner-1.0-SNAPSHOT.jar")
+        block_pruner_jar = str(PROJECT_ROOT / "multilingual" / "java" /
+                               "block-pruner" / "target" / "block-pruner-1.0-SNAPSHOT.jar")
     if not data_structuring_jar:
-        data_structuring_jar = str(PROJECT_ROOT / "core" / "data-structuring" / "target" / "data-structuring-1.0-SNAPSHOT.jar")
+        data_structuring_jar = str(PROJECT_ROOT / "multilingual" / "java" /
+                                   "data-structuring" / "target" / "data-structuring-1.0-SNAPSHOT.jar")
 
     print("Checking Java environment variables...")
     java_home = os.environ.get("JAVA_HOME")
@@ -125,10 +134,11 @@ def _process_java_logs(target_folders_list, log_file, comment_mapping_file, even
             "Please set JAVA_HOME to point to your JDK installation directory."
         )
     print(f"Using JAVA_HOME: {java_home}")
-    
+
     # Use a copy of environment variables to avoid polluting the global os.environ
     env = os.environ.copy()
-    env["PATH"] = os.path.join(java_home, "bin") + os.pathsep + env.get("PATH", "")
+    env["PATH"] = os.path.join(java_home, "bin") + \
+        os.pathsep + env.get("PATH", "")
 
     # 1. Execute Block Pruner
     print("Executing Java Block Pruner...")
@@ -172,14 +182,15 @@ def _process_python_logs(target_folders_list, log_file, comment_mapping_file, ev
 def _process_php_logs(target_folders_list, log_file, comment_mapping_file, events_file, pruned_folder, event_dictionary_file):
     """Specific logic for processing PHP logs."""
     print("Executing PHP log processing tools...")
-    
+
     env = os.environ.copy()
-    
+
     # 1. Execute PHP Block Pruner
     print("Executing PHP Block Pruner...")
-    php_pruner_script_path = str(PROJECT_ROOT / "multilingual" / "php" / "block-pruner" / "BlockPruner.php")
+    php_pruner_script_path = str(
+        PROJECT_ROOT / "multilingual" / "php" / "block-pruner" / "BlockPruner.php")
     source_dirs_arg = ";".join(target_folders_list)
-    
+
     php_pruner_cmd = [
         "php",
         php_pruner_script_path,
@@ -188,7 +199,7 @@ def _process_php_logs(target_folders_list, log_file, comment_mapping_file, event
         log_file,
         pruned_folder
     ]
-    
+
     print(f"Running command: {' '.join(php_pruner_cmd)}")
     try:
         subprocess.run(php_pruner_cmd, env=env, check=True)
@@ -197,8 +208,9 @@ def _process_php_logs(target_folders_list, log_file, comment_mapping_file, event
 
     # 2. Execute PHP Data Structuring
     print("Executing PHP Data Structuring...")
-    php_structuring_script_path = str(PROJECT_ROOT / "multilingual" / "php" / "data-structuring" / "bin" / "data-structuring.php")
-    
+    php_structuring_script_path = str(
+        PROJECT_ROOT / "multilingual" / "php" / "data-structuring" / "bin" / "data-structuring.php")
+
     php_structuring_cmd = [
         "php",
         php_structuring_script_path,
@@ -206,7 +218,7 @@ def _process_php_logs(target_folders_list, log_file, comment_mapping_file, event
         comment_mapping_file,
         log_file
     ]
-    
+
     print(f"Running command: {' '.join(php_structuring_cmd)}")
     try:
         subprocess.run(php_structuring_cmd, env=env, check=True)
@@ -217,14 +229,15 @@ def _process_php_logs(target_folders_list, log_file, comment_mapping_file, event
 def _process_javascript_logs(target_folders_list, log_file, comment_mapping_file, events_file, pruned_folder, event_dictionary_file):
     """Specific logic for processing JavaScript logs."""
     print("Executing JavaScript log processing tools...")
-    
+
     env = os.environ.copy()
-    
+
     # 1. Execute JavaScript Block Pruner
     print("Executing JavaScript Block Pruner...")
-    js_pruner_script_path = str(PROJECT_ROOT / "multilingual" / "javascript" / "block-pruner" / "BlockPruner.js")
+    js_pruner_script_path = str(
+        PROJECT_ROOT / "multilingual" / "javascript" / "block-pruner" / "BlockPruner.js")
     source_dirs_arg = ";".join(target_folders_list)
-    
+
     js_pruner_cmd = [
         "node",
         js_pruner_script_path,
@@ -233,23 +246,24 @@ def _process_javascript_logs(target_folders_list, log_file, comment_mapping_file
         log_file,
         pruned_folder
     ]
-    
+
     print(f"Running command: {' '.join(js_pruner_cmd)}")
     try:
         subprocess.run(js_pruner_cmd, env=env, check=True)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Error executing JavaScript Block Pruner: {e}")
-        
+
     # 2. Execute JavaScript Data Structuring
     print("Executing JavaScript Data Structuring...")
-    js_structuring_script_path = str(PROJECT_ROOT / "multilingual" / "javascript" / "data-structuring" / "DataStructuring.js")
-    
+    js_structuring_script_path = str(
+        PROJECT_ROOT / "multilingual" / "javascript" / "data-structuring" / "DataStructuring.js")
+
     js_structuring_cmd = [
         "node",
         js_structuring_script_path,
         pruned_folder
     ]
-    
+
     print(f"Running command: {' '.join(js_structuring_cmd)}")
     try:
         subprocess.run(js_structuring_cmd, env=env, check=True)
@@ -304,12 +318,12 @@ def main():
     parser.add_argument(
         "--block-pruner-jar",
         default=None,
-        help="Path to the Block Pruner jar (defaults to Java core target path)"
+        help="Path to the Block Pruner jar (defaults to Javatarget path)"
     )
     parser.add_argument(
         "--data-structuring-jar",
         default=None,
-        help="Path to the Data Structuring jar (defaults to Java core target path)"
+        help="Path to the Data Structuring jar (defaults to Javatarget path)"
     )
 
     args = parser.parse_args()

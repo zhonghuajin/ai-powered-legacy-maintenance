@@ -56,7 +56,7 @@ def run_block_wrapper_tool(work_dir, proj_path, git_root):
             script_path = os.path.join(work_dir, 'multilingual', 'javascript', 'block-wrapper', 'BlockWrapperTool.js')
             cmd = ['node', script_path, target]
         elif language == 'java':
-            jar_path = os.path.join(work_dir, 'core', 'block-wrapper', 'target', 'javaparser-block-wrapper-1.0-SNAPSHOT.jar')
+            jar_path = os.path.join(work_dir, 'multilingual', 'java', 'block-wrapper', 'target', 'javaparser-block-wrapper-1.0-SNAPSHOT.jar')
             cmd = ['java', '-jar', jar_path, target]
         else:
             continue

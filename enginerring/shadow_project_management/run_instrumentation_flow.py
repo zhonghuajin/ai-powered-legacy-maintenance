@@ -18,7 +18,7 @@ def _run_java_instrumentation(target_folders, incremental, mapping_file):
         print_color("Error: java not found in PATH.", Colors.RED)
         return False
 
-    pipeline_jar = os.path.join(".", "core", "instrumentor", "target",
+    pipeline_jar = os.path.join(".", "multilingual", "java", "instrumentor", "target",
                                 "instrumentor-1.0-SNAPSHOT.jar")
 
     java_cmd = [java_exe, "-jar", pipeline_jar]

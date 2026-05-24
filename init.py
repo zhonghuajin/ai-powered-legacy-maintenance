@@ -52,7 +52,8 @@ def main():
 
         print(".env file configuration completed. You can now leave it running.")
     except Exception as e:
-        print(f"Warning: Could not open editor automatically: {e}", file=sys.stderr)
+        print(
+            f"Warning: Could not open editor automatically: {e}", file=sys.stderr)
         print(f"Please manually edit the file at: {env_file_path}")
         input("Press Enter when you are done editing...")
 
@@ -131,7 +132,8 @@ def main():
                 print('export HTTP_PROXY="http://127.0.0.1:7890"')
                 print('export HTTPS_PROXY="http://127.0.0.1:7890"\n')
 
-            print("\033[33mAfter configuring the proxy, run this script again.\033[0m")
+            print(
+                "\033[33mAfter configuring the proxy, run this script again.\033[0m")
             print("\033[31mExiting...\033[0m")
             sys.exit(1)
 
@@ -189,9 +191,9 @@ def main():
 
     mvn_cmd = "mvn.cmd" if os.name == "nt" else "mvn"
 
-    # ========== Build core instrumentor ==========
-    print("\nStep 4: Executing mvn clean install to build the core instrumentor...")
-    core_pom_path = os.path.join("core", "pom.xml")
+    # ========== Buildinstrumentor ==========
+    print("\nStep 4: Executing mvn clean install to build theinstrumentor...")
+    core_pom_path = os.path.join("multilingual", "java", "pom.xml")
 
     if not os.path.isfile(core_pom_path):
         print(f"Error: POM file not found at {core_pom_path}", file=sys.stderr)
@@ -202,7 +204,7 @@ def main():
             [mvn_cmd, "-f", core_pom_path, "clean", "install", "-DskipTests"]
         )
         if result.returncode != 0:
-            print("Maven build failed for core instrumentor.", file=sys.stderr)
+            print("Maven build failed forinstrumentor.", file=sys.stderr)
             sys.exit(1)
         else:
             print("Core instrumentor built successfully.")
@@ -214,9 +216,10 @@ def main():
         )
         sys.exit(1)
 
-    # ========== Build core block wrapper ==========
-    print("\nStep 5: Executing mvn clean install to build the core block wrapper...")
-    block_wrapper_pom_path = os.path.join("core", "block-wrapper", "pom.xml")
+    # ========== Buildblock wrapper ==========
+    print("\nStep 5: Executing mvn clean install to build theblock wrapper...")
+    block_wrapper_pom_path = os.path.join(
+        "multilingual", "java", "block-wrapper", "pom.xml")
 
     if not os.path.isfile(block_wrapper_pom_path):
         print(
@@ -237,7 +240,7 @@ def main():
             ]
         )
         if result.returncode != 0:
-            print("Maven build failed for core block wrapper.", file=sys.stderr)
+            print("Maven build failed forblock wrapper.", file=sys.stderr)
             sys.exit(1)
         else:
             print("Core block wrapper built successfully.")
@@ -259,12 +262,14 @@ def main():
     )
 
     if not os.path.isfile(php_monitor_pom_path):
-        print(f"Error: POM file not found at {php_monitor_pom_path}", file=sys.stderr)
+        print(
+            f"Error: POM file not found at {php_monitor_pom_path}", file=sys.stderr)
         sys.exit(1)
 
     try:
         result = subprocess.run(
-            [mvn_cmd, "-f", php_monitor_pom_path, "clean", "package", "-DskipTests"]
+            [mvn_cmd, "-f", php_monitor_pom_path,
+                "clean", "package", "-DskipTests"]
         )
         if result.returncode != 0:
             print("Maven build failed for PHP Redis Log Monitor.", file=sys.stderr)
@@ -290,7 +295,8 @@ def main():
         print("      composer install")
     else:
         if not os.path.isdir(php_dir):
-            print(f"Error: PHP directory not found at {php_dir}", file=sys.stderr)
+            print(
+                f"Error: PHP directory not found at {php_dir}", file=sys.stderr)
             sys.exit(1)
 
         composer_cmd = "composer.bat" if os.name == "nt" else "composer"
@@ -325,7 +331,8 @@ def main():
     )
 
     if not os.path.isfile(js_monitor_pom_path):
-        print(f"Error: POM file not found at {js_monitor_pom_path}", file=sys.stderr)
+        print(
+            f"Error: POM file not found at {js_monitor_pom_path}", file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -333,7 +340,8 @@ def main():
             [mvn_cmd, "-f", js_monitor_pom_path, "clean", "package", "-DskipTests"]
         )
         if result.returncode != 0:
-            print("Maven build failed for JavaScript Redis Log Monitor.", file=sys.stderr)
+            print("Maven build failed for JavaScript Redis Log Monitor.",
+                  file=sys.stderr)
             sys.exit(1)
         else:
             print("JavaScript Redis Log Monitor built successfully.")
@@ -356,7 +364,8 @@ def main():
         print("      npm install")
     else:
         if not os.path.isdir(js_dir):
-            print(f"Error: JavaScript directory not found at {js_dir}", file=sys.stderr)
+            print(
+                f"Error: JavaScript directory not found at {js_dir}", file=sys.stderr)
             sys.exit(1)
 
         npm_cmd = "npm.cmd" if os.name == "nt" else "npm"
