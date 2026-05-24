@@ -3,7 +3,39 @@ import sys
 import argparse
 import subprocess
 import urllib.request
+import socket
 
+def is_port_open(host, port, timeout=1):
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+def get_clean_env():
+    clean_env = os.environ.copy()
+    proxy_vars = [
+        "HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy",
+        "ALL_PROXY", "all_proxy", "FTP_PROXY", "ftp_proxy"
+    ]
+    for var in proxy_vars:
+        clean_env.pop(var, None)
+    return clean_env
+
+def run_without_proxy(*args, **kwargs):
+    if "env" not in kwargs:
+        kwargs["env"] = get_clean_env()
+    else:
+
+        clean_env = kwargs["env"].copy()
+        proxy_vars = [
+            "HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy",
+            "ALL_PROXY", "all_proxy", "FTP_PROXY", "ftp_proxy"
+        ]
+        for var in proxy_vars:
+            clean_env.pop(var, None)
+        kwargs["env"] = clean_env
+    return subprocess.run(*args, **kwargs)
 
 def main():
     parser = argparse.ArgumentParser(description="Project Build Script")
@@ -23,7 +55,6 @@ def main():
 
     print("\nStarting initialization...\n")
 
-    # ========== Edit .env file ==========
     print("\nStep 1: Opening .env file for configuration...")
     env_dir = os.path.join(script_dir, "enginerring", "ask_llm")
     env_file_path = os.path.join(env_dir, ".env")
@@ -37,18 +68,20 @@ def main():
     print(f"Waiting for you to edit and close the file: {env_file_path}")
 
     try:
+
+        editor_env = get_clean_env()
         if os.name == "nt":
             editor = os.environ.get("EDITOR", "notepad")
-            subprocess.run([editor, env_file_path])
+            subprocess.run([editor, env_file_path], env=editor_env)
         elif sys.platform == "darwin":
             editor = os.environ.get("EDITOR")
             if editor:
-                subprocess.run([editor, env_file_path])
+                subprocess.run([editor, env_file_path], env=editor_env)
             else:
-                subprocess.run(["open", "-W", "-t", env_file_path])
+                subprocess.run(["open", "-W", "-t", env_file_path], env=editor_env)
         else:
             editor = os.environ.get("EDITOR", "nano")
-            subprocess.run([editor, env_file_path])
+            subprocess.run([editor, env_file_path], env=editor_env)
 
         print(".env file configuration completed. You can now leave it running.")
     except Exception as e:
@@ -57,7 +90,6 @@ def main():
         print(f"Please manually edit the file at: {env_file_path}")
         input("Press Enter when you are done editing...")
 
-    # ========== Install shared utilities package ==========
     print("\nStep 2: Installing shared utilities package...")
     shared_utils_dir = os.path.join(script_dir, "enginerring", "shared_utils")
 
@@ -69,7 +101,8 @@ def main():
         sys.exit(1)
 
     try:
-        result = subprocess.run(
+
+        result = run_without_proxy(
             [
                 sys.executable,
                 "-m",
@@ -98,16 +131,22 @@ def main():
         )
         sys.exit(1)
 
-    # ========== Install LLM Python dependencies ==========
     print("\nStep 3: Installing required Python packages for LLM...")
 
-    proxy_set = os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY")
+    proxy_set = os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY") or \
+                os.environ.get("http_proxy") or os.environ.get("https_proxy")
+
+    llm_env = os.environ.copy()
 
     if not proxy_set:
         is_china = False
         try:
+
             req = urllib.request.Request("https://ipinfo.io/country")
-            with urllib.request.urlopen(req, timeout=3) as response:
+
+            proxy_handler = urllib.request.ProxyHandler({})
+            opener = urllib.request.build_opener(proxy_handler)
+            with opener.open(req, timeout=3) as response:
                 country = response.read().decode("utf-8").strip()
                 if country == "CN":
                     is_china = True
@@ -116,29 +155,39 @@ def main():
 
         if is_china:
             print("\033[33m[!] Mainland China network detected.\033[0m")
-            print(
-                "\033[33mYou may need to configure a proxy to install "
-                "dependencies and access LLM APIs.\n\033[0m"
-            )
-            print(
-                "\033[36mPlease configure your proxy manually. "
-                "Example commands:\033[0m"
-            )
 
-            if os.name == "nt":
-                print("set HTTP_PROXY=http://127.0.0.1:7890")
-                print("set HTTPS_PROXY=http://127.0.0.1:7890\n")
+            if is_port_open("127.0.0.1", 7890):
+                print("\033[32m[+] Detected active proxy port 7890 on 127.0.0.1. Automatically applying proxy...\033[0m")
+
+                llm_env["HTTP_PROXY"] = "http://127.0.0.1:7890"
+                llm_env["HTTPS_PROXY"] = "http://127.0.0.1:7890"
+                llm_env["http_proxy"] = "http://127.0.0.1:7890"
+                llm_env["https_proxy"] = "http://127.0.0.1:7890"
             else:
-                print('export HTTP_PROXY="http://127.0.0.1:7890"')
-                print('export HTTPS_PROXY="http://127.0.0.1:7890"\n')
+                print(
+                    "\033[33mYou may need to configure a proxy to install "
+                    "dependencies and access LLM APIs.\n\033[0m"
+                )
+                print(
+                    "\033[36mPlease configure your proxy manually. "
+                    "Example commands:\033[0m"
+                )
 
-            print(
-                "\033[33mAfter configuring the proxy, run this script again.\033[0m")
-            print("\033[31mExiting...\033[0m")
-            sys.exit(1)
+                if os.name == "nt":
+                    print("set HTTP_PROXY=http://127.0.0.1:7890")
+                    print("set HTTPS_PROXY=http://127.0.0.1:7890\n")
+                else:
+                    print('export HTTP_PROXY="http://127.0.0.1:7890"')
+                    print('export HTTPS_PROXY="http://127.0.0.1:7890"\n')
+
+                print(
+                    "\033[33mAfter configuring the proxy, run this script again.\033[0m")
+                print("\033[31mExiting...\033[0m")
+                sys.exit(1)
 
     try:
-        subprocess.check_call(
+
+        subprocess.run(
             [
                 sys.executable,
                 "-m",
@@ -150,7 +199,9 @@ def main():
                 "python-dotenv",
                 "aiohttp",
                 "flask"
-            ]
+            ],
+            env=llm_env,
+            check=True
         )
         print(
             "Python dependencies "
@@ -183,16 +234,17 @@ def main():
         sys.exit(1)
 
     print(f"Using JAVA_HOME: {java_home}")
-    os.environ["PATH"] = (
+
+    clean_env_with_java = get_clean_env()
+    clean_env_with_java["PATH"] = (
         f"{os.path.join(java_home, 'bin')}"
         f"{os.pathsep}"
-        f"{os.environ.get('PATH', '')}"
+        f"{clean_env_with_java.get('PATH', '')}"
     )
 
     mvn_cmd = "mvn.cmd" if os.name == "nt" else "mvn"
 
-    # ========== Buildinstrumentor ==========
-    print("\nStep 4: Executing mvn clean install to build theinstrumentor...")
+    print("\nStep 4: Executing mvn clean install to build the instrumentor...")
     core_pom_path = os.path.join("multilingual", "java", "pom.xml")
 
     if not os.path.isfile(core_pom_path):
@@ -200,11 +252,12 @@ def main():
         sys.exit(1)
 
     try:
-        result = subprocess.run(
-            [mvn_cmd, "-f", core_pom_path, "clean", "install", "-DskipTests"]
+        result = run_without_proxy(
+            [mvn_cmd, "-f", core_pom_path, "clean", "install", "-DskipTests"],
+            env=clean_env_with_java
         )
         if result.returncode != 0:
-            print("Maven build failed forinstrumentor.", file=sys.stderr)
+            print("Maven build failed for instrumentor.", file=sys.stderr)
             sys.exit(1)
         else:
             print("Core instrumentor built successfully.")
@@ -216,8 +269,7 @@ def main():
         )
         sys.exit(1)
 
-    # ========== Buildblock wrapper ==========
-    print("\nStep 5: Executing mvn clean install to build theblock wrapper...")
+    print("\nStep 5: Executing mvn clean install to build the block wrapper...")
     block_wrapper_pom_path = os.path.join(
         "multilingual", "java", "block-wrapper", "pom.xml")
 
@@ -229,7 +281,7 @@ def main():
         sys.exit(1)
 
     try:
-        result = subprocess.run(
+        result = run_without_proxy(
             [
                 mvn_cmd,
                 "-f",
@@ -237,10 +289,11 @@ def main():
                 "clean",
                 "install",
                 "-DskipTests"
-            ]
+            ],
+            env=clean_env_with_java
         )
         if result.returncode != 0:
-            print("Maven build failed forblock wrapper.", file=sys.stderr)
+            print("Maven build failed for block wrapper.", file=sys.stderr)
             sys.exit(1)
         else:
             print("Core block wrapper built successfully.")
@@ -252,7 +305,6 @@ def main():
         )
         sys.exit(1)
 
-    # ========== Build PHP Redis Log Monitor ==========
     print("\nStep 6: Executing mvn clean package to build the PHP Redis Log Monitor...")
     php_monitor_pom_path = os.path.join(
         "multilingual",
@@ -267,9 +319,10 @@ def main():
         sys.exit(1)
 
     try:
-        result = subprocess.run(
+        result = run_without_proxy(
             [mvn_cmd, "-f", php_monitor_pom_path,
-                "clean", "package", "-DskipTests"]
+                "clean", "package", "-DskipTests"],
+            env=clean_env_with_java
         )
         if result.returncode != 0:
             print("Maven build failed for PHP Redis Log Monitor.", file=sys.stderr)
@@ -284,7 +337,6 @@ def main():
         )
         sys.exit(1)
 
-    # ========== Run Composer install for PHP ==========
     print("\nStep 7: Executing composer install for PHP environment...")
     php_dir = os.path.join(script_dir, "multilingual", "php")
 
@@ -301,7 +353,7 @@ def main():
 
         composer_cmd = "composer.bat" if os.name == "nt" else "composer"
         try:
-            result = subprocess.run(
+            result = run_without_proxy(
                 [composer_cmd, "install"],
                 cwd=php_dir
             )
@@ -318,7 +370,6 @@ def main():
             )
             sys.exit(1)
 
-    # ========== Build JavaScript Redis Log Monitor ==========
     print(
         "\nStep 8: Executing mvn clean package to build the "
         "JavaScript Redis Log Monitor..."
@@ -336,8 +387,9 @@ def main():
         sys.exit(1)
 
     try:
-        result = subprocess.run(
-            [mvn_cmd, "-f", js_monitor_pom_path, "clean", "package", "-DskipTests"]
+        result = run_without_proxy(
+            [mvn_cmd, "-f", js_monitor_pom_path, "clean", "package", "-DskipTests"],
+            env=clean_env_with_java
         )
         if result.returncode != 0:
             print("Maven build failed for JavaScript Redis Log Monitor.",
@@ -353,7 +405,6 @@ def main():
         )
         sys.exit(1)
 
-    # ========== Run npm install for JavaScript ==========
     print("\nStep 9: Executing npm install for JavaScript environment...")
     js_dir = os.path.join(script_dir, "multilingual", "javascript")
 
@@ -370,7 +421,7 @@ def main():
 
         npm_cmd = "npm.cmd" if os.name == "nt" else "npm"
         try:
-            result = subprocess.run(
+            result = run_without_proxy(
                 [npm_cmd, "install"],
                 cwd=js_dir
             )
@@ -388,7 +439,6 @@ def main():
             sys.exit(1)
 
     print("\nAll build steps completed successfully.")
-
 
 if __name__ == "__main__":
     main()
