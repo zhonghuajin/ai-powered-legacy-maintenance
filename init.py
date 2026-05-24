@@ -17,6 +17,11 @@ def main():
         action="store_true",
         help="Skip executing 'npm install' in the JavaScript directory"
     )
+    parser.add_argument(
+        "--skip-python",
+        action="store_true",
+        help="Skip executing 'pip install' in the multilingual Python directory"
+    )
     args = parser.parse_args()
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -191,8 +196,8 @@ def main():
 
     mvn_cmd = "mvn.cmd" if os.name == "nt" else "mvn"
 
-    # ========== Buildinstrumentor ==========
-    print("\nStep 4: Executing mvn clean install to build theinstrumentor...")
+    # ========== Build instrumentor ==========
+    print("\nStep 4: Executing mvn clean install to build the instrumentor...")
     core_pom_path = os.path.join("multilingual", "java", "pom.xml")
 
     if not os.path.isfile(core_pom_path):
@@ -204,7 +209,7 @@ def main():
             [mvn_cmd, "-f", core_pom_path, "clean", "install", "-DskipTests"]
         )
         if result.returncode != 0:
-            print("Maven build failed forinstrumentor.", file=sys.stderr)
+            print("Maven build failed for instrumentor.", file=sys.stderr)
             sys.exit(1)
         else:
             print("Core instrumentor built successfully.")
@@ -216,8 +221,8 @@ def main():
         )
         sys.exit(1)
 
-    # ========== Buildblock wrapper ==========
-    print("\nStep 5: Executing mvn clean install to build theblock wrapper...")
+    # ========== Build block wrapper ==========
+    print("\nStep 5: Executing mvn clean install to build the block wrapper...")
     block_wrapper_pom_path = os.path.join(
         "multilingual", "java", "block-wrapper", "pom.xml")
 
@@ -240,7 +245,7 @@ def main():
             ]
         )
         if result.returncode != 0:
-            print("Maven build failed forblock wrapper.", file=sys.stderr)
+            print("Maven build failed for block wrapper.", file=sys.stderr)
             sys.exit(1)
         else:
             print("Core block wrapper built successfully.")
@@ -383,6 +388,43 @@ def main():
             print(
                 f"Error: npm command '{npm_cmd}' not found. "
                 "Please ensure Node.js/npm is installed and in your PATH.",
+                file=sys.stderr
+            )
+            sys.exit(1)
+
+    print("\nStep 10: Executing pip install for multilingual Python environment...")
+    py_dir = os.path.join(script_dir, "multilingual", "python")
+    req_file_path = os.path.join(py_dir, "requirements.txt")
+
+    if args.skip_python:
+        print("Skipped 'pip install' for multilingual Python as requested.")
+        print("Note: If you need Python support later, run it manually:")
+        print(f"      cd {py_dir}")
+        print("      pip install -r requirements.txt")
+    else:
+        if not os.path.isdir(py_dir):
+            print(
+                f"Error: Python directory not found at {py_dir}", file=sys.stderr)
+            sys.exit(1)
+        
+        if not os.path.isfile(req_file_path):
+            print(
+                f"Error: requirements.txt not found at {req_file_path}", file=sys.stderr)
+            sys.exit(1)
+
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
+                cwd=py_dir
+            )
+            if result.returncode != 0:
+                print("pip install for multilingual Python failed.", file=sys.stderr)
+                sys.exit(1)
+            else:
+                print("pip install for multilingual Python completed successfully.")
+        except Exception as e:
+            print(
+                f"Error: Could not run pip to install multilingual Python dependencies: {e}",
                 file=sys.stderr
             )
             sys.exit(1)
