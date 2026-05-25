@@ -260,7 +260,6 @@ def run_initial_startup_verification(work_dir, proj_path):
         current_os = platform.system()
         try:
             if current_os == 'Windows':
-                # Using start command with explicit title to ensure visibility and clean termination
                 cmd_str = f'start "{_win_title}" cmd /k "{value}"'
                 subprocess.Popen(cmd_str, shell=True, cwd=git_root)
             elif current_os == 'Darwin':
@@ -328,6 +327,12 @@ def main():
         action='store_true',
         help="Prompt interactively for target IPs. If not specified, will auto-simulate Enter."
     )
+    parser.add_argument(
+        '--script-index',
+        type=int,
+        default=None,
+        help="Pre-selected index for Select Prompt Generator Script (1-based)."
+    )
     args = parser.parse_args()
 
     if args.interactive_ip:
@@ -362,7 +367,7 @@ def main():
         target_language = ensure_language_selected(proj_path)
 
         while True:
-            selected_script = select_ai_prompt_script(work_dir, target_language)
+            selected_script = select_ai_prompt_script(work_dir, target_language, preselected_index=args.script_index)
             has_ai_marker = check_if_ai_will_modify(work_dir, selected_script)
             prompt_context = prepare_ai_prompt_interactive(work_dir, selected_script, proj_path=proj_path, save_context=has_ai_marker)
 

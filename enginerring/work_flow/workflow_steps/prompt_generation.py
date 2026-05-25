@@ -8,7 +8,7 @@ from .common import get_single_char
 # Global variable to cache the selected script during the application's runtime
 _cached_selected_script = None
 
-def select_ai_prompt_script(work_dir, target_language=None):
+def select_ai_prompt_script(work_dir, target_language=None, preselected_index=None):
     global _cached_selected_script
 
     print_color("\n>>> Pre-selecting AI Prompt Generator...", Colors.CYAN)
@@ -45,28 +45,41 @@ def select_ai_prompt_script(work_dir, target_language=None):
     print_color("========================================", Colors.CYAN)
 
     choice = ""
-    prompt_msg = f"Enter your choice (1-{len(scripts)}): "
-
-    while True:
-        if len(scripts) < 10:
-            print(prompt_msg, end='', flush=True)
-            choice = get_single_char()
-
-            if choice == '\x03':
-                print("\n")
-                raise KeyboardInterrupt
-
-            print(choice)
-            choice = choice.strip()
+    
+    # Check if a valid pre-selected index was passed via command line
+    if preselected_index is not None:
+        if 1 <= preselected_index <= len(scripts):
+            choice = str(preselected_index)
+            print_color(f"[Info] Automatically selected script index from arguments: {choice}", Colors.GREEN)
         else:
-            choice = input(prompt_msg).strip()
+            print_color(
+                f"[Warning] Pre-selected index {preselected_index} is out of bounds (1-{len(scripts)}). Falling back to manual selection.",
+                Colors.YELLOW
+            )
 
-        if choice.isdigit() and 1 <= int(choice) <= len(scripts):
-            break
+    if not choice:
+        prompt_msg = f"Enter your choice (1-{len(scripts)}): "
 
-        if len(scripts) < 10:
-            print()
-        print_color("[!] Invalid choice, please try again.", Colors.RED)
+        while True:
+            if len(scripts) < 10:
+                print(prompt_msg, end='', flush=True)
+                choice = get_single_char()
+
+                if choice == '\x03':
+                    print("\n")
+                    raise KeyboardInterrupt
+
+                print(choice)
+                choice = choice.strip()
+            else:
+                choice = input(prompt_msg).strip()
+
+            if choice.isdigit() and 1 <= int(choice) <= len(scripts):
+                break
+
+            if len(scripts) < 10:
+                print()
+            print_color("[!] Invalid choice, please try again.", Colors.RED)
 
     selected_script = scripts[int(choice) - 1]
     print_color(f"\n[Info] Selected script: {selected_script}", Colors.GREEN)
