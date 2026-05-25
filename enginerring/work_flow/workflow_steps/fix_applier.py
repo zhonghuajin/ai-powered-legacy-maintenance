@@ -10,6 +10,12 @@ from print_utils.utils import Colors, print_color
 from . import common
 
 
+# Global variable to track the active terminal process for non-Windows platforms
+_active_fix_process = None
+# Unique window title used to identify and close the verification window on Windows
+_win_title = "Instrumentor_Verification_Console"
+
+
 def get_single_char_fallback():
     """
     Cross-platform single character reader function as a fallback.
@@ -37,7 +43,43 @@ def get_single_char_fallback():
         return ch
 
 
+def close_previous_fix_window():
+    """
+    Closes the previously opened terminal window.
+    """
+    global _active_fix_process
+    current_os = platform.system()
+    
+    if current_os == 'Windows':
+        try:
+            # Forcefully close any window matching our unique title
+            subprocess.run(
+                f'taskkill /F /FI "WINDOWTITLE eq {_win_title}*"',
+                shell=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+        except Exception:
+            pass
+    else:
+        if _active_fix_process is not None:
+            try:
+                if _active_fix_process.poll() is None:
+                    try:
+                        os.killpg(os.getpgid(_active_fix_process.pid), 15)
+                    except Exception:
+                        _active_fix_process.terminate()
+                    _active_fix_process.wait(timeout=2)
+            except Exception:
+                pass
+            _active_fix_process = None
+
+
 def execute_startup_verification(config_data, config_path, git_root, config_key="startup_command_fix"):
+    global _active_fix_process
+
+    close_previous_fix_window()
+
     shared_key = "startup_command_initial"
     startup_config = config_data.get(shared_key) or config_data.get(config_key)
 
@@ -115,15 +157,20 @@ def execute_startup_verification(config_data, config_path, git_root, config_key=
         current_os = platform.system()
         try:
             if current_os == 'Windows':
-                process_to_wait = subprocess.Popen(
-                    f'start cmd /k "{value}"', shell=True, cwd=git_root)
+                # Using start command with explicit title to ensure visibility and clean termination
+                cmd_str = f'start "{_win_title}" cmd /k "{value}"'
+                subprocess.Popen(cmd_str, shell=True, cwd=git_root)
             elif current_os == 'Darwin':
                 applescript = f'tell application "Terminal" to do script "cd {git_root} && {value}"'
-                process_to_wait = subprocess.Popen(
+                _active_fix_process = subprocess.Popen(
                     ['osascript', '-e', applescript])
+                process_to_wait = _active_fix_process
             else:
-                process_to_wait = subprocess.Popen(
-                    ['x-terminal-emulator', '-e', f'sh -c "cd {git_root} && {value}; exec sh"'])
+                _active_fix_process = subprocess.Popen(
+                    ['x-terminal-emulator', '-e', f'sh -c "cd {git_root} && {value}; exec sh"'],
+                    preexec_fn=os.setsid if hasattr(os, 'setsid') else None
+                )
+                process_to_wait = _active_fix_process
         except Exception as e:
             print_color(
                 f"[Error] Failed to launch terminal window: {e}", Colors.RED)
@@ -231,6 +278,10 @@ def apply_fix(work_dir, proj_path=None, prompt_context=None):
 
             satisfied = input(
                 "\nDid the code fix meet your expectations? (yes/no): ").strip().lower()
+            
+            # Close the verification window immediately after getting user input
+            close_previous_fix_window()
+
             if satisfied in ['yes', 'y']:
                 print_color(
                     "[Success] Verification passed! Proceeding to next step.", Colors.GREEN)

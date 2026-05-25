@@ -41,6 +41,12 @@ from enginerring.project_manager.project_manager import create_or_select_project
 from enginerring.scenario_manager.generate_scenario_description import generate_scenario_description
 
 
+# Global variable to track the active terminal process for non-Windows platforms
+_active_startup_process = None
+# Unique window title used to identify and close the verification window on Windows
+_win_title = "Instrumentor_Verification_Console"
+
+
 def get_single_char_fallback():
     """
     Cross-platform single character reader function as a fallback.
@@ -63,6 +69,38 @@ def get_single_char_fallback():
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         return ch
+
+
+def close_previous_startup_window():
+    """
+    Closes the previously opened terminal window.
+    """
+    global _active_startup_process
+    current_os = platform.system()
+    
+    if current_os == 'Windows':
+        try:
+            # Forcefully close any window matching our unique title
+            subprocess.run(
+                f'taskkill /F /FI "WINDOWTITLE eq {_win_title}*"',
+                shell=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+        except Exception:
+            pass
+    else:
+        if _active_startup_process is not None:
+            try:
+                if _active_startup_process.poll() is None:
+                    try:
+                        os.killpg(os.getpgid(_active_startup_process.pid), 15)
+                    except Exception:
+                        _active_startup_process.terminate()
+                    _active_startup_process.wait(timeout=2)
+            except Exception:
+                pass
+            _active_startup_process = None
 
 
 def switch_to_source_branch(proj_path):
@@ -130,7 +168,8 @@ def switch_to_source_branch(proj_path):
 
 
 def run_initial_startup_verification(work_dir, proj_path):
-    # Check if we should skip Initial Startup Verification
+    global _active_startup_process
+
     if proj_path:
         config_path = os.path.join(proj_path, 'config.json')
         if os.path.exists(config_path):
@@ -142,6 +181,8 @@ def run_initial_startup_verification(work_dir, proj_path):
                     return False
             except Exception as e:
                 print_color(f"[Warning] Failed to read config.json: {e}", Colors.YELLOW)
+
+    close_previous_startup_window()
 
     print_color("\n=======================================================", Colors.CYAN)
     print_color("      Running Initial Startup Verification...          ", Colors.CYAN)
@@ -219,12 +260,19 @@ def run_initial_startup_verification(work_dir, proj_path):
         current_os = platform.system()
         try:
             if current_os == 'Windows':
-                process_to_wait = subprocess.Popen(f'start cmd /k "{value}"', shell=True, cwd=git_root)
+                # Using start command with explicit title to ensure visibility and clean termination
+                cmd_str = f'start "{_win_title}" cmd /k "{value}"'
+                subprocess.Popen(cmd_str, shell=True, cwd=git_root)
             elif current_os == 'Darwin':
                 applescript = f'tell application "Terminal" to do script "cd {git_root} && {value}"'
-                process_to_wait = subprocess.Popen(['osascript', '-e', applescript])
+                _active_startup_process = subprocess.Popen(['osascript', '-e', applescript])
+                process_to_wait = _active_startup_process
             else:
-                process_to_wait = subprocess.Popen(['x-terminal-emulator', '-e', f'sh -c "cd {git_root} && {value}; exec sh"'])
+                _active_startup_process = subprocess.Popen(
+                    ['x-terminal-emulator', '-e', f'sh -c "cd {git_root} && {value}; exec sh"'],
+                    preexec_fn=os.setsid if hasattr(os, 'setsid') else None
+                )
+                process_to_wait = _active_startup_process
         except Exception as e:
             print_color(f"[Error] Failed to launch terminal window: {e}", Colors.RED)
 
