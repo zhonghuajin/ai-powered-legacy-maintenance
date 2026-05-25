@@ -3,9 +3,8 @@
 
 import os
 import sys
-from editor_util import get_multiline_input_via_editor
 
-#AI will modify codes
+# AI will modify codes
 
 # ==========================================
 # 1. Define Prompt Template
@@ -59,7 +58,7 @@ Please deeply analyze the complete execution chain of the above scenario and exp
 
 - **Fact-based only**: Analysis must be based only on the provided call chain data.
 - **Complete code**: When providing modified code, you **must provide the complete class or complete method code**. Using `...` to omit original logic is strictly forbidden, to ensure the code can be copied and run directly.
-- **Code precision**: You must clearly specify the **file name** and **function name** being modified.
+- **Code precision**: You must clearly specify the **file name** and **function name being modified.**
 
 ---
 
@@ -107,6 +106,44 @@ path/to/new/inferred_file.ext
 # 2. Interactive Guidance Logic
 # ==========================================
 
+def get_multiline_input(prompt_title, default_val=""):
+    """
+    Generic function to get multiline inputs from the console.
+    """
+    print(f"\n{prompt_title}")
+    print("👉 Instruction: You can press [Enter] to start a new line.")
+    print("   To finish, press [Enter] twice consecutively, or type ':q' on a new line.")
+    print("-" * 60)
+    
+    lines = []
+    empty_count = 0
+    
+    while True:
+        try:
+            line = input()
+            if line.strip() == ':q':
+                break
+            if line == '':
+                empty_count += 1
+                if empty_count >= 2:
+                    break
+            else:
+                empty_count = 0
+            lines.append(line)
+        except EOFError:
+            break
+            
+    while lines and lines[-1] == '':
+        lines.pop()
+        
+    result = "\n".join(lines).strip()
+    print("-" * 60 + "\n✅ Input saved successfully!\n")
+    
+    if not result:
+        return default_val
+    return result
+
+
 def prepare_prompt():
     print("#AI will modify codes")
     """
@@ -116,19 +153,16 @@ def prepare_prompt():
     print("="*50)
     print("🚀 AI Secondary Development Prompt Auto Generator")
     print("="*50)
-    print("Please enter the required information as prompted (press Enter directly to skip optional items)\n")
+    print("Please enter the required information as prompted.\n")
 
-    # 1. Collect target feature
-    requirement = input(
-        "🎯 1. Please enter the [Target New Feature] (e.g., add a Semaphore-based test scenario):\n> ").strip()
-    if not requirement:
-        requirement = "[No specific requirement provided, please let the AI analyze possible extension points in the current scenario]"
-
-    # 2. Collect additional notes via Editor
-    additional_info = get_multiline_input_via_editor(
-        step_title="Please enter [Additional Notes] (optional)",
-        prompt_hint="Please provide additional file and data descriptions. For data-sensitive scenarios, it is recommended to provide I/O data examples."
+    # 1. Collect target feature (supporting multiline input)
+    requirement = get_multiline_input(
+        "🎯 1. Please enter the [Target New Feature] (e.g., add a Semaphore-based test scenario):",
+        default_val="[No specific requirement provided, please let the AI analyze possible extension points in the current scenario]"
     )
+
+    # 2. Skip additional notes step
+    additional_info = "[No additional notes provided.]"
 
     return {
         "requirement": requirement,
@@ -152,12 +186,12 @@ def generate_prompt_with_context(cli_file_path, context):
         if cli_file_path:
             file_path = cli_file_path
             print(
-                f"\n📁 3. Using Call Chain Data File from arguments: {file_path}")
+                f"\n📁 2. Using Call Chain Data File from arguments: {file_path}")
             cli_file_path = None
         else:
             file_path = input(
-                "\n📁 3. Please enter the path to the [Call Chain Data File] (e.g., final-output-calltree.md):\n> ").strip()
-            # Remove possible quotes (common when dragging a file into the terminal)
+                "\n📁 2. Please enter the path to the [Call Chain Data File] (e.g., final-output-calltree.md):\n> ").strip()
+            # Remove possible quotes
             file_path = file_path.strip('\'"')
 
         if not file_path:

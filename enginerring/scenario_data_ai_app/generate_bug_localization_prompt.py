@@ -3,9 +3,8 @@
 
 import os
 import sys
-from editor_util import get_multiline_input_via_editor
 
-#AI will modify codes
+# AI will modify codes
 
 # ==========================================
 # 1. Define Prompt Templates
@@ -204,6 +203,54 @@ path/to/second/file.ext
 # 2. Interactive Guidance Logic
 # ==========================================
 
+def get_multiline_input(prompt_title, default_val=""):
+    """
+    Generic function to get multiline inputs from the console.
+    Supports:
+    1. Pressing Enter twice consecutively (empty line) to finish input.
+    2. Typing ':q' on a new line to finish input.
+    3. Pressing Ctrl+Z + Enter (Windows) or Ctrl+D (Linux/macOS) to finish input.
+    """
+    print(f"\n{prompt_title}")
+    print("👉 Instruction: You can press [Enter] to start a new line.")
+    print("   To finish, press [Enter] twice consecutively, or type ':q' on a new line.")
+    print("-" * 60)
+    
+    lines = []
+    empty_count = 0  # Counter for consecutive empty lines
+    
+    while True:
+        try:
+            line = input()
+            # If user entered the quit command
+            if line.strip() == ':q':
+                break
+            
+            # Detect consecutive empty lines
+            if line == '':
+                empty_count += 1
+                if empty_count >= 2:  # Two consecutive empty lines indicate end of input
+                    break
+            else:
+                empty_count = 0  # Reset counter
+                
+            lines.append(line)
+        except EOFError:
+            # Catch Ctrl+Z (Windows) or Ctrl+D (Linux/macOS)
+            break
+            
+    # Strip trailing empty lines
+    while lines and lines[-1] == '':
+        lines.pop()
+        
+    result = "\n".join(lines).strip()
+    print("-" * 60 + "\n✅ Input saved successfully!\n")
+    
+    if not result:
+        return default_val
+    return result
+
+
 def prepare_prompt():
     print("#AI will modify codes")
     """
@@ -213,23 +260,20 @@ def prepare_prompt():
     print("="*50)
     print("🕵️  AI Bug Localization Prompt Auto Generator")
     print("="*50)
-    print("Please enter the required information as prompted (press Enter directly to skip optional items)\n")
+    print("Please enter the required information as prompted.\n")
 
-    # [Modified] 0. Select analysis mode (Hardcoded to Call-Tree First)
+    # [Auto-Config] Analysis Mode automatically set to: Call-Tree First
     mode = "1"
     print("✅ [Auto-Config] Analysis Mode automatically set to: [1] Call-Tree First (concurrency sections omitted).\n")
 
-    # 1. Collect bug symptom
-    requirement = input(
-        "🐞 1. Please describe the [Observable Symptom] (e.g., The event-driven aggregation test incorrectly outputs an array of zeros instead of the expected computed values because the program retrieves the results before the background tasks have finished processing them.):\n> ").strip()
-    if not requirement:
-        requirement = "[No specific symptom provided. Please analyze the trace data for obvious logic errors or exceptions.]"
-
-    # 2. Collect additional notes via Editor
-    additional_info = get_multiline_input_via_editor(
-        step_title="Please enter [Additional Notes] (optional)",
-        prompt_hint="Please provide additional file and data descriptions. For data-sensitive scenarios, it is recommended to provide I/O data examples."
+    # 1. Collect bug symptom (using multiline input function)
+    requirement = get_multiline_input(
+        "🐞 1. Please describe the [Observable Symptom] (e.g., The event-driven aggregation test...):",
+        default_val="[No specific symptom provided. Please analyze the trace data for obvious logic errors or exceptions.]"
     )
+
+    # 2. Additional notes step is skipped now. Defaulting to an empty string.
+    additional_info = "[No additional notes provided.]"
 
     return {
         "requirement": requirement,
@@ -257,7 +301,7 @@ def generate_prompt_with_context(cli_file_path, context):
     while True:
         if cli_file_path:
             file_path = cli_file_path
-            print(f"\n📁 3. Using Call Tree File from arguments: {file_path}")
+            print(f"\n📁 2. Using Call Tree File from arguments: {file_path}")
             # Reset the variable so if it fails, it will fall back to manual input
             cli_file_path = None
         else:
@@ -268,7 +312,7 @@ def generate_prompt_with_context(cli_file_path, context):
                 file_hint = "Call Tree File (e.g., ../../final-output-calltree.md)"
 
             file_path = input(
-                f"\n📁 3. Please enter the path to the [{file_hint}]:\n> ").strip()
+                f"\n📁 2. Please enter the path to the [{file_hint}]:\n> ").strip()
             # Remove possible quotes (common when dragging a file into the terminal)
             file_path = file_path.strip('\'"')
 
