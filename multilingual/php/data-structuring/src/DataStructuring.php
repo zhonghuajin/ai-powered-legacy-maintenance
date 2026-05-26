@@ -70,7 +70,6 @@ class MethodCollectorVisitor extends NodeVisitorAbstract
 
     public function enterNode(Node $node)
     {
-
         if ($node instanceof Node\Stmt\Class_ || $node instanceof Node\Stmt\Interface_ || $node instanceof Node\Stmt\Trait_) {
             if ($node->name !== null) {
                 $this->currentClass = $node->name->toString();
@@ -83,6 +82,11 @@ class MethodCollectorVisitor extends NodeVisitorAbstract
             }
 
             $methodName = $node->name->toString();
+
+            if (strcasecmp($methodName, '__construct') === 0 || strcasecmp($methodName, '__destruct') === 0) {
+                return null;
+            }
+
             $paramCount = count($node->params);
 
             $startFilePos = $node->getStartFilePos();
@@ -107,7 +111,6 @@ class MethodCollectorVisitor extends NodeVisitorAbstract
 
     private function isEmptyMethod(Node $node): bool
     {
-
         if (!isset($node->stmts) || $node->stmts === null) {
             return true;
         }
@@ -123,7 +126,6 @@ class MethodCollectorVisitor extends NodeVisitorAbstract
                 $this->callsRef = &$callsRef;
             }
             public function enterNode(Node $node) {
-
                 if ($node instanceof MethodCall) {
                     if ($node->name instanceof Node\Identifier) {
                         $scope = null;
@@ -199,7 +201,6 @@ class DataStructuring
             $phpFiles = self::getPhpFiles($threadPath);
 
             $methodMap = [];
-
             $rawCallsMap = [];
 
             foreach ($phpFiles as $phpFile) {
@@ -287,6 +288,9 @@ class DataStructuring
 
     private static function findMatchingMethod(MethodCallInfo $call, array $methodMap, string $callerClassName): ?MethodNode
     {
+        if (strcasecmp($call->name, '__construct') === 0 || strcasecmp($call->name, '__destruct') === 0) {
+            return null;
+        }
 
         if ($call->scope === null || $call->scope === 'this' || $call->scope === 'self' || $call->scope === 'static') {
             $key = $callerClassName . "::" . $call->name . "_" . $call->argCount;
