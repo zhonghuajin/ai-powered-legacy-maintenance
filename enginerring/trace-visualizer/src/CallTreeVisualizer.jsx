@@ -2,19 +2,23 @@ import React, { useMemo, useState, useCallback } from 'react';
 import {
   Upload, ChevronRight, ChevronDown, FileCode2, Activity,
   Code2, Layers, Search, ListTree, Braces, FolderTree,
-  Info, Copy, Check, PanelLeft, PanelLeftClose, FileText, HelpCircle
+  Info, Copy, Check, PanelLeft, PanelLeftClose, FileText, HelpCircle,
+  Cpu, Terminal
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 function classNames(...items) {
   return items.filter(Boolean).join(' ');
 }
+
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
+
 function formatCount(value) {
   return typeof value === 'number' ? value.toLocaleString() : '0';
 }
+
 function readFileAsText(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -24,30 +28,38 @@ function readFileAsText(file) {
   });
 }
 
+/**
+ * 递归计算新/旧格式节点树中的方法总数和涉及文件数
+ */
 function collectStatsFromNode(node, stats = { methods: 0, files: new Set() }) {
   if (!node || typeof node !== 'object') return stats;
-  if (node.method !== 'Thread Entry Points') {
+  
+  const isVirtual = node.method === 'Thread Entry Points' || node.name === 'Thread Entry Points';
+  if (!isVirtual) {
     stats.methods += 1;
-    if (node.file && node.file !== 'virtual') stats.files.add(node.file);
+    const file = node.file || node.filePath;
+    if (file && file !== 'virtual') {
+      stats.files.add(file);
+    }
   }
-  safeArray(node.calls).forEach((child) => collectStatsFromNode(child, stats));
+
+  // 兼容新格式 (children) 与旧格式 (calls)
+  const children = safeArray(node.children || node.calls);
+  children.forEach((child) => collectStatsFromNode(child, stats));
   return stats;
 }
 
 /**
- * 语言无关的通用方法名/函数名提取器
- * 适用于 Java, JS, TS, Python, Go, Rust, C++, C#, Ruby, PHP 等所有主流语言
+ * 语言无关的通用方法名/函数名提取器（用于 Markdown 解析）
  */
 function guessMethodNameUniversal(source, defaultVal = 'unknown_method') {
   if (!source) return defaultVal;
   const lines = source.split('\n');
   
-  // 1. 找到第一个非空且非注释行
   let targetLine = '';
   for (let line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    // 过滤单行注释 (//, #, /*, --)
     if (trimmed.startsWith('//') || trimmed.startsWith('#') || trimmed.startsWith('/*') || trimmed.startsWith('*') || trimmed.startsWith('--')) {
       continue;
     }
@@ -57,13 +69,10 @@ function guessMethodNameUniversal(source, defaultVal = 'unknown_method') {
 
   if (!targetLine) return defaultVal;
 
-  // 2. 针对常见语言的通用清洗逻辑
-  // 移除开头的常见修饰符/关键字
   let clean = targetLine
     .replace(/^(export\s+|default\s+|public\s+|private\s+|protected\s+|static\s+|async\s+|fn\s+|def\s+|function\s+|void\s+)+/i, '')
     .trim();
 
-  // 3. 提取括号前的方法名，例如 "process(numbers)" -> "process()"
   const parenIndex = clean.indexOf('(');
   if (parenIndex > 0) {
     const name = clean.substring(0, parenIndex).trim().split(/\s+/).pop();
@@ -72,12 +81,10 @@ function guessMethodNameUniversal(source, defaultVal = 'unknown_method') {
     }
   }
 
-  // 4. 针对 Python/Ruby/Go 等可能没有括号或特殊定义的声明
-  // 比如 "def my_func:" -> "my_func"
   clean = clean.replace(/[:{]/g, '').trim();
   const words = clean.split(/\s+/);
   if (words.length > 0) {
-    const lastWord = words[0]; // 拿第一个有效单词
+    const lastWord = words[0];
     if (lastWord && lastWord.length < 30 && !/^[0-9]/.test(lastWord)) {
       return lastWord;
     }
@@ -86,13 +93,15 @@ function guessMethodNameUniversal(source, defaultVal = 'unknown_method') {
   return defaultVal;
 }
 
-// 通用 Markdown 解析器
+/**
+ * 解析 Markdown 格式的 Trace 链路
+ */
 function parseMarkdownToTrace(mdText) {
   const lines = mdText.split(/\r?\n/);
   const threads = [];
   let currentThread = null;
 
-  let nodeStack = []; // 存储 { node, indentLevel }
+  let nodeStack = []; 
   let inCodeBlock = false;
   let codeLines = [];
   let currentCodeNode = null;
@@ -100,14 +109,12 @@ function parseMarkdownToTrace(mdText) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // 1. 处理代码块内部
     if (inCodeBlock) {
       if (line.trim().startsWith('```')) {
         inCodeBlock = false;
         if (currentCodeNode) {
-          currentCodeNode.source = codeLines.join('\n');
-          // 使用通用语言无关提取器
-          currentCodeNode.method = guessMethodNameUniversal(currentCodeNode.source, currentCodeNode.method);
+          currentCodeNode.body = codeLines.join('\n');
+          currentCodeNode.name = guessMethodNameUniversal(currentCodeNode.body, currentCodeNode.name);
         }
         codeLines = [];
         currentCodeNode = null;
@@ -118,27 +125,25 @@ function parseMarkdownToTrace(mdText) {
       continue;
     }
 
-    // 2. 匹配线程头部: ## Thread-1 (Order: 1)
     const threadMatch = line.match(/^##\s+(.+?)\s*\(Order:\s*(\d+)\)/);
     if (threadMatch) {
-      // 引入虚拟根节点，完美解决单线程下存在多个并列顶级节点（Multi-root）被覆盖的问题
       const rootNode = {
         file: 'virtual',
-        method: 'Thread Entry Points',
-        source: '',
-        calls: []
+        name: 'Thread Entry Points',
+        signature: 'Thread Entry Points',
+        body: '',
+        children: []
       };
       currentThread = {
         name: threadMatch[1].trim(),
         order: parseInt(threadMatch[2], 10),
-        call_tree: rootNode
+        trees: [rootNode]
       };
       threads.push(currentThread);
       nodeStack = [{ node: rootNode, indentLevel: -1 }];
       continue;
     }
 
-    // 3. 匹配文件节点 (支持任何文件后缀)
     const fileMatch = line.match(/^(\s*)-\s*\*File:\*\s*`([^`]+)`/);
     const noFileMatch = line.match(/^(\s*)-\s*\(\s*no file\s*\)/);
 
@@ -150,36 +155,34 @@ function parseMarkdownToTrace(mdText) {
 
       const node = {
         file: filePath,
-        method: fileName + ' (code block)',
-        source: '',
-        calls: []
+        name: fileName + ' (code block)',
+        signature: '',
+        body: '',
+        children: []
       };
 
       if (!currentThread) {
-        const rootNode = { file: 'virtual', method: 'Thread Entry Points', source: '', calls: [] };
-        currentThread = { name: 'Default Thread', order: 1, call_tree: rootNode };
+        const rootNode = { file: 'virtual', name: 'Thread Entry Points', signature: '', body: '', children: [] };
+        currentThread = { name: 'Default Thread', order: 1, trees: [rootNode] };
         threads.push(currentThread);
         nodeStack = [{ node: rootNode, indentLevel: -1 }];
       }
 
-      // 弹出所有层级大于或等于当前节点缩进的栈内节点
       while (nodeStack.length > 0 && nodeStack[nodeStack.length - 1].indentLevel >= indentLevel) {
         nodeStack.pop();
       }
 
-      // 挂载到栈顶父节点
       if (nodeStack.length > 0) {
         const parent = nodeStack[nodeStack.length - 1].node;
-        parent.calls.push(node);
+        parent.children.push(node);
       } else {
-        currentThread.call_tree.calls.push(node);
+        currentThread.trees[0].children.push(node);
       }
 
       nodeStack.push({ node, indentLevel });
       continue;
     }
 
-    // 4. 匹配任意语言的代码块开始: ```java, ```javascript, ```python, ``` 等
     if (line.trim().startsWith('```')) {
       inCodeBlock = true;
       codeLines = [];
@@ -190,11 +193,10 @@ function parseMarkdownToTrace(mdText) {
     }
   }
 
-  // 后处理：如果虚拟根节点下只有一个子节点，直接将其提拔为 call_tree，保持界面简洁
   threads.forEach(t => {
-    if (t.call_tree && t.call_tree.method === 'Thread Entry Points') {
-      if (t.call_tree.calls.length === 1) {
-        t.call_tree = t.call_tree.calls[0];
+    if (t.trees && t.trees[0] && t.trees[0].name === 'Thread Entry Points') {
+      if (t.trees[0].children.length === 1) {
+        t.trees = [t.trees[0].children[0]];
       }
     }
   });
@@ -202,12 +204,86 @@ function parseMarkdownToTrace(mdText) {
   return { threads };
 }
 
-const DEPTH_ML = [
-  'ml-0', 'ml-4', 'ml-8', 'ml-12', 'ml-16',
-  'ml-20', 'ml-24', 'ml-28', 'ml-32', 'ml-36',
-];
-function depthMargin(depth) {
-  return DEPTH_ML[Math.min(depth, DEPTH_ML.length - 1)];
+/**
+ * 核心数据适配器：将新旧两种 JSON 格式统一规范化
+ */
+function adaptJsonData(parsedJson) {
+  // 1. 检查是否为新格式 (例如含有 "Thread-6628" 这种以线程名为 Key 的对象，且内含 trees)
+  const firstKey = Object.keys(parsedJson)[0];
+  if (firstKey && parsedJson[firstKey] && typeof parsedJson[firstKey] === 'object' && 'trees' in parsedJson[firstKey]) {
+    const threads = Object.keys(parsedJson).map((threadKey, index) => {
+      const rawThread = parsedJson[threadKey];
+      
+      // 递归规范化节点属性 (将 calls 统一为 children，将 source 统一为 body)
+      const normalizeNode = (node) => {
+        if (!node) return null;
+        return {
+          name: node.name || node.method || 'unknown',
+          signature: node.signature || '',
+          file: node.file || node.filePath || '',
+          body: node.body || node.source || '',
+          children: safeArray(node.children || node.calls).map(normalizeNode)
+        };
+      };
+
+      const normalizedTrees = safeArray(rawThread.trees).map(normalizeNode);
+
+      return {
+        name: threadKey,
+        project: rawThread.project || '',
+        total_nodes: rawThread.total_nodes || 0,
+        order: index + 1,
+        // 将并列的多个 trees 挂载在一个虚拟根节点下，方便统一树状渲染
+        call_tree: {
+          name: 'Thread Entry Points',
+          signature: 'Virtual Root for Entry Trees',
+          file: 'virtual',
+          body: '',
+          children: normalizedTrees
+        }
+      };
+    });
+    return { threads };
+  }
+
+  // 2. 如果是旧格式 (含有 threads 数组)
+  if (parsedJson && Array.isArray(parsedJson.threads)) {
+    const threads = parsedJson.threads.map((t, index) => {
+      const normalizeNode = (node) => {
+        if (!node) return null;
+        return {
+          name: node.method || node.name || 'unknown',
+          signature: node.signature || '',
+          file: node.file || node.filePath || '',
+          body: node.source || node.body || '',
+          children: safeArray(node.calls || node.children).map(normalizeNode)
+        };
+      };
+
+      // 兼容单 call_tree 节点或多 trees 数组
+      let callTree = null;
+      if (t.call_tree) {
+        callTree = normalizeNode(t.call_tree);
+      } else if (Array.isArray(t.trees)) {
+        callTree = {
+          name: 'Thread Entry Points',
+          signature: 'Virtual Root for Entry Trees',
+          file: 'virtual',
+          body: '',
+          children: t.trees.map(normalizeNode)
+        };
+      }
+
+      return {
+        name: t.name || `Thread-${index + 1}`,
+        order: t.order || index + 1,
+        call_tree: callTree
+      };
+    });
+    return { threads };
+  }
+
+  throw new Error("Unsupported JSON format. Make sure it matches the calltree schema.");
 }
 
 function FileHintCard() {
@@ -219,44 +295,45 @@ function FileHintCard() {
         </div>
         <h2 className="text-2xl font-bold text-slate-900">Load Execution Trace Data</h2>
         <p className="mt-3 text-sm leading-6 text-slate-600 max-w-xl mx-auto">
-          Upload either the raw <strong>JSON Trace File</strong> or the <strong>Markdown (.md)</strong> file. The visualizer will automatically parse and reconstruct the call tree, supporting all programming languages.
+          Upload either the new <strong>final-output-calltree.json</strong>, the old JSON Trace File, or a <strong>Markdown (.md)</strong> file. The visualizer will automatically adapt to the structure.
         </p>
 
         <div className="mt-8 grid grid-cols-1 gap-6 text-left md:grid-cols-2">
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
             <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
               <Braces size={16} className="text-indigo-600" />
-              Option A: Original JSON
+              New Format (final-output-calltree.json)
             </div>
             <pre className="overflow-x-auto rounded-lg bg-slate-900 p-3 text-xs leading-5 text-slate-300 font-mono">{`{
-  "threads": [
-    {
-      "name": "Thread-1",
-      "order": 1,
-      "call_tree": {
-        "method": "main",
-        "file": "App.js",
-        "source": "...",
-        "calls": []
+  "Thread-6628": {
+    "project": "C-TechLearning-...",
+    "total_nodes": 62,
+    "trees": [
+      {
+        "name": "__construct",
+        "signature": "public function __construct(...)",
+        "file": "src/Entity.php",
+        "body": "...",
+        "children": []
       }
-    }
-  ]
+    ]
+  }
 }`}</pre>
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
             <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
               <FileText size={16} className="text-emerald-600" />
-              Option B: Generated Markdown (.md)
+              Markdown Format (.md)
             </div>
             <pre className="overflow-x-auto rounded-lg bg-slate-900 p-3 text-xs leading-5 text-slate-300 font-mono">{`# Thread Traces
 ## Thread-1 (Order: 1)
-- *File:* \`complex-test.js\`
-    \`\`\`javascript
-    async function fetchAndProcessData() { ... }
+- *File:* \`src/Entity.php\`
+    \`\`\`php
+    public function __construct() { ... }
     \`\`\`
     *Calls:*
-        - *File:* \`math.js\``}</pre>
+        - *File:* \`src/TimestampTrait.php\``}</pre>
           </div>
         </div>
       </div>
@@ -282,41 +359,20 @@ function SummaryCard({ icon, label, value, sub }) {
   );
 }
 
-function MarkdownExplainer() {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex items-center gap-2">
-        <HelpCircle className="text-indigo-600" size={18} />
-        <h3 className="text-lg font-semibold text-slate-900">Language-Agnostic Parser Features</h3>
-      </div>
-      <div className="space-y-3 text-sm text-slate-600 leading-relaxed">
-        <p>
-          This visualizer uses a <strong>universal AST-free parser</strong> to reconstruct execution traces from any language:
-        </p>
-        <ul className="list-disc pl-5 space-y-1.5 text-xs">
-          <li><strong>Universal Method Guesser</strong>: Automatically extracts function names from JS, TS, Java, Python, Go, Rust, C++, etc., by analyzing the first executable line of each code block.</li>
-          <li><strong>Multi-Root Support</strong>: If a thread has multiple parallel entry points, they are securely grouped under a virtual <code>Thread Entry Points</code> root to prevent data loss.</li>
-          <li><strong>Indentation-Based Stack</strong>: Rebuilds nested call hierarchies dynamically based on Markdown indentation levels.</li>
-        </ul>
-      </div>
-    </div>
-  );
-}
-
 function SourcePanel({ node }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
     try {
       const prefix = 'Explain the following function in one sentence, and draw a control flow graph using HTML:\n\n';
-      const textToCopy = prefix + (node?.source || '');
+      const textToCopy = prefix + (node?.body || '');
       await navigator.clipboard.writeText(textToCopy);
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
     } catch {  }
   };
 
-  if (!node?.source) {
+  if (!node?.body) {
     return (
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
         No source code content for the current node
@@ -339,16 +395,16 @@ function SourcePanel({ node }) {
           {copied ? 'Copied' : 'Copy And Ask AI'}
         </button>
       </div>
-      <div className="max-h-screen overflow-auto p-4 text-xs font-mono leading-6 text-slate-300 whitespace-pre-wrap break-words">
-        {node.source}
+      <div className="max-h-[60vh] overflow-auto p-4 text-xs font-mono leading-6 text-slate-300 whitespace-pre-wrap break-words">
+        {node.body}
       </div>
     </div>
   );
 }
 
 function NodeMeta({ node, isSelected, onSelect, compact = false }) {
-  const childCount = safeArray(node.calls).length;
-  const isVirtual = node.method === 'Thread Entry Points';
+  const childCount = safeArray(node.children || node.calls).length;
+  const isVirtual = node.name === 'Thread Entry Points';
 
   return (
     <button
@@ -356,7 +412,7 @@ function NodeMeta({ node, isSelected, onSelect, compact = false }) {
       disabled={isVirtual}
       className={classNames(
         'w-full rounded-xl border p-3 text-left transition',
-        isVirtual ? 'border-dashed border-slate-300 bg-slate-50 cursor-default' : 
+        isVirtual ? 'border-dashed border-indigo-200 bg-indigo-50/40 cursor-default' : 
         isSelected
           ? 'border-indigo-500 bg-indigo-50 shadow-sm'
           : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50',
@@ -369,9 +425,9 @@ function NodeMeta({ node, isSelected, onSelect, compact = false }) {
               'font-mono text-sm font-semibold text-slate-900',
               compact ? 'line-clamp-2' : 'truncate'
             )}
-            title={node.method || '(unknown method)'}
+            title={node.name || '(unknown method)'}
           >
-            {node.method || '(unknown method)'}
+            {node.name || '(unknown method)'}
           </div>
           {node.file && node.file !== 'virtual' && (
             <div
@@ -397,9 +453,17 @@ function NodeMeta({ node, isSelected, onSelect, compact = false }) {
   );
 }
 
+const DEPTH_ML = [
+  'ml-0', 'ml-4', 'ml-8', 'ml-12', 'ml-16',
+  'ml-20', 'ml-24', 'ml-28', 'ml-32', 'ml-36',
+];
+function depthMargin(depth) {
+  return DEPTH_ML[Math.min(depth, DEPTH_ML.length - 1)];
+}
+
 function CallTreeNode({ node, depth = 0, selectedNode, setSelectedNode, compact = false }) {
-  const [expanded, setExpanded] = useState(depth < 3);
-  const children = safeArray(node?.calls);
+  const [expanded, setExpanded] = useState(depth < 2);
+  const children = safeArray(node?.children || node?.calls);
   const hasChildren = children.length > 0;
   const isSelected = selectedNode === node;
 
@@ -438,7 +502,7 @@ function CallTreeNode({ node, depth = 0, selectedNode, setSelectedNode, compact 
           >
             {children.map((child, idx) => (
               <CallTreeNode
-                key={`${child.method || 'node'}-${idx}-${depth + 1}`}
+                key={`${child.name || 'node'}-${idx}-${depth + 1}`}
                 node={child}
                 depth={depth + 1}
                 selectedNode={selectedNode}
@@ -474,12 +538,9 @@ export default function CallTreeVisualizer() {
         parsedData = parseMarkdownToTrace(text);
         setFileType('markdown');
       } else {
-        parsedData = JSON.parse(text);
+        const rawJson = JSON.parse(text);
+        parsedData = adaptJsonData(rawJson);
         setFileType('json');
-      }
-
-      if (!parsedData || !Array.isArray(parsedData.threads)) {
-        throw new Error('Invalid file structure: missing threads data');
       }
 
       setData(parsedData);
@@ -488,8 +549,8 @@ export default function CallTreeVisualizer() {
       
       const firstThread = parsedData.threads?.[0];
       if (firstThread?.call_tree) {
-        if (firstThread.call_tree.method === 'Thread Entry Points' && firstThread.call_tree.calls.length > 0) {
-          setSelectedNode(firstThread.call_tree.calls[0]);
+        if (firstThread.call_tree.name === 'Thread Entry Points' && firstThread.call_tree.children.length > 0) {
+          setSelectedNode(firstThread.call_tree.children[0]);
         } else {
           setSelectedNode(firstThread.call_tree);
         }
@@ -511,7 +572,7 @@ export default function CallTreeVisualizer() {
     const q = searchText.trim().toLowerCase();
     if (!q) return threads;
     return threads.filter((t) =>
-      [t?.name, t?.call_tree?.method, t?.call_tree?.file]
+      [t?.name, t?.project]
         .map((s) => String(s || '').toLowerCase())
         .some((s) => s.includes(q)),
     );
@@ -529,8 +590,8 @@ export default function CallTreeVisualizer() {
     const idx = threads.findIndex((t) => t === thread);
     setActiveThreadIndex(idx >= 0 ? idx : 0);
     if (thread?.call_tree) {
-      if (thread.call_tree.method === 'Thread Entry Points' && thread.call_tree.calls.length > 0) {
-        setSelectedNode(thread.call_tree.calls[0]);
+      if (thread.call_tree.name === 'Thread Entry Points' && thread.call_tree.children.length > 0) {
+        setSelectedNode(thread.call_tree.children[0]);
       } else {
         setSelectedNode(thread.call_tree);
       }
@@ -565,7 +626,7 @@ export default function CallTreeVisualizer() {
               <input
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
-                placeholder="Search thread, method or file"
+                placeholder="Search thread or project"
                 className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
               />
             </div>
@@ -635,7 +696,7 @@ export default function CallTreeVisualizer() {
                               ? 'bg-indigo-600 text-white'
                               : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                           )}
-                          title={`${thread?.name || '(unnamed thread)'} - order #${thread?.order ?? '-'}`}
+                          title={`${thread?.name || '(unnamed thread)'}`}
                         >
                           {thread?.order ?? idx + 1}
                         </button>
@@ -662,7 +723,11 @@ export default function CallTreeVisualizer() {
                               <div className="truncate text-sm font-semibold text-slate-900">
                                 {thread?.name || '(unnamed thread)'}
                               </div>
-                              <div className="mt-1 text-xs text-slate-500">order #{thread?.order ?? '-'}</div>
+                              {thread?.project && (
+                                <div className="mt-1 text-xs text-slate-500 truncate" title={thread.project}>
+                                  {thread.project}
+                                </div>
+                              )}
                             </div>
                           </div>
                         </button>
@@ -683,7 +748,9 @@ export default function CallTreeVisualizer() {
                           <Activity size={20} className="text-indigo-600" />
                           <h2 className="text-2xl font-bold text-slate-900">{activeThread.name || 'Unnamed Thread'}</h2>
                         </div>
-                        <div className="mt-2 text-sm text-slate-500">Order #{activeThread.order ?? '-'}</div>
+                        {activeThread.project && (
+                          <div className="mt-2 text-sm text-slate-500">Project: <span className="font-mono text-slate-700">{activeThread.project}</span></div>
+                        )}
                       </div>
                     </div>
                     <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-2">
@@ -691,8 +758,6 @@ export default function CallTreeVisualizer() {
                       <SummaryCard icon={FolderTree} label="Files"   value={formatCount(activeThreadStats.fileCount)} sub="Number of involved files" />
                     </div>
                   </div>
-
-                  {fileType === 'markdown' && <MarkdownExplainer />}
 
                   <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
                     <div className="xl:col-span-2 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -727,11 +792,19 @@ export default function CallTreeVisualizer() {
                         {selectedNode ? (
                           <div className="space-y-4">
                             <div>
-                              <div className="text-xs uppercase tracking-wide text-slate-500">Method (Guessed)</div>
+                              <div className="text-xs uppercase tracking-wide text-slate-500">Method Name</div>
                               <div className="mt-1 font-mono text-sm font-semibold text-slate-900 break-all">
-                                {selectedNode.method || '(unknown method)'}
+                                {selectedNode.name || '(unknown method)'}
                               </div>
                             </div>
+                            {selectedNode.signature && (
+                              <div>
+                                <div className="text-xs uppercase tracking-wide text-slate-500">Signature</div>
+                                <div className="mt-1 font-mono text-xs text-indigo-700 bg-indigo-50/50 p-2 rounded-lg border border-indigo-100 break-all">
+                                  {selectedNode.signature}
+                                </div>
+                              </div>
+                            )}
                             {selectedNode.file && selectedNode.file !== 'virtual' && (
                               <div>
                                 <div className="text-xs uppercase tracking-wide text-slate-500">File</div>
@@ -742,7 +815,7 @@ export default function CallTreeVisualizer() {
                             )}
                             <div>
                               <div className="text-xs uppercase tracking-wide text-slate-500">Child Calls</div>
-                              <div className="mt-1 text-sm text-slate-700">{safeArray(selectedNode.calls).length}</div>
+                              <div className="mt-1 text-sm text-slate-700">{safeArray(selectedNode.children || selectedNode.calls).length}</div>
                             </div>
                             <SourcePanel node={selectedNode} />
                           </div>
