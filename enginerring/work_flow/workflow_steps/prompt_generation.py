@@ -8,6 +8,7 @@ from .common import get_single_char
 # Global variable to cache the selected script during the application's runtime
 _cached_selected_script = None
 
+
 def select_ai_prompt_script(work_dir, target_language=None, preselected_index=None):
     global _cached_selected_script
 
@@ -15,7 +16,8 @@ def select_ai_prompt_script(work_dir, target_language=None, preselected_index=No
 
     # If a script has already been selected in a previous iteration, reuse it
     if _cached_selected_script:
-        print_color(f"[Info] Using previously selected script (Cached): {_cached_selected_script}", Colors.GREEN)
+        print_color(
+            f"[Info] Using previously selected script (Cached): {_cached_selected_script}", Colors.GREEN)
         return _cached_selected_script
 
     ai_app_path = os.path.join(work_dir, "enginerring", "scenario_data_ai_app")
@@ -45,12 +47,13 @@ def select_ai_prompt_script(work_dir, target_language=None, preselected_index=No
     print_color("========================================", Colors.CYAN)
 
     choice = ""
-    
+
     # Check if a valid pre-selected index was passed via command line
     if preselected_index is not None:
         if 1 <= preselected_index <= len(scripts):
             choice = str(preselected_index)
-            print_color(f"[Info] Automatically selected script index from arguments: {choice}", Colors.GREEN)
+            print_color(
+                f"[Info] Automatically selected script index from arguments: {choice}", Colors.GREEN)
         else:
             print_color(
                 f"[Warning] Pre-selected index {preselected_index} is out of bounds (1-{len(scripts)}). Falling back to manual selection.",
@@ -83,10 +86,11 @@ def select_ai_prompt_script(work_dir, target_language=None, preselected_index=No
 
     selected_script = scripts[int(choice) - 1]
     print_color(f"\n[Info] Selected script: {selected_script}", Colors.GREEN)
-    
+
     # Save the choice to the cache
     _cached_selected_script = selected_script
     return selected_script
+
 
 def prepare_ai_prompt_interactive(work_dir, selected_script, proj_path=None, save_context=True):
     if not selected_script:
@@ -112,13 +116,17 @@ def prepare_ai_prompt_interactive(work_dir, selected_script, proj_path=None, sav
 
             if prompt_context and save_context:
                 target_dir = proj_path if proj_path else work_dir
-                context_file_path = os.path.join(target_dir, 'last_prompt_context.json')
+                context_file_path = os.path.join(
+                    target_dir, 'last_prompt_context.json')
                 try:
                     with open(context_file_path, 'w', encoding='utf-8') as f:
-                        json.dump(prompt_context, f, ensure_ascii=False, indent=4)
-                    print_color(f"[Info] Saved prompt context to {context_file_path}", Colors.GREEN)
+                        json.dump(prompt_context, f,
+                                  ensure_ascii=False, indent=4)
+                    print_color(
+                        f"[Info] Saved prompt context to {context_file_path}", Colors.GREEN)
                 except Exception as e:
-                    print_color(f"[WARN] Failed to save context: {e}", Colors.YELLOW)
+                    print_color(
+                        f"[WARN] Failed to save context: {e}", Colors.YELLOW)
         else:
             print_color(
                 f"[Info] 'prepare_prompt' function not found in {selected_script}. Skipping interactive preparation.", Colors.YELLOW)
@@ -131,31 +139,36 @@ def prepare_ai_prompt_interactive(work_dir, selected_script, proj_path=None, sav
 
     return prompt_context
 
+
 def _post_process_other_trace_data(work_dir, selected_script):
     if not selected_script:
         return
 
-    script_path = os.path.join(work_dir, "enginerring", "scenario_data_ai_app", selected_script)
+    script_path = os.path.join(
+        work_dir, "enginerring", "scenario_data_ai_app", selected_script)
 
     try:
         with open(script_path, 'r', encoding='utf-8') as f:
             script_content = f.read()
     except Exception as e:
-        print_color(f'[WARN] Could not read selected script {selected_script}: {e}', Colors.YELLOW)
+        print_color(
+            f'[WARN] Could not read selected script {selected_script}: {e}', Colors.YELLOW)
         return
 
     if '--OTHER_TRACE_DATA--' in script_content:
-        print_color('\n[!] Detected --OTHER_TRACE_DATA-- placeholder in the selected script. Need to inject trace data from another scenario.', Colors.YELLOW)
+        print_color(
+            '\n[!] Detected --OTHER_TRACE_DATA-- placeholder in the selected script. Need to inject trace data from another scenario.', Colors.YELLOW)
 
         projects_dir = os.path.join(work_dir, 'projects')
         scenarios = []
         if os.path.exists(projects_dir):
             for root, dirs, files in os.walk(projects_dir):
-                if 'final-output-calltree.md' in files:
+                if 'final-output-calltree.json' in files:
                     scenarios.append(root)
 
         if not scenarios:
-            print_color('[WARN] No scenarios found with final-output-calltree.md.', Colors.RED)
+            print_color(
+                '[WARN] No scenarios found with final-output-calltree.json.', Colors.RED)
             return
 
         print_color('\n========================================', Colors.CYAN)
@@ -169,7 +182,8 @@ def _post_process_other_trace_data(work_dir, selected_script):
         choice = input(f'Enter your choice (1-{len(scenarios)}): ').strip()
         if choice.isdigit() and 1 <= int(choice) <= len(scenarios):
             selected_scenario_dir = scenarios[int(choice) - 1]
-            trace_file_path = os.path.join(selected_scenario_dir, 'final-output-calltree.md')
+            trace_file_path = os.path.join(
+                selected_scenario_dir, 'final-output-calltree.json')
 
             try:
                 with open(trace_file_path, 'r', encoding='utf-8') as tf:
@@ -182,23 +196,30 @@ def _post_process_other_trace_data(work_dir, selected_script):
                 prompt_file = os.path.join(work_dir, 'AI_Task_Prompt.md')
 
                 if not os.path.exists(prompt_file):
-                    raise FileNotFoundError(f"Expected prompt file not found: {prompt_file}")
+                    raise FileNotFoundError(
+                        f"Expected prompt file not found: {prompt_file}")
 
                 try:
                     with open(prompt_file, 'r', encoding='utf-8') as f:
                         content = f.read()
 
                     if '--OTHER_TRACE_DATA--' in content:
-                        new_content = content.replace('--OTHER_TRACE_DATA--', replacement)
+                        new_content = content.replace(
+                            '--OTHER_TRACE_DATA--', replacement)
                         with open(prompt_file, 'w', encoding='utf-8') as f:
                             f.write(new_content)
-                        print_color(f'[+] Successfully injected trace data from {os.path.basename(selected_scenario_dir)} into {os.path.basename(prompt_file)}', Colors.GREEN)
+                        print_color(
+                            f'[+] Successfully injected trace data from {os.path.basename(selected_scenario_dir)} into {os.path.basename(prompt_file)}', Colors.GREEN)
                 except Exception as e:
-                    print_color(f'[!] Failed to process {os.path.basename(prompt_file)}: {e}', Colors.RED)
+                    print_color(
+                        f'[!] Failed to process {os.path.basename(prompt_file)}: {e}', Colors.RED)
             except Exception as e:
-                print_color(f'[!] Failed to read trace data or process prompt file: {e}', Colors.RED)
+                print_color(
+                    f'[!] Failed to read trace data or process prompt file: {e}', Colors.RED)
         else:
-            print_color('[!] Invalid choice, skipping trace data injection.', Colors.YELLOW)
+            print_color(
+                '[!] Invalid choice, skipping trace data injection.', Colors.YELLOW)
+
 
 def execute_ai_prompt(work_dir, selected_script, prompt_context=None):
     if not selected_script:
@@ -211,14 +232,15 @@ def execute_ai_prompt(work_dir, selected_script, prompt_context=None):
     ai_app_path = os.path.join(work_dir, "enginerring", "scenario_data_ai_app")
     module_name = selected_script[:-3]
 
-    selected_calltree_path = os.path.join(work_dir, "final-output-calltree.md")
+    selected_calltree_path = os.path.join(
+        work_dir, "final-output-calltree.json")
 
     if os.path.exists(selected_calltree_path):
         print_color(
-            f"[Info] Found final-output-calltree.md in working directory. Using path: {selected_calltree_path}", Colors.GREEN)
+            f"[Info] Found final-output-calltree.json in working directory. Using path: {selected_calltree_path}", Colors.GREEN)
     else:
         print_color(
-            f"[Warning] final-output-calltree.md not found in working directory: {work_dir}", Colors.YELLOW)
+            f"[Warning] final-output-calltree.json not found in working directory: {work_dir}", Colors.YELLOW)
 
     print_color(
         f"Running Python script from {work_dir} to generate the prompt...", Colors.GREEN)
@@ -231,7 +253,8 @@ def execute_ai_prompt(work_dir, selected_script, prompt_context=None):
         importlib.reload(module)
 
         if hasattr(module, 'generate_prompt_with_context'):
-            module.generate_prompt_with_context(selected_calltree_path, prompt_context)
+            module.generate_prompt_with_context(
+                selected_calltree_path, prompt_context)
             _post_process_other_trace_data(work_dir, selected_script)
             return selected_script
         elif hasattr(module, 'generate_prompt'):

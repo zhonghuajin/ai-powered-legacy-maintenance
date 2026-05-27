@@ -203,6 +203,7 @@ path/to/second/file.ext
 # 2. Interactive Guidance Logic
 # ==========================================
 
+
 def get_multiline_input(prompt_title, default_val=""):
     """
     Generic function to get multiline inputs from the console.
@@ -213,19 +214,20 @@ def get_multiline_input(prompt_title, default_val=""):
     """
     print(f"\n{prompt_title}")
     print("👉 Instruction: You can press [Enter] to start a new line.")
-    print("   To finish, press [Enter] twice consecutively, or type ':q' on a new line.")
+    print(
+        "   To finish, press [Enter] twice consecutively, or type ':q' on a new line.")
     print("-" * 60)
-    
+
     lines = []
     empty_count = 0  # Counter for consecutive empty lines
-    
+
     while True:
         try:
             line = input()
             # If user entered the quit command
             if line.strip() == ':q':
                 break
-            
+
             # Detect consecutive empty lines
             if line == '':
                 empty_count += 1
@@ -233,19 +235,19 @@ def get_multiline_input(prompt_title, default_val=""):
                     break
             else:
                 empty_count = 0  # Reset counter
-                
+
             lines.append(line)
         except EOFError:
             # Catch Ctrl+Z (Windows) or Ctrl+D (Linux/macOS)
             break
-            
+
     # Strip trailing empty lines
     while lines and lines[-1] == '':
         lines.pop()
-        
+
     result = "\n".join(lines).strip()
     print("-" * 60 + "\n✅ Input saved successfully!\n")
-    
+
     if not result:
         return default_val
     return result
@@ -309,7 +311,7 @@ def generate_prompt_with_context(cli_file_path, context):
             if mode == "2":
                 file_hint = "Call Tree File With Concurrency (e.g., ../../final-output-combined.md)"
             else:
-                file_hint = "Call Tree File (e.g., ../../final-output-calltree.md)"
+                file_hint = "Call Tree File (e.g., ../../final-output-calltree.json)"
 
             file_path = input(
                 f"\n📁 2. Please enter the path to the [{file_hint}]:\n> ").strip()

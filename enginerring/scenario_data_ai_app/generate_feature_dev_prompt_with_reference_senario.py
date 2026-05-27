@@ -106,18 +106,20 @@ path/to/new/inferred_file.ext
 # 2. Interactive Guidance Logic
 # ==========================================
 
+
 def get_multiline_input(prompt_title, default_val=""):
     """
     Generic function to get multiline inputs from the console.
     """
     print(f"\n{prompt_title}")
     print("👉 Instruction: You can press [Enter] to start a new line.")
-    print("   To finish, press [Enter] twice consecutively, or type ':q' on a new line.")
+    print(
+        "   To finish, press [Enter] twice consecutively, or type ':q' on a new line.")
     print("-" * 60)
-    
+
     lines = []
     empty_count = 0
-    
+
     while True:
         try:
             line = input()
@@ -132,13 +134,13 @@ def get_multiline_input(prompt_title, default_val=""):
             lines.append(line)
         except EOFError:
             break
-            
+
     while lines and lines[-1] == '':
         lines.pop()
-        
+
     result = "\n".join(lines).strip()
     print("-" * 60 + "\n✅ Input saved successfully!\n")
-    
+
     if not result:
         return default_val
     return result
@@ -190,7 +192,7 @@ def generate_prompt_with_context(cli_file_path, context):
             cli_file_path = None
         else:
             file_path = input(
-                "\n📁 2. Please enter the path to the [Call Chain Data File] (e.g., final-output-calltree.md):\n> ").strip()
+                "\n📁 2. Please enter the path to the [Call Chain Data File] (e.g., final-output-calltree.json):\n> ").strip()
             # Remove possible quotes
             file_path = file_path.strip('\'"')
 
