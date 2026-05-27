@@ -12,6 +12,7 @@ import argparse
 import os, shutil, glob
 import sys
 import subprocess
+from functools import lru_cache
 import json
 import re
 from pathlib import Path
@@ -26,90 +27,271 @@ except ImportError:
     # We will raise a runtime error if CBM data structuring is run and tree-sitter is missing.
     tree_sitter_languages = None
 
-LANG_MAP = {
-    ".php": ("php",    "function_definition", "method_declaration"),
-    ".py":  ("python", "function_definition"),
-    ".java":("java",   "method_declaration",  "constructor_declaration"),
-    ".go":  ("go",     "function_declaration", "method_declaration"),
-    ".js":  ("javascript", "function_declaration", "method_definition"),
-    ".ts":  ("typescript", "function_declaration", "method_definition"),
+
+# ============================================================================
+# Robust function-body extraction via Tree-sitter, keyed by qualified_name.
+# ============================================================================
+#
+# Per-language config:
+#   (ts_lang, function_node_types, class_node_types, namespace_node_types,
+#    class_separator, namespace_separator)
+#
+LANG_CONFIG = {
+    ".php":  ("php",
+              {"function_definition", "method_declaration"},
+              {"class_declaration", "interface_declaration",
+               "trait_declaration", "enum_declaration"},
+              {"namespace_definition"},
+              "::", "\\"),
+    ".py":   ("python",
+              {"function_definition"},
+              {"class_definition"},
+              set(),
+              ".", "."),
+    ".java": ("java",
+              {"method_declaration", "constructor_declaration"},
+              {"class_declaration", "interface_declaration",
+               "enum_declaration", "record_declaration"},
+              {"package_declaration"},
+              ".", "."),
+    ".go":   ("go",
+              {"function_declaration", "method_declaration"},
+              set(),
+              {"package_clause"},
+              ".", "."),
+    ".js":   ("javascript",
+              {"function_declaration", "method_definition",
+               "function_expression", "arrow_function"},
+              {"class_declaration"},
+              set(),
+              ".", "."),
+    ".ts":   ("typescript",
+              {"function_declaration", "method_definition",
+               "function_signature"},
+              {"class_declaration", "interface_declaration"},
+              {"module"},
+              ".", "."),
 }
 
+NAME_NODE_TYPES = ("name", "identifier", "field_identifier",
+                   "type_identifier", "namespace_name", "scoped_identifier")
+BODY_NODE_TYPES = ("block", "compound_statement", "function_body",
+                   "statement_block", "class_body")
 
-def extract_body_and_signature(file_path, func_name, start_line):
+
+def _normalize_qname(qname):
     """
-    Uses tree-sitter to locate the matched function/method node based on the start line.
-    Returns a tuple: (signature, body_source_code)
+    Normalize a qualified name so that CBM's representation and
+    tree-sitter's reconstructed name can be compared reliably.
+    Collapses '::', '\\', '/' and '.' to a single separator '/'.
+    Strips leading separators.
+    """
+    if not qname:
+        return ""
+    s = qname.replace("::", "/").replace("\\", "/").replace(".", "/")
+    s = s.strip("/")
+    # Collapse repeated slashes
+    while "//" in s:
+        s = s.replace("//", "/")
+    return s
+
+
+@lru_cache(maxsize=1024)
+def build_function_index(file_path):
+    """
+    Parse `file_path` once and build:
+        { normalized_qualified_name : entry  OR  [entry, entry, ...] }
+    Each entry contains: name, qualified_name, signature, body,
+    start_line, end_line.
+
+    Cached so repeated lookups against the same file cost nothing.
     """
     if not tree_sitter_languages:
-        return "", ""
-        
+        return {}
     ext = os.path.splitext(file_path)[1].lower()
-    if ext not in LANG_MAP:
-        return "", ""
-        
-    lang_name, *node_types = LANG_MAP[ext]
+    if ext not in LANG_CONFIG:
+        return {}
+
+    lang_name, func_types, class_types, ns_types, csep, nsep = LANG_CONFIG[ext]
+
     try:
         parser = tree_sitter_languages.get_parser(lang_name)
         with open(file_path, "rb") as f:
-            src_bytes = f.read()
-        tree = parser.parse(src_bytes)
+            src = f.read()
+        tree = parser.parse(src)
     except Exception as e:
-        print(f"Warning: Failed to parse {file_path} with tree-sitter: {e}")
-        return "", ""
+        print(f"[WARN] tree-sitter failed to parse {file_path}: {e}")
+        return {}
 
-    matched_node = None
+    def text(node):
+        return src[node.start_byte:node.end_byte].decode("utf-8", errors="ignore")
 
-    # Walk the AST to find the node that matches the start line and name
-    def walk(node):
-        nonlocal matched_node
-        if matched_node is not None:
+    def get_name(node):
+        # Prefer explicit field 'name' (more accurate for many grammars)
+        n = node.child_by_field_name("name")
+        if n is not None:
+            return text(n)
+        for c in node.children:
+            if c.type in NAME_NODE_TYPES:
+                return text(c)
+        return None
+
+    index = {}
+
+    def add_entry(qname, entry):
+        key = _normalize_qname(qname)
+        if not key:
             return
-        
-        # Check if node matches target types and start line (1-based index)
-        if node.type in node_types and node.start_point[0] + 1 == start_line:
-            # Confirm name identifier match
-            for child in node.children:
-                if child.type in ("name", "identifier", "field_identifier"):
-                    name_str = src_bytes[child.start_byte:child.end_byte].decode("utf-8", errors="ignore")
-                    if name_str == func_name:
-                        matched_node = node
-                        return
-            # Fallback: if no explicit name node matched but the line matches, we can still accept it
-            matched_node = node
+        if key in index:
+            existing = index[key]
+            if isinstance(existing, list):
+                existing.append(entry)
+            else:
+                index[key] = [existing, entry]
+        else:
+            index[key] = entry
+
+    def walk(node, ns_path, class_path):
+        t = node.type
+
+        # Namespace / package
+        if t in ns_types:
+            nm = get_name(node) or ""
+            new_ns = (ns_path + nsep + nm) if (ns_path and nm) else (nm or ns_path)
+            for c in node.children:
+                walk(c, new_ns, class_path)
             return
 
-        for child in node.children:
-            walk(child)
+        # Class / interface / trait / enum
+        if t in class_types:
+            nm = get_name(node) or "<anon>"
+            new_cls = (class_path + csep + nm) if class_path else nm
+            for c in node.children:
+                walk(c, ns_path, new_cls)
+            return
 
-    walk(tree.root_node)
+        # Function / method
+        if t in func_types:
+            nm = get_name(node) or "<anon>"
+            prefix = ""
+            if ns_path:
+                prefix += ns_path + nsep
+            if class_path:
+                prefix += class_path + csep
+            qname = prefix + nm
 
-    if not matched_node:
-        return "", ""
+            body_node = next(
+                (c for c in node.children if c.type in BODY_NODE_TYPES), None)
+            full = text(node)
+            if body_node:
+                sig = src[node.start_byte:body_node.start_byte].decode(
+                    "utf-8", errors="ignore").strip()
+            else:
+                sig = full.splitlines()[0] if full else nm
 
-    # Extract full source code of the node
-    full_code = src_bytes[matched_node.start_byte:matched_node.end_byte].decode("utf-8", errors="ignore")
-    
-    # Extract signature: find the body block and take everything before it, or fallback to the first line
-    body_node = None
-    for child in matched_node.children:
-        if child.type in ("block", "compound_statement", "function_body"):
-            body_node = child
-            break
-            
-    if body_node:
-        sig_bytes = src_bytes[matched_node.start_byte:body_node.start_byte]
-        signature = sig_bytes.decode("utf-8", errors="ignore").strip()
-        # If the block starts with '{', append it to the signature or format nicely
-        if signature.endswith("="): # Python lambda/assignment fallback
-            signature = signature.rstrip("=")
-    else:
-        # Fallback to the first line of the matched block
-        signature = full_code.splitlines()[0] if full_code else func_name
+            entry = {
+                "name": nm,
+                "qualified_name": qname,
+                "signature": sig,
+                "body": full,
+                "start_line": node.start_point[0] + 1,
+                "end_line":   node.end_point[0] + 1,
+            }
 
-    return signature.strip(), full_code
+            # Index under its full qname...
+            add_entry(qname, entry)
+            # ...and also under simple name (for fallback lookups when
+            # CBM's qname doesn't match our reconstructed one exactly).
+            add_entry(nm, entry)
+
+            # Don't descend into function bodies (nested functions are rare
+            # in the languages we care about; opt-in via a flag if needed).
+            return
+
+        for c in node.children:
+            walk(c, ns_path, class_path)
+
+    walk(tree.root_node, "", "")
+    return index
 
 
+def lookup_function(file_path, qualified_name=None,
+                    fallback_name=None, hint_line=None):
+    """
+    Locate a function entry in `file_path`.
+
+    Strategy (in order):
+      1. Exact match on normalized qualified_name.
+      2. Suffix match: any indexed key that ends with the requested
+         normalized qname (handles CBM having extra namespace prefix
+         that tree-sitter couldn't reconstruct, or vice versa).
+      3. Simple-name match using fallback_name. If multiple candidates,
+         pick the closest by hint_line; if no hint_line and >1 candidate,
+         refuse (return None).
+
+    Returns the entry dict or None. Never returns a wrong-name match.
+    """
+    idx = build_function_index(file_path)
+    if not idx:
+        return None
+
+    def pick(entry_or_list):
+        if isinstance(entry_or_list, list):
+            if hint_line is not None:
+                return min(entry_or_list,
+                           key=lambda it: abs(it["start_line"] - hint_line))
+            return entry_or_list[0]
+        return entry_or_list
+
+    # 1) Exact normalized qname
+    if qualified_name:
+        norm = _normalize_qname(qualified_name)
+        if norm in idx:
+            return pick(idx[norm])
+
+        # 2) Suffix matching in either direction
+        suffix_hits = []
+        for k, v in idx.items():
+            if k.endswith("/" + norm) or norm.endswith("/" + k):
+                items = v if isinstance(v, list) else [v]
+                suffix_hits.extend(items)
+        if len(suffix_hits) == 1:
+            return suffix_hits[0]
+        if len(suffix_hits) > 1:
+            # Prefer name-matching candidates first
+            if fallback_name:
+                name_hits = [it for it in suffix_hits
+                             if it["name"] == fallback_name]
+                if name_hits:
+                    suffix_hits = name_hits
+            if hint_line is not None:
+                return min(suffix_hits,
+                           key=lambda it: abs(it["start_line"] - hint_line))
+            return suffix_hits[0]
+
+    # 3) Plain-name fallback
+    if fallback_name:
+        norm_simple = _normalize_qname(fallback_name)
+        if norm_simple in idx:
+            entry = idx[norm_simple]
+            items = entry if isinstance(entry, list) else [entry]
+            # Filter to entries whose own name == fallback_name
+            items = [it for it in items if it["name"] == fallback_name]
+            if len(items) == 1:
+                return items[0]
+            if len(items) > 1:
+                if hint_line is not None:
+                    return min(items,
+                               key=lambda it: abs(it["start_line"] - hint_line))
+                # Multiple candidates and no way to disambiguate -> refuse
+                return None
+
+    return None
+
+
+# ============================================================================
+# Main pipeline
+# ============================================================================
 def process_logs(
     language="java",
     log_file=None,
@@ -290,7 +472,7 @@ def _run_javascript_pruner(target_folders_list, log_file, comment_mapping_file, 
 
 
 def _cbm_query(project_name, abs_path, cypher):
-    """单次执行 Cypher 查询，返回 (columns, rows)。"""
+    """Execute a single Cypher query, return (columns, rows)."""
     args = json.dumps({"project": project_name, "query": cypher})
     cmd = ["codebase-memory-mcp", "cli", "query_graph", args, "--path", abs_path]
     r = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -302,7 +484,7 @@ def cleanup_stale_workspaces(project_keyword):
     cbm_root = os.path.expanduser(r"~\.cache\codebase-memory-mcp")
     if not os.path.isdir(cbm_root):
         return
-    
+
     removed, failed = [], []
     for entry in os.listdir(cbm_root):
         full = os.path.join(cbm_root, entry)
@@ -314,15 +496,15 @@ def cleanup_stale_workspaces(project_keyword):
                 removed.append(entry)
             except Exception as e:
                 failed.append((entry, str(e)))
-    
-    # 顺手清根目录的锁文件
+
+    # Also clean up lock files in the root directory
     for pattern in ("*.lock", "*.wal", "*.shm", "*.db-journal"):
         for f in glob.glob(os.path.join(cbm_root, pattern)):
             try:
                 os.remove(f)
             except Exception:
                 pass
-    
+
     if removed:
         print(f"[Cleanup] Removed {len(removed)} stale workspace(s):")
         for r in removed:
@@ -331,26 +513,26 @@ def cleanup_stale_workspaces(project_keyword):
         print(f"[Cleanup] Could NOT remove {len(failed)} (likely locked by running MCP):")
         for name, err in failed:
             print(f"   - {name}: {err}")
-        print("   → Close Claude Desktop / Cursor / VSCode and try again.")
-            
-            
+        print("   -> Close Claude Desktop / Cursor / VSCode and try again.")
+
+
 def _run_cbm_data_structuring(pruned_folder):
     print("Executing Unified Data Structuring via Codebase-Memory...")
 
-    # 1. 检查 CLI
+    # 1. Check CLI
     try:
         subprocess.run(["codebase-memory-mcp", "--version"],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
         raise RuntimeError("codebase-memory-mcp CLI not installed. Run: npm install -g codebase-memory-mcp")
 
-    # 检查 tree-sitter-languages 依赖
+    # Check tree-sitter-languages dependency
     if not tree_sitter_languages:
         raise RuntimeError("tree-sitter-languages is not installed. Run: pip install tree-sitter-languages")
 
     abs_pruned_path = os.path.abspath(pruned_folder)
 
-    # 2. 索引
+    # 2. Index
     cleanup_stale_workspaces("ai-powered-legacy-maintenance")
     print(f"Indexing repository at: {abs_pruned_path} ...")
     idx_args = json.dumps({"repo_path": abs_pruned_path})
@@ -358,7 +540,7 @@ def _run_cbm_data_structuring(pruned_folder):
                    check=True, capture_output=True, text=True)
     print("Indexing completed.")
 
-    # 3. 自动找项目名
+    # 3. Auto-detect project name
     project_name = "C-TechLearning-ai-powered-legacy-maintenance-pruned"
     try:
         r = subprocess.run(["codebase-memory-mcp", "cli", "list_projects", "{}"],
@@ -374,11 +556,10 @@ def _run_cbm_data_structuring(pruned_folder):
         print(f"Warning: project name autodetect failed: {e}")
     print(f"Project: {project_name}")
 
-    # 4. 查 CALLS 边和节点属性（包含 start_line）
+    # 4. Query CALLS edges and node properties (including start_line)
     nodes_info = {}     # qualified_name -> {name, file, start_line, ...}
     edges = set()       # (caller_qn, callee_qn)
 
-    # 我们需要获取 a.start_line 和 b.start_line 属性
     multi_col_query = (
         "MATCH (a)-[:CALLS]->(b) "
         "RETURN a.qualified_name, a.name, a.file_path, a.start_line, "
@@ -399,15 +580,15 @@ def _run_cbm_data_structuring(pruned_folder):
                 b_qn = b_qn or b_n
                 if not a_qn or not b_qn:
                     continue
-                
-                # 转换 start_line 为整数
+
+                # Convert start_line to integer
                 try:
                     a_line = int(a_line) if a_line is not None else 1
-                except ValueError:
+                except (ValueError, TypeError):
                     a_line = 1
                 try:
                     b_line = int(b_line) if b_line is not None else 1
-                except ValueError:
+                except (ValueError, TypeError):
                     b_line = 1
 
                 nodes_info.setdefault(a_qn, {"name": a_n, "qualified_name": a_qn, "file": a_f, "start_line": a_line})
@@ -417,24 +598,46 @@ def _run_cbm_data_structuring(pruned_folder):
         print(f"Multi-column query failed, falling back. Error: {e}")
         use_fallback = True
 
-
     print(f"Collected {len(nodes_info)} nodes, {len(edges)} CALLS edges.")
 
-    # 5. 使用 tree-sitter 从源文件精确提取 signature 和 body
-    print("Extracting function bodies from source files using tree-sitter...")
+    # 5. Use tree-sitter to extract signature and body by qualified_name
+    print("Extracting function bodies from source files using tree-sitter (qname-keyed)...")
+    miss_count = 0
+    miss_samples = []
     for qn, info in nodes_info.items():
         rel = info.get("file") or ""
         abs_file = os.path.join(abs_pruned_path, rel.replace("/", os.sep)) if rel else ""
-        
+
         sig, body = "", ""
         if abs_file and os.path.isfile(abs_file):
-            sig, body = extract_body_and_signature(abs_file, info["name"], info.get("start_line", 1))
-            
-        info["signature"] = sig or info["name"]
+            res = lookup_function(
+                abs_file,
+                qualified_name=info.get("qualified_name"),
+                fallback_name=info.get("name"),
+                hint_line=info.get("start_line"),
+            )
+            if res:
+                sig = res["signature"]
+                body = res["body"]
+            else:
+                miss_count += 1
+                if len(miss_samples) < 5:
+                    miss_samples.append(
+                        f"{info.get('qualified_name') or info.get('name')} @ {abs_file}"
+                    )
+
+        info["signature"] = sig or info.get("name", "")
         info["body"] = body
         info["file"] = abs_file if abs_file and os.path.isfile(abs_file) else rel
 
-    # 6. 构建邻接表与入度
+    if miss_count:
+        print(f"[WARN] {miss_count} function(s) could not be located in source files.")
+        for s in miss_samples:
+            print(f"   - {s}")
+        if miss_count > len(miss_samples):
+            print(f"   ... and {miss_count - len(miss_samples)} more.")
+
+    # 6. Build adjacency list and in-degree
     adj = defaultdict(set)
     in_deg = defaultdict(int)
     for a, b in edges:
@@ -445,7 +648,7 @@ def _run_cbm_data_structuring(pruned_folder):
     for qn in nodes_info:
         in_deg.setdefault(qn, 0)
 
-    # 7. DFS 建树
+    # 7. DFS to build tree
     def build(node_qn, on_path):
         info = nodes_info.get(node_qn, {"name": node_qn, "signature": node_qn, "file": "", "body": ""})
         nd = {
@@ -463,7 +666,7 @@ def _run_cbm_data_structuring(pruned_folder):
             nd["children"].append(build(child, on_path))
         return nd
 
-    # 8. 入度为 0 = 根（入口函数）
+    # 8. In-degree 0 = root (entry functions)
     roots = sorted([q for q, d in in_deg.items() if d == 0 and q in nodes_info])
     if not roots and nodes_info:
         roots = sorted(nodes_info.keys())
@@ -478,7 +681,7 @@ def _run_cbm_data_structuring(pruned_folder):
     with open("final-output-calltree.json", "w", encoding="utf-8") as f:
         json.dump(output, f, indent=2, ensure_ascii=False)
 
-    print(f"Saved → final-output-calltree.json")
+    print(f"Saved -> final-output-calltree.json")
     print(f"Total functions: {len(nodes_info)}, Roots: {len(roots)}")
 
 
