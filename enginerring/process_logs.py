@@ -8,13 +8,13 @@ import argparse
 import os
 import sys
 
-from log_processors.external_pruners import (
+from .log_processors.external_pruners import (
     run_java_pruner,
     run_python_pruner,
     run_php_pruner,
     run_javascript_pruner
 )
-from log_processors.cbm_structurer import run_cbm_data_structuring
+from .log_processors.cbm_structurer import run_cbm_data_structuring
 
 
 def process_logs(

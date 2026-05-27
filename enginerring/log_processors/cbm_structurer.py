@@ -7,7 +7,6 @@ import subprocess
 from collections import defaultdict
 from .parser_index import lookup_function, tree_sitter_languages
 
-
 def _cbm_query(project_name, abs_path, cypher):
     """Execute a single Cypher query, return (columns, rows)."""
     args = json.dumps({"project": project_name, "query": cypher})
@@ -15,7 +14,6 @@ def _cbm_query(project_name, abs_path, cypher):
     r = subprocess.run(cmd, capture_output=True, text=True, check=True)
     data = json.loads(r.stdout)
     return data.get("columns", []), data.get("rows", [])
-
 
 def cleanup_stale_workspaces(project_keyword):
     cbm_root = os.path.expanduser(r"~\.cache\codebase-memory-mcp")
@@ -50,31 +48,23 @@ def cleanup_stale_workspaces(project_keyword):
         for name, err in failed:
             print(f"   - {name}: {err}")
 
+def process_single_thread(thread_dir, thread_name):
+    abs_thread_path = os.path.abspath(thread_dir)
+    print(f"\n--- Processing Thread: {thread_name} ---")
 
-def run_cbm_data_structuring(pruned_folder):
-    print("Executing Unified Data Structuring via Codebase-Memory...")
-
-    # 1. Check CLI
-    try:
-        subprocess.run(["codebase-memory-mcp", "--version"],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        raise RuntimeError("codebase-memory-mcp CLI not installed. Run: npm install -g codebase-memory-mcp")
-
-    if not tree_sitter_languages:
-        raise RuntimeError("tree-sitter-languages is not installed. Run: pip install tree-sitter-languages")
-
-    abs_pruned_path = os.path.abspath(pruned_folder)
-
-    # 2. Index
+    # 1. Index
     cleanup_stale_workspaces("ai-powered-legacy-maintenance")
-    print(f"Indexing repository at: {abs_pruned_path} ...")
-    idx_args = json.dumps({"repo_path": abs_pruned_path})
-    subprocess.run(["codebase-memory-mcp", "cli", "index_repository", idx_args],
-                   check=True, capture_output=True, text=True)
-    print("Indexing completed.")
+    print(f"Indexing repository at: {abs_thread_path} ...")
+    idx_args = json.dumps({"repo_path": abs_thread_path})
+    try:
+        subprocess.run(["codebase-memory-mcp", "cli", "index_repository", idx_args],
+                       check=True, capture_output=True, text=True)
+        print("Indexing completed.")
+    except subprocess.CalledProcessError as e:
+        print(f"Error during indexing {thread_name}: {e.stderr}")
+        return None
 
-    # 3. Auto-detect project name
+    # 2. Auto-detect project name
     project_name = "C-TechLearning-ai-powered-legacy-maintenance-pruned"
     try:
         r = subprocess.run(["codebase-memory-mcp", "cli", "list_projects", "{}"],
@@ -90,7 +80,7 @@ def run_cbm_data_structuring(pruned_folder):
         print(f"Warning: project name autodetect failed: {e}")
     print(f"Project: {project_name}")
 
-    # 4. Query CALLS edges and node properties
+    # 3. Query CALLS edges and node properties
     nodes_info = {}
     edges = set()
 
@@ -100,7 +90,7 @@ def run_cbm_data_structuring(pruned_folder):
         "b.qualified_name, b.name, b.file_path, b.start_line"
     )
     try:
-        cols, rows = _cbm_query(project_name, abs_pruned_path, multi_col_query)
+        cols, rows = _cbm_query(project_name, abs_thread_path, multi_col_query)
         if rows:
             for row in rows:
                 if len(row) < 8:
@@ -128,13 +118,13 @@ def run_cbm_data_structuring(pruned_folder):
 
     print(f"Collected {len(nodes_info)} nodes, {len(edges)} CALLS edges.")
 
-    # 5. Use tree-sitter to extract signature and body
+    # 4. Use tree-sitter to extract signature and body
     print("Extracting function bodies from source files using tree-sitter (qname-keyed)...")
     miss_count = 0
     miss_samples = []
     for qn, info in nodes_info.items():
         rel = info.get("file") or ""
-        abs_file = os.path.join(abs_pruned_path, rel.replace("/", os.sep)) if rel else ""
+        abs_file = os.path.join(abs_thread_path, rel.replace("/", os.sep)) if rel else ""
 
         sig, body = "", ""
         if abs_file and os.path.isfile(abs_file):
@@ -156,14 +146,18 @@ def run_cbm_data_structuring(pruned_folder):
 
         info["signature"] = sig or info.get("name", "")
         info["body"] = body
-        info["file"] = abs_file if abs_file and os.path.isfile(abs_file) else rel
+
+        if abs_file and os.path.isfile(abs_file):
+            info["file"] = os.path.relpath(abs_file, abs_thread_path).replace(os.sep, "/")
+        else:
+            info["file"] = rel
 
     if miss_count:
         print(f"[WARN] {miss_count} function(s) could not be located in source files.")
         for s in miss_samples:
             print(f"   - {s}")
 
-    # 6. Build adjacency list and in-degree
+    # 5. Build adjacency list and in-degree
     adj = defaultdict(set)
     in_deg = defaultdict(int)
     for a, b in edges:
@@ -174,7 +168,7 @@ def run_cbm_data_structuring(pruned_folder):
     for qn in nodes_info:
         in_deg.setdefault(qn, 0)
 
-    # 7. DFS to build tree
+    # 6. DFS to build tree
     def build(node_qn, on_path):
         info = nodes_info.get(node_qn, {"name": node_qn, "signature": node_qn, "file": "", "body": ""})
         nd = {
@@ -192,20 +186,58 @@ def run_cbm_data_structuring(pruned_folder):
             nd["children"].append(build(child, on_path))
         return nd
 
-    # 8. In-degree 0 = root
+    # 7. In-degree 0 = root
     roots = sorted([q for q, d in in_deg.items() if d == 0 and q in nodes_info])
     if not roots and nodes_info:
         roots = sorted(nodes_info.keys())
 
     forest = [build(r, set()) for r in roots]
 
-    output = {
+    return {
         "project": project_name,
         "total_nodes": len(nodes_info),
         "trees": forest
     }
-    with open("final-output-calltree.json", "w", encoding="utf-8") as f:
-        json.dump(output, f, indent=2, ensure_ascii=False)
 
-    print(f"Saved -> final-output-calltree.json")
-    print(f"Total functions: {len(nodes_info)}, Roots: {len(roots)}")
+def run_cbm_data_structuring(pruned_folder):
+    print("Executing Unified Data Structuring via Codebase-Memory...")
+
+    # 1. Check CLI
+    try:
+        subprocess.run(["codebase-memory-mcp", "--version"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        raise RuntimeError("codebase-memory-mcp CLI not installed. Run: npm install -g codebase-memory-mcp")
+
+    if not tree_sitter_languages:
+        raise RuntimeError("tree-sitter-languages is not installed. Run: pip install tree-sitter-languages")
+
+    abs_pruned_path = os.path.abspath(pruned_folder)
+
+    # 2. 遍历 pruned_folder 下的所有子目录（线程）
+    if not os.path.isdir(abs_pruned_path):
+        raise RuntimeError(f"Pruned folder does not exist: {abs_pruned_path}")
+
+    all_threads_data = {}
+
+    subdirs = [d for d in os.listdir(abs_pruned_path) if os.path.isdir(os.path.join(abs_pruned_path, d))]
+
+    if not subdirs:
+        print(f"[WARN] No subdirectories (threads) found in {abs_pruned_path}. Processing root folder instead.")
+        root_name = os.path.basename(abs_pruned_path)
+        thread_data = process_single_thread(abs_pruned_path, root_name)
+        if thread_data:
+            all_threads_data[root_name] = thread_data
+    else:
+        for thread_name in sorted(subdirs):
+            thread_dir = os.path.join(abs_pruned_path, thread_name)
+            thread_data = process_single_thread(thread_dir, thread_name)
+            if thread_data:
+                all_threads_data[thread_name] = thread_data
+
+    output_file = "final-output-calltree.json"
+    with open(output_file, "w", encoding="utf-8") as f:
+        json.dump(all_threads_data, f, indent=2, ensure_ascii=False)
+
+    print(f"\nSaved combined threads data -> {output_file}")
+    print(f"Processed {len(all_threads_data)} thread(s).")
