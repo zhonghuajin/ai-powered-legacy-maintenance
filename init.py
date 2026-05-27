@@ -468,7 +468,40 @@ def main():
             )
             sys.exit(1)
 
-    print("\nStep 11: Configuring codebase-memory-mcp for coding agents...")
+    print("\nStep 11: Executing npm install for trace-visualizer environment...")
+    trace_viz_dir = os.path.join(script_dir, "enginerring", "trace-visualizer")
+
+    if args.skip_npm:
+        print("Skipped 'npm install' for trace-visualizer as requested.")
+        print("Note: If you need trace-visualizer support later, run it manually:")
+        print(f"      cd {trace_viz_dir}")
+        print("      npm install")
+    else:
+        if not os.path.isdir(trace_viz_dir):
+            print(
+                f"Error: trace-visualizer directory not found at {trace_viz_dir}", file=sys.stderr)
+            sys.exit(1)
+
+        npm_cmd = "npm.cmd" if os.name == "nt" else "npm"
+        try:
+            result = run_without_proxy(
+                [npm_cmd, "install"],
+                cwd=trace_viz_dir
+            )
+            if result.returncode != 0:
+                print("npm install for trace-visualizer failed.", file=sys.stderr)
+                sys.exit(1)
+            else:
+                print("npm install for trace-visualizer completed successfully.")
+        except FileNotFoundError:
+            print(
+                f"Error: npm command '{npm_cmd}' not found. "
+                "Please ensure Node.js/npm is installed and in your PATH.",
+                file=sys.stderr
+            )
+            sys.exit(1)
+
+    print("\nStep 12: Configuring codebase-memory-mcp for coding agents...")
     try:
         subprocess.run(
             ["codebase-memory-mcp", "install", "-y"],
