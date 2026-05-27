@@ -9,7 +9,7 @@ Supports multiple target folders via a file or direct parameter.
 
 from collections import defaultdict
 import argparse
-import os
+import os, shutil, glob
 import sys
 import subprocess
 import json
@@ -298,6 +298,42 @@ def _cbm_query(project_name, abs_path, cypher):
     return data.get("columns", []), data.get("rows", [])
 
 
+def cleanup_stale_workspaces(project_keyword):
+    cbm_root = os.path.expanduser(r"~\.cache\codebase-memory-mcp")
+    if not os.path.isdir(cbm_root):
+        return
+    
+    removed, failed = [], []
+    for entry in os.listdir(cbm_root):
+        full = os.path.join(cbm_root, entry)
+        if not os.path.isdir(full):
+            continue
+        if project_keyword.lower() in entry.lower():
+            try:
+                shutil.rmtree(full)
+                removed.append(entry)
+            except Exception as e:
+                failed.append((entry, str(e)))
+    
+    # 顺手清根目录的锁文件
+    for pattern in ("*.lock", "*.wal", "*.shm", "*.db-journal"):
+        for f in glob.glob(os.path.join(cbm_root, pattern)):
+            try:
+                os.remove(f)
+            except Exception:
+                pass
+    
+    if removed:
+        print(f"[Cleanup] Removed {len(removed)} stale workspace(s):")
+        for r in removed:
+            print(f"   - {r}")
+    if failed:
+        print(f"[Cleanup] Could NOT remove {len(failed)} (likely locked by running MCP):")
+        for name, err in failed:
+            print(f"   - {name}: {err}")
+        print("   → Close Claude Desktop / Cursor / VSCode and try again.")
+            
+            
 def _run_cbm_data_structuring(pruned_folder):
     print("Executing Unified Data Structuring via Codebase-Memory...")
 
@@ -315,6 +351,7 @@ def _run_cbm_data_structuring(pruned_folder):
     abs_pruned_path = os.path.abspath(pruned_folder)
 
     # 2. 索引
+    cleanup_stale_workspaces("ai-powered-legacy-maintenance")
     print(f"Indexing repository at: {abs_pruned_path} ...")
     idx_args = json.dumps({"repo_path": abs_pruned_path})
     subprocess.run(["codebase-memory-mcp", "cli", "index_repository", idx_args],
@@ -380,38 +417,6 @@ def _run_cbm_data_structuring(pruned_folder):
         print(f"Multi-column query failed, falling back. Error: {e}")
         use_fallback = True
 
-    # 4b. 降级方案：单列查询
-    if use_fallback:
-        print("Falling back to single-column queries...")
-        single_cols = [
-            "a.qualified_name", "a.name", "a.file_path", "a.start_line",
-            "b.qualified_name", "b.name", "b.file_path", "b.start_line"
-        ]
-        cols_data = []
-        for col in single_cols:
-            _, rows = _cbm_query(project_name, abs_pruned_path,
-                                 f"MATCH (a)-[:CALLS]->(b) RETURN {col}")
-            cols_data.append([r[0] if r else "" for r in rows])
-
-        n = min(len(c) for c in cols_data)
-        for i in range(n):
-            a_qn, a_n, a_f, a_line, b_qn, b_n, b_f, b_line = (cols_data[k][i] for k in range(8))
-            a_qn = a_qn or a_n
-            b_qn = b_qn or b_n
-            if not a_qn or not b_qn:
-                continue
-            try:
-                a_line = int(a_line) if a_line is not None else 1
-            except ValueError:
-                a_line = 1
-            try:
-                b_line = int(b_line) if b_line is not None else 1
-            except ValueError:
-                b_line = 1
-
-            nodes_info.setdefault(a_qn, {"name": a_n, "qualified_name": a_qn, "file": a_f, "start_line": a_line})
-            nodes_info.setdefault(b_qn, {"name": b_n, "qualified_name": b_qn, "file": b_f, "start_line": b_line})
-            edges.add((a_qn, b_qn))
 
     print(f"Collected {len(nodes_info)} nodes, {len(edges)} CALLS edges.")
 
