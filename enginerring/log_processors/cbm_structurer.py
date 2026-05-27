@@ -5,6 +5,7 @@ import glob
 import shutil
 import subprocess
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from .parser_index import lookup_function, tree_sitter_languages
 
 def _cbm_query(project_name, abs_path, cypher):
@@ -50,18 +51,15 @@ def cleanup_stale_workspaces(project_keyword):
 
 def process_single_thread(thread_dir, thread_name):
     abs_thread_path = os.path.abspath(thread_dir)
-    print(f"\n--- Processing Thread: {thread_name} ---")
+    print(f"[Start] Processing Thread: {thread_name}")
 
-    # 1. Index
-    cleanup_stale_workspaces("ai-powered-legacy-maintenance")
-    print(f"Indexing repository at: {abs_thread_path} ...")
+    # 1. Index (注意：已将 cleanup_stale_workspaces 移出，避免并发冲突)
     idx_args = json.dumps({"repo_path": abs_thread_path})
     try:
         subprocess.run(["codebase-memory-mcp", "cli", "index_repository", idx_args],
                        check=True, capture_output=True, text=True)
-        print("Indexing completed.")
     except subprocess.CalledProcessError as e:
-        print(f"Error during indexing {thread_name}: {e.stderr}")
+        print(f"[Error] Indexing failed for {thread_name}: {e.stderr}")
         return None
 
     # 2. Auto-detect project name
@@ -77,8 +75,7 @@ def process_single_thread(thread_dir, thread_name):
                 project_name = n
                 break
     except Exception as e:
-        print(f"Warning: project name autodetect failed: {e}")
-    print(f"Project: {project_name}")
+        print(f"[Warning] Project name autodetect failed for {thread_name}: {e}")
 
     # 3. Query CALLS edges and node properties
     nodes_info = {}
@@ -114,12 +111,9 @@ def process_single_thread(thread_dir, thread_name):
                 nodes_info.setdefault(b_qn, {"name": b_n, "qualified_name": b_qn, "file": b_f, "start_line": b_line})
                 edges.add((a_qn, b_qn))
     except Exception as e:
-        print(f"Multi-column query failed. Error: {e}")
-
-    print(f"Collected {len(nodes_info)} nodes, {len(edges)} CALLS edges.")
+        print(f"[Error] Multi-column query failed for {thread_name}. Error: {e}")
 
     # 4. Use tree-sitter to extract signature and body
-    print("Extracting function bodies from source files using tree-sitter (qname-keyed)...")
     miss_count = 0
     miss_samples = []
     for qn, info in nodes_info.items():
@@ -153,9 +147,7 @@ def process_single_thread(thread_dir, thread_name):
             info["file"] = rel
 
     if miss_count:
-        print(f"[WARN] {miss_count} function(s) could not be located in source files.")
-        for s in miss_samples:
-            print(f"   - {s}")
+        print(f"[WARN] {thread_name}: {miss_count} function(s) could not be located in source files.")
 
     # 5. Build adjacency list and in-degree
     adj = defaultdict(set)
@@ -193,14 +185,15 @@ def process_single_thread(thread_dir, thread_name):
 
     forest = [build(r, set()) for r in roots]
 
+    print(f"[Finished] Thread: {thread_name} (Nodes: {len(nodes_info)}, Edges: {len(edges)})")
     return {
         "project": project_name,
         "total_nodes": len(nodes_info),
         "trees": forest
     }
 
-def run_cbm_data_structuring(pruned_folder):
-    print("Executing Unified Data Structuring via Codebase-Memory...")
+def run_cbm_data_structuring(pruned_folder, max_workers=4):
+    print("Executing Unified Data Structuring via Codebase-Memory (Concurrent Mode)...")
 
     # 1. Check CLI
     try:
@@ -214,12 +207,12 @@ def run_cbm_data_structuring(pruned_folder):
 
     abs_pruned_path = os.path.abspath(pruned_folder)
 
-    # 2. 遍历 pruned_folder 下的所有子目录（线程）
     if not os.path.isdir(abs_pruned_path):
         raise RuntimeError(f"Pruned folder does not exist: {abs_pruned_path}")
 
-    all_threads_data = {}
+    cleanup_stale_workspaces("ai-powered-legacy-maintenance")
 
+    all_threads_data = {}
     subdirs = [d for d in os.listdir(abs_pruned_path) if os.path.isdir(os.path.join(abs_pruned_path, d))]
 
     if not subdirs:
@@ -229,11 +222,23 @@ def run_cbm_data_structuring(pruned_folder):
         if thread_data:
             all_threads_data[root_name] = thread_data
     else:
-        for thread_name in sorted(subdirs):
-            thread_dir = os.path.join(abs_pruned_path, thread_name)
-            thread_data = process_single_thread(thread_dir, thread_name)
-            if thread_data:
-                all_threads_data[thread_name] = thread_data
+        print(f"Starting ThreadPoolExecutor with {max_workers} workers...")
+        
+        futures = {}
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for thread_name in sorted(subdirs):
+                thread_dir = os.path.join(abs_pruned_path, thread_name)
+                future = executor.submit(process_single_thread, thread_dir, thread_name)
+                futures[future] = thread_name
+
+            for future in as_completed(futures):
+                t_name = futures[future]
+                try:
+                    thread_data = future.result()
+                    if thread_data:
+                        all_threads_data[t_name] = thread_data
+                except Exception as exc:
+                    print(f"[Error] Thread {t_name} generated an exception: {exc}")
 
     output_file = "final-output-calltree.json"
     with open(output_file, "w", encoding="utf-8") as f:
