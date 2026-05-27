@@ -128,7 +128,7 @@ def main():
         )
         sys.exit(1)
 
-    print("\nStep 3: Installing required Python packages for LLM...")
+    print("\nStep 3: Installing required Python packages for LLM (including codebase-memory-mcp)...")
 
     proxy_set = os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY") or \
                 os.environ.get("http_proxy") or os.environ.get("https_proxy")
@@ -192,14 +192,15 @@ def main():
                 "anthropic",
                 "python-dotenv",
                 "aiohttp",
-                "flask"
+                "flask",
+                "codebase-memory-mcp"  # 在这里直接通过 pip 安装 codebase-memory-mcp
             ],
             env=llm_env,
             check=True
         )
         print(
             "Python dependencies "
-            "(openai<2.0.0, anthropic, python-dotenv, aiohttp, flask) "
+            "(openai<2.0.0, anthropic, python-dotenv, aiohttp, flask, codebase-memory-mcp) "
             "installed successfully."
         )
     except subprocess.CalledProcessError:
@@ -364,7 +365,6 @@ def main():
             )
             sys.exit(1)
 
-    # ================= 新增步骤 =================
     print("\nStep 8: Executing composer install for PHP data-structuring environment...")
     php_data_structuring_dir = os.path.join(script_dir, "multilingual", "php", "data-structuring")
 
@@ -399,7 +399,6 @@ def main():
                 file=sys.stderr
             )
             sys.exit(1)
-    # ============================================
 
     print(
         "\nStep 9: Executing mvn clean package to build the "
@@ -468,6 +467,28 @@ def main():
                 file=sys.stderr
             )
             sys.exit(1)
+
+    print("\nStep 11: Configuring codebase-memory-mcp for coding agents...")
+    try:
+        subprocess.run(
+            ["codebase-memory-mcp", "install", "-y"],
+            check=True
+        )
+        print("codebase-memory-mcp successfully configured for your coding agents!")
+    except FileNotFoundError:
+        print(
+            "Warning: 'codebase-memory-mcp' command not found in PATH. "
+            "If you are using a virtual environment, please activate it or run manually:\n"
+            "  codebase-memory-mcp install",
+            file=sys.stderr
+        )
+    except subprocess.CalledProcessError as e:
+        print(
+            f"Warning: Agent configuration failed (return code {e.returncode}).\n"
+            "You can try to run it manually later: codebase-memory-mcp install",
+            file=sys.stderr
+        )
+    # ===============================================
 
     print("\nAll build steps completed successfully.")
 
