@@ -2,6 +2,8 @@ import re
 import os
 import argparse
 
+__all__ = ['analyze_thread_flow']
+
 def parse_method_range(file_path):
     """
     Parse method-range.txt
@@ -113,11 +115,12 @@ def parse_instrumentor_log(file_path):
 
     return threads_data
 
-def analyze_thread_flow(log_file, block_sig_file, block_line_file, method_range_file):
-    # Load mapping files
-    method_ranges = parse_method_range(method_range_file)
-    block_signatures = parse_block_signature(block_sig_file)
-    block_lines = parse_block_line_mapping(block_line_file)
+def analyze_thread_flow(log_file, block_signature_file, block_line_mapping_file):
+    """
+    Exposed API to analyze thread flow and generate signature_order.txt in CWD.
+    """
+    block_signatures = parse_block_signature(block_signature_file)
+    block_lines = parse_block_line_mapping(block_line_mapping_file)
 
     # Parse execution log
     threads_logs = parse_instrumentor_log(log_file)
@@ -150,10 +153,9 @@ def analyze_thread_flow(log_file, block_sig_file, block_line_file, method_range_
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Analyze instrumentor thread flow execution")
     parser.add_argument("log_file", help="Path to instrumentor log file")
-    parser.add_argument("block_sig_file", help="Path to block signature file")
-    parser.add_argument("block_line_file", help="Path to block line mapping file")
-    parser.add_argument("method_range_file", help="Path to method range file")
+    parser.add_argument("block_signature_file", help="Path to block signature file")
+    parser.add_argument("block_line_mapping_file", help="Path to block line mapping file")
     
     args = parser.parse_args()
     
-    analyze_thread_flow(args.log_file, args.block_sig_file, args.block_line_file, args.method_range_file)
+    analyze_thread_flow(args.log_file, args.block_signature_file, args.block_line_mapping_file)

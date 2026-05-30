@@ -75,7 +75,7 @@ def analyze_file_order(log_file, mapping_file):
 
 if __name__ == "__main__":
 
-    log_file_path = "d:/temp/attachments/instrumentor-log-20260530_095804-manual_http.txt"
-    mapping_file_path = "d:/temp/attachments/block-line-mapping.txt"
+    log_file_path = "C:\\TechLearning\\ai-powered-legacy-maintenance\\projects\\clean_room_revamp_php\\scenario_data\\instrumentor-log-20260530_221016-manual_http.txt"
+    mapping_file_path = "C:\\TechLearning\\ai-powered-legacy-maintenance\\projects\\clean_room_revamp_php\\block-line-mapping.txt"
 
     analyze_file_order(log_file_path, mapping_file_path)

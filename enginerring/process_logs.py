@@ -253,6 +253,42 @@ def process_logs(
         if found_calltree:
             try:
                 _sort_calltree_markdown(found_calltree, log_file, block_line_mapping_file, block_signature_file)
+                
+                print("[INFO] Calltree sorted. Starting signature order analysis and flow report generation...")
+                try:
+                    try:
+                        from .parser_signature_order import analyze_thread_flow
+                        from .present_execution_flow_with_code import generate_flow_report
+                    except (ImportError, ValueError):
+                        current_dir = os.path.dirname(os.path.abspath(__file__))
+                        if current_dir not in sys.path:
+                            sys.path.append(current_dir)
+                        from parser_signature_order import analyze_thread_flow
+                        from present_execution_flow_with_code import generate_flow_report
+
+                    print("[INFO] Running analyze_thread_flow...")
+                    analyze_thread_flow(
+                        log_file=log_file,
+                        block_signature_file=block_signature_file,
+                        block_line_mapping_file=block_line_mapping_file
+                    )
+
+
+                    sig_file_cwd = os.path.join(os.getcwd(), "signature_order.txt")
+                    calltree_file_cwd = os.path.join(os.getcwd(), "final-output-calltree.md")
+                    output_file_cwd = os.path.join(os.getcwd(), "execution_flow_with_code.md")
+
+                    print("[INFO] Running generate_flow_report...")
+                    generate_flow_report(
+                        signature_file=sig_file_cwd,
+                        calltree_file=calltree_file_cwd,
+                        output_file=output_file_cwd
+                    )
+
+                except Exception as flow_err:
+                    print(f"[WARNING] Failed to generate execution flow report: {flow_err}", file=sys.stderr)
+                # ------------------------------------------------------------------
+
             except Exception as e:
                 print(f"[WARNING] Failed to sort calltree markdown: {e}", file=sys.stderr)
         else:

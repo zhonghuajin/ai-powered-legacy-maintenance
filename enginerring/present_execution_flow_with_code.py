@@ -2,6 +2,8 @@ import os
 import re
 import argparse
 
+__all__ = ['generate_flow_report']
+
 def parse_calltree(filepath):
     """
     Parse final-output-calltree.md to extract method signatures and their corresponding source code
@@ -47,7 +49,7 @@ def parse_calltree(filepath):
 
 def generate_flow_report(signature_file, calltree_file, output_file):
     """
-    Generate final report based on execution order and source code mapping
+    Exposed API to generate final report based on execution order and source code mapping
     """
     if not os.path.exists(signature_file):
         print(f"[-] Error: Cannot find signature order file: {signature_file}")
@@ -103,7 +105,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Merge signature order and calltree source code into a sequential flow report.")
     parser.add_argument("-s", "--signature", default="signature_order.txt", help="Path to signature_order.txt (default: signature_order.txt)")
     parser.add_argument("-c", "--calltree", default="final-output-calltree.md", help="Path to final-output-calltree.md (default: final-output-calltree.md)")
-    parser.add_argument("-o", "--output", default="execution_flow_with_code.md", help="Path to output markdown file (default: execution_flow_with_code.md)")
 
     args = parser.parse_args()
-    generate_flow_report(args.signature, args.calltree, args.output)
+    generate_flow_report(args.signature, args.calltree, "execution_flow_with_code.md")
