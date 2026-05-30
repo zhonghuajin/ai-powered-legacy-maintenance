@@ -45,8 +45,6 @@ def _sort_calltree_markdown(calltree_path, log_file, block_line_mapping_file, bl
 
                 full_path = path_line.rsplit(':', 1)[0].strip()
                 normalized_path = full_path.replace('\\', '/')
-                if 'src/' in normalized_path:
-                    normalized_path = 'src/' + normalized_path.split('src/', 1)[1]
                 block_to_file[int(block_id.strip())] = normalized_path
 
     block_sequence = []
@@ -58,15 +56,15 @@ def _sort_calltree_markdown(calltree_path, log_file, block_line_mapping_file, bl
             parts = [int(x.strip()) for x in line.split('->') if x.strip().isdigit()]
             block_sequence.extend(parts)
 
-    file_order = {}
+    abs_file_order = {}
     method_order = {}
     file_counter = 0
     method_counter = 0
 
     for block_id in block_sequence:
         file_path = block_to_file.get(block_id)
-        if file_path and file_path not in file_order:
-            file_order[file_path] = file_counter
+        if file_path and file_path not in abs_file_order:
+            abs_file_order[file_path] = file_counter
             file_counter += 1
 
         method_sig = block_to_sig.get(block_id)
@@ -108,6 +106,16 @@ def _sort_calltree_markdown(calltree_path, log_file, block_line_mapping_file, bl
         }
 
     DEFAULT_WEIGHT = 999999
+    file_order = {}
+    for rel_path in files_data.keys():
+        weight = DEFAULT_WEIGHT
+        normalized_rel = rel_path.replace('\\', '/')
+        for abs_path, order_val in abs_file_order.items():
+            if abs_path.endswith(normalized_rel):
+                weight = order_val
+                break
+        file_order[rel_path] = weight
+
     sorted_files = sorted(files_data.keys(), key=lambda f: file_order.get(f, DEFAULT_WEIGHT))
 
     output_md = []
