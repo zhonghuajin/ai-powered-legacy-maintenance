@@ -162,6 +162,8 @@ class InstrumentationPipeline {
     private $rangeFile;
     private $signatureFile;
     private $isIncremental;
+    /** @var array Backup of the mapping file before running the pipeline steps (used for incremental mapping checks) */
+    private $oldCommentMap = [];
 
     /** Match original comments injected during instrumentation, e.g. // /abs/path/foo.php:123 */
     private const ORIGINAL_COMMENT_PATTERN = '/^(\s*)\/\/\s*(.+\.php:\d+)\s*$/m';
@@ -180,6 +182,11 @@ class InstrumentationPipeline {
         if ($this->isIncremental && (!file_exists($this->mappingFile) || !file_exists($this->rangeFile) || !file_exists($this->signatureFile))) {
             echo "Warning: mapping, range or signature file not found, falling back to full mode.\n";
             $this->isIncremental = false;
+        }
+
+        // In incremental mode, back up the original mapping file BEFORE any steps modify files or mappings.
+        if ($this->isIncremental && file_exists($this->mappingFile)) {
+            $this->oldCommentMap = $this->loadRawMapping($this->mappingFile);
         }
 
         $mode = $this->isIncremental ? "Incremental" : "Full";
@@ -353,7 +360,8 @@ class InstrumentationPipeline {
         // ---- Step 1. Preserve non-target entries when incremental ----
         if ($this->isIncremental && file_exists($this->signatureFile)) {
             $existingSignatures = $this->loadRawSignatures($this->signatureFile);
-            $commentMap = $this->loadRawMapping($this->mappingFile);
+            // Use the backed-up old mapping to safely identify which files the old IDs belong to
+            $commentMap = $this->oldCommentMap;
 
             foreach ($existingSignatures as $id => $sig) {
                 $comment = $commentMap[$id] ?? null;
@@ -363,6 +371,9 @@ class InstrumentationPipeline {
                         // Belongs to a re-instrumented target file: discard
                         continue;
                     }
+                } else {
+                    // If the ID cannot be found in the old mapping, it is orphaned/invalid: discard
+                    continue;
                 }
                 $blockToSignature[$id] = $sig;
             }
