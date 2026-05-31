@@ -29,15 +29,18 @@ You are a senior software architect and code development expert. Based on the ex
 
 The following data comes from real system runtime trace logs and contains the following core information:
 1. **Trace Sequence**: A linear sequence of basic blocks executed by the thread.
-2. **Call Tree**: Includes method signatures, source files, executed Block IDs, and **pruned source code**.
-3. **Data Structure of `final-output-calltree.md`**: 
-   - This file contains the threads, files, functions, blocks, and their corresponding code that were actually executed in the Scenario.
-   - The threads, the files appearing within each thread, and the functions within those files have all been strictly sorted according to the chronological order in which they appeared during runtime.
+2. **Call Tree (`final-output-calltree.md`)**: Reflects the runtime appearance order of files, sorted by thread within the current scenario, along with their intra-file function call relationships.
+3. **Execution Flow with Code (`execution_flow_with_code.md`)**: Reflects the runtime appearance order of functions, sorted and presented by thread within the current scenario, along with their source code.
 4. **Important Premise**: The data only contains code that was **actually executed**. If a piece of code does not appear in the data, it means it was not executed in this scenario. Please reason entirely based on this factual data and **never fabricate** nonexistent code structures.
 
-### ✅ [Reference Scenario] Complete Call Chain Data
+### ✅ [Reference Scenario] Complete Call Chain Data (Call Tree)
 =========================================
 {trace_data}
+=========================================
+
+### 📝 [Reference Scenario] Detailed Execution Flow with Source Code
+=========================================
+{execution_flow_data}
 =========================================
 
 ---
@@ -108,18 +111,20 @@ path/to/new/inferred_file.ext
 # 2. Interactive Guidance Logic
 # ==========================================
 
+
 def get_multiline_input(prompt_title, default_val=""):
     """
     Generic function to get multiline inputs from the console.
     """
     print(f"\n{prompt_title}")
     print("👉 Instruction: You can press [Enter] to start a new line.")
-    print("   To finish, press [Enter] twice consecutively, or type ':q' on a new line.")
+    print(
+        "   To finish, press [Enter] twice consecutively, or type ':q' on a new line.")
     print("-" * 60)
-    
+
     lines = []
     empty_count = 0
-    
+
     while True:
         try:
             line = input()
@@ -134,13 +139,13 @@ def get_multiline_input(prompt_title, default_val=""):
             lines.append(line)
         except EOFError:
             break
-            
+
     while lines and lines[-1] == '':
         lines.pop()
-        
+
     result = "\n".join(lines).strip()
     print("-" * 60 + "\n✅ Input saved successfully!\n")
-    
+
     if not result:
         return default_val
     return result
@@ -184,6 +189,8 @@ def generate_prompt_with_context(cli_file_path, context):
 
     # 3. Read trace data file
     trace_data = ""
+    execution_flow_data = ""
+
     while True:
         if cli_file_path:
             file_path = cli_file_path
@@ -209,6 +216,29 @@ def generate_prompt_with_context(cli_file_path, context):
             with open(file_path, 'r', encoding='utf-8') as f:
                 trace_data = f.read()
             print("✅ Successfully loaded the call chain data!")
+
+            # Auto-detect execution_flow_with_code.md in the same directory
+            dir_name = os.path.dirname(os.path.abspath(file_path))
+            flow_path = os.path.join(dir_name, "execution_flow_with_code.md")
+
+            if os.path.exists(flow_path):
+                print(
+                    f"📁 Auto-detected execution flow file in the same directory: {flow_path}")
+                with open(flow_path, 'r', encoding='utf-8') as f_flow:
+                    execution_flow_data = f_flow.read()
+                print("✅ Successfully loaded the execution flow with code data!")
+            else:
+                print(
+                    f"⚠️ Warning: 'execution_flow_with_code.md' not found in {dir_name}.")
+                manual_flow_path = input(
+                    "👉 Please enter the path to [execution_flow_with_code.md] manually (or press Enter to skip):\n> ").strip().strip('\'"')
+                if manual_flow_path and os.path.exists(manual_flow_path):
+                    with open(manual_flow_path, 'r', encoding='utf-8') as f_flow:
+                        execution_flow_data = f_flow.read()
+                    print("✅ Successfully loaded the execution flow with code data!")
+                else:
+                    print("⚠️ Skipped loading execution flow data.")
+                    execution_flow_data = "[No execution flow with code data provided.]"
             break
         except Exception as e:
             print(f"❌ Failed to read file: {e}")
@@ -218,7 +248,8 @@ def generate_prompt_with_context(cli_file_path, context):
     final_prompt = PROMPT_TEMPLATE.format(
         requirement=requirement,
         additional_info=additional_info,
-        trace_data=trace_data
+        trace_data=trace_data,
+        execution_flow_data=execution_flow_data
     )
 
     # 5. Write to file

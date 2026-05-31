@@ -27,19 +27,22 @@ You are a senior software security audit expert and Java concurrency programming
 
 The following data comes from real system runtime trace logs, containing the **absolutely authentic and noise-free** execution context for this scenario:
 1. **Trace Sequence**: Linear sequence of basic code blocks (Basic Block) executed by threads.
-2. **Call Tree**: Contains method signatures, source files, executed Block IDs, and **pruned (only actually executed parts) source code**.
-3. **Data Structure of `final-output-calltree.md`**: 
-   - This file contains the threads, files, functions, blocks, and their corresponding code that were actually executed in the Scenario.
-   - The threads, the files appearing within each thread, and the functions within those files have all been strictly sorted according to the chronological order in which they appeared during runtime.
+2. **Call Tree (`final-output-calltree.md` / `final-output-combined.md`)**: Reflects the runtime appearance order of files, sorted by thread within the current scenario, along with their intra-file function call relationships.
+3. **Execution Flow with Code (`execution_flow_with_code.md`)**: Reflects the runtime appearance order of functions, sorted and presented by thread within the current scenario, along with their source code.
 4. **Happens-Before**: Synchronization edges between threads (memory visibility of left operation to right operation).
 5. **Data Races**: Unsynchronized concurrent shared variable access conflicts (read-write or write-write conflicts).
 6. **Taint Flows**: Data/taint propagation paths across or within threads.
 
 **Important Premise**: The data only contains **actually executed** code. If a piece of code does not appear, it means it was absolutely not executed in this scenario. Please reason entirely based on these factual data, **never fabricate** non-existent code logic.
 
-### [Audit Target Data] Complete Execution Trace and Concurrency State
+### [Audit Target Data] Complete Execution Trace and Concurrency State (Call Tree)
 =========================================
 {trace_data}
+=========================================
+
+### [Audit Target Data] Detailed Execution Flow with Source Code
+=========================================
+{execution_flow_data}
 =========================================
 
 ---
@@ -86,18 +89,20 @@ Please strictly follow the template below to output your code audit report:
 # 2. Interactive Guidance Logic
 # ==========================================
 
+
 def get_multiline_input(prompt_title, default_val=""):
     """
     Generic function to get multiline inputs from the console.
     """
     print(f"\n{prompt_title}")
     print("👉 Instruction: You can press [Enter] to start a new line.")
-    print("   To finish, press [Enter] twice consecutively, or type ':q' on a new line.")
+    print(
+        "   To finish, press [Enter] twice consecutively, or type ':q' on a new line.")
     print("-" * 60)
-    
+
     lines = []
     empty_count = 0
-    
+
     while True:
         try:
             line = input()
@@ -112,13 +117,13 @@ def get_multiline_input(prompt_title, default_val=""):
             lines.append(line)
         except EOFError:
             break
-            
+
     while lines and lines[-1] == '':
         lines.pop()
-        
+
     result = "\n".join(lines).strip()
     print("-" * 60 + "\n✅ Input saved successfully!\n")
-    
+
     if not result:
         return default_val
     return result
@@ -161,6 +166,8 @@ def generate_prompt_with_context(cli_file_path, context):
 
     # 3. Read trace data file
     trace_data = ""
+    execution_flow_data = ""
+
     while True:
         if cli_file_path:
             file_path = cli_file_path
@@ -187,6 +194,31 @@ def generate_prompt_with_context(cli_file_path, context):
                 trace_data = f.read()
             print(
                 "[Success] Successfully loaded execution trace and concurrency state data.")
+
+            # Auto-detect execution_flow_with_code.md in the same directory
+            dir_name = os.path.dirname(os.path.abspath(file_path))
+            flow_path = os.path.join(dir_name, "execution_flow_with_code.md")
+
+            if os.path.exists(flow_path):
+                print(
+                    f"[Success] Auto-detected execution flow file in the same directory: {flow_path}")
+                with open(flow_path, 'r', encoding='utf-8') as f_flow:
+                    execution_flow_data = f_flow.read()
+                print(
+                    "[Success] Successfully loaded the execution flow with code data.")
+            else:
+                print(
+                    f"[Warning] 'execution_flow_with_code.md' not found in {dir_name}.")
+                manual_flow_path = input(
+                    "👉 Please enter the path to [execution_flow_with_code.md] manually (or press Enter to skip):\n> ").strip().strip('\'"')
+                if manual_flow_path and os.path.exists(manual_flow_path):
+                    with open(manual_flow_path, 'r', encoding='utf-8') as f_flow:
+                        execution_flow_data = f_flow.read()
+                    print(
+                        "[Success] Successfully loaded the execution flow with code data.")
+                else:
+                    print("[Warning] Skipped loading execution flow data.")
+                    execution_flow_data = "[No execution flow with code data provided.]"
             break
         except Exception as e:
             print(f"[Error] Failed to read file: {e}")
@@ -196,7 +228,8 @@ def generate_prompt_with_context(cli_file_path, context):
     final_prompt = PROMPT_TEMPLATE.format(
         requirement=requirement,
         additional_info=additional_info,
-        trace_data=trace_data
+        trace_data=trace_data,
+        execution_flow_data=execution_flow_data
     )
 
     # 5. Write to file

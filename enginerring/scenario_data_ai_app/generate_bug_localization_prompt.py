@@ -9,108 +9,6 @@ import sys
 # ==========================================
 # 1. Define Prompt Templates
 # ==========================================
-# Full template with concurrency analysis
-FULL_PROMPT_TEMPLATE = """# Code Bug Localization and Root Cause Analysis Task
-
-You are a senior software architect and debugging expert. Based on the provided zero-noise runtime trace data and synchronization dependencies, please help me perform deterministic factual backtracking to locate the root cause of a bug.
-
----
-
-## 📋 Bug Symptom & Context
-
-**🐞 Observable Symptom / Anomaly**: 
-{requirement}
-
-**💬 Additional Notes (Suspected variables, specific thread IDs, etc.)**: 
-{additional_info}
-
----
-
-## 🔍 Zero-Noise Scenario Runtime Data
-
-The following data comes from real system runtime trace logs. It is a "zero-noise" factual record of the specific execution scenario that triggered the bug. It contains:
-1. **Call Tree**: The exact sequence of executed basic blocks, pruned source code, and method signatures. Unexecuted branches are entirely removed.
-2. **Data Structure of `final-output-calltree.md`**: 
-   - This file contains the threads, files, functions, blocks, and their corresponding code that were actually executed in the Scenario.
-   - The threads, the files appearing within each thread, and the functions within those files have all been strictly sorted according to the chronological order in which they appeared during runtime.
-3. **Happens-Before & Data Races (If applicable)**: Explicit synchronization edges and unsynchronized concurrent accesses between threads.
-4. **Important Premise**: Please reason entirely based on this factual data. **Do not guess or fabricate** execution paths. If a piece of code is not in the data, it did not execute.
-
-### ✅ [Runtime Evidence] Complete Execution Data
-=========================================
-{trace_data}
-=========================================
-
----
-
-## 🎯 Diagnostic Requirements
-
-Please act as a factual detective. **Adhere strictly to the following analysis priority**:
-
-1. **Call‑Tree‑First Principle**: Always begin your backtracking using the **Call Tree** evidence.
-   - Trace the exact sequence of executed basic blocks backward from the symptom anchor.
-   - Only if the call tree alone fails to explain the observed anomaly (e.g., the executed path appears logically correct but still produces wrong output), **then** consult the `Happens‑Before` and `Data Races` sections.
-   - **Never assume a concurrency issue unless the trace data explicitly shows a missing synchronization edge or a stale read from a data race.**
-
-2. **Symptom Anchor**: 
-   - Locate the exact block or method in the trace data where the symptom manifested (e.g., the exception point or the final incorrect read).
-
-3. **Factual Backtracking**: 
-   - Trace the data flow and execution path backward from the symptom anchor.
-   - If multithreading is involved, strictly check the `Happens-Before` and `Data Races` sections. Did a thread read stale data because a synchronization edge was missing? Was there an unexpected interleaving?
-
-4. **Root Cause Identification**:
-   - Pinpoint the exact file, function, and logical flaw that caused the execution state to diverge from expectations.
-
----
-
-## ⚠️ Important Constraints
-
-- **Fact-based only**: Your analysis must be strictly bounded by the provided runtime trace and synchronization data.
-- **Complete code**: When providing the fix, you **must provide the complete class or complete method code**. Using `...` to omit original logic is strictly forbidden, ensuring the code can be copied and run directly.
-- **Code precision**: Clearly specify the **file name** and **function name** where the fix is applied.
-
----
-
-## 📋 Output Format Requirements
-
-Please strictly follow the template below when providing your diagnostic report:
-
-# Bug Localization and Fix Plan
-
-## 1. Factual Backtracking Path
-[Step-by-step trace from the symptom backward to the root cause, citing specific Thread IDs, Block IDs, or Synchronization Edges from the data]
-
-## 2. Root Cause Analysis
-- **File**: [specific file name]
-- **Function**: [specific function name]
-- **The Flaw**: [Explain exactly what went wrong based on the runtime facts, e.g., missing lock, incorrect branch condition, data race]
-
-## 3. Code Fix Implementation
-[Provide the complete modified code using Markdown code blocks. Add prominent comments such as `// [Bug Fix]` at the changed parts]
-
-## 4. Verification Logic
-[Briefly explain why this fix resolves the issue and how it corrects the execution flow or synchronization graph]
-
-## 5. Files To Modify (Machine-Readable Summary)
-
-Summarize **all** files that must be modified based on the Root Cause Analysis above. This section is intended for automated parsing, so it MUST strictly follow these rules:
-
-- Enclose the list between the two exact marker lines shown below.
-- One file path per line, nothing else on that line.
-- Output the **raw file path only**. Do NOT add bullets (`-`, `*`), numbering (`1.`), backticks, quotes, comments, descriptions, or trailing punctuation.
-- Use the exact path as it appears in the Root Cause Analysis (prefer the most complete relative path available in the trace data).
-- Do NOT include duplicates. Do NOT include any file that is only referenced but not modified.
-- If no file modification is required, output a single line containing exactly: `NONE`
-
-Output format (do not alter the marker lines):
-
-<!-- FILES_TO_MODIFY_START -->
-path/to/first/file.ext
-path/to/second/file.ext
-<!-- FILES_TO_MODIFY_END -->
-"""
-
 # Simplified template (Call-Tree only, concurrency sections removed)
 SIMPLE_PROMPT_TEMPLATE = """# Code Bug Localization and Root Cause Analysis Task
 
@@ -131,15 +29,18 @@ You are a senior software architect and debugging expert. Based on the provided 
 ## 🔍 Zero-Noise Scenario Runtime Data
 
 The following data comes from real system runtime trace logs. It is a "zero-noise" factual record of the specific execution scenario that triggered the bug. It contains:
-- **Call Tree**: The exact sequence of executed basic blocks, pruned source code, and method signatures. Unexecuted branches are entirely removed.
-- **Data Structure of `final-output-calltree.md`**: 
-  - This file contains the threads, files, functions, blocks, and their corresponding code that were actually executed in the Scenario.
-  - The threads, the files appearing within each thread, and the functions within those files have all been strictly sorted according to the chronological order in which they appeared during runtime.
+- **Call Tree (`final-output-calltree.md`)**: Reflects the runtime appearance order of files, sorted by thread within the current scenario, along with their intra-file function call relationships.
+- **Execution Flow with Code (`execution_flow_with_code.md`)**: Reflects the runtime appearance order of functions, sorted and presented by thread within the current scenario, along with their source code.
 - **Important Premise**: Please reason entirely based on this factual data. **Do not guess or fabricate** execution paths. If a piece of code is not in the data, it did not execute.
 
-### ✅ [Runtime Evidence] Complete Execution Data
+### ✅ [Runtime Evidence] Complete Execution Data (Call Tree)
 =========================================
 {trace_data}
+=========================================
+
+### 📝 [Runtime Evidence] Detailed Execution Flow with Source Code
+=========================================
+{execution_flow_data}
 =========================================
 
 ---
@@ -209,49 +110,41 @@ path/to/second/file.ext
 # 2. Interactive Guidance Logic
 # ==========================================
 
+
 def get_multiline_input(prompt_title, default_val=""):
     """
     Generic function to get multiline inputs from the console.
-    Supports:
-    1. Pressing Enter twice consecutively (empty line) to finish input.
-    2. Typing ':q' on a new line to finish input.
-    3. Pressing Ctrl+Z + Enter (Windows) or Ctrl+D (Linux/macOS) to finish input.
     """
     print(f"\n{prompt_title}")
     print("👉 Instruction: You can press [Enter] to start a new line.")
-    print("   To finish, press [Enter] twice consecutively, or type ':q' on a new line.")
+    print(
+        "   To finish, press [Enter] twice consecutively, or type ':q' on a new line.")
     print("-" * 60)
-    
+
     lines = []
-    empty_count = 0  # Counter for consecutive empty lines
-    
+    empty_count = 0
+
     while True:
         try:
             line = input()
-            # If user entered the quit command
             if line.strip() == ':q':
                 break
-            
-            # Detect consecutive empty lines
             if line == '':
                 empty_count += 1
-                if empty_count >= 2:  # Two consecutive empty lines indicate end of input
+                if empty_count >= 2:
                     break
             else:
-                empty_count = 0  # Reset counter
-                
+                empty_count = 0
             lines.append(line)
         except EOFError:
-            # Catch Ctrl+Z (Windows) or Ctrl+D (Linux/macOS)
             break
-            
-    # Strip trailing empty lines
+
     while lines and lines[-1] == '':
         lines.pop()
-        
+
     result = "\n".join(lines).strip()
     print("-" * 60 + "\n✅ Input saved successfully!\n")
-    
+
     if not result:
         return default_val
     return result
@@ -299,27 +192,20 @@ def generate_prompt_with_context(cli_file_path, context):
     additional_info = context.get("additional_info", "")
     mode = context.get("mode", "1")
 
-    selected_template = SIMPLE_PROMPT_TEMPLATE if mode == "1" else FULL_PROMPT_TEMPLATE
-
     # 3. Read trace data file
     trace_data = ""
+    execution_flow_data = ""
 
     while True:
         if cli_file_path:
             file_path = cli_file_path
             print(f"\n📁 2. Using Call Tree File from arguments: {file_path}")
-            # Reset the variable so if it fails, it will fall back to manual input
             cli_file_path = None
         else:
-            # Mode-specific file hint
-            if mode == "2":
-                file_hint = "Call Tree File With Concurrency (e.g., ../../final-output-combined.md)"
-            else:
-                file_hint = "Call Tree File (e.g., ../../final-output-calltree.md)"
-
+            file_hint = "Call Tree File (e.g., ../../final-output-calltree.md)"
             file_path = input(
                 f"\n📁 2. Please enter the path to the [{file_hint}]:\n> ").strip()
-            # Remove possible quotes (common when dragging a file into the terminal)
+            # Remove possible quotes
             file_path = file_path.strip('\'"')
 
         if not file_path:
@@ -335,16 +221,40 @@ def generate_prompt_with_context(cli_file_path, context):
             with open(file_path, 'r', encoding='utf-8') as f:
                 trace_data = f.read()
             print("✅ Successfully loaded the runtime trace data!")
+
+            # Auto-detect execution_flow_with_code.md in the same directory
+            dir_name = os.path.dirname(os.path.abspath(file_path))
+            flow_path = os.path.join(dir_name, "execution_flow_with_code.md")
+
+            if os.path.exists(flow_path):
+                print(
+                    f"📁 Auto-detected execution flow file in the same directory: {flow_path}")
+                with open(flow_path, 'r', encoding='utf-8') as f_flow:
+                    execution_flow_data = f_flow.read()
+                print("✅ Successfully loaded the execution flow with code data!")
+            else:
+                print(
+                    f"⚠️ Warning: 'execution_flow_with_code.md' not found in {dir_name}.")
+                manual_flow_path = input(
+                    "👉 Please enter the path to [execution_flow_with_code.md] manually (or press Enter to skip):\n> ").strip().strip('\'"')
+                if manual_flow_path and os.path.exists(manual_flow_path):
+                    with open(manual_flow_path, 'r', encoding='utf-8') as f_flow:
+                        execution_flow_data = f_flow.read()
+                    print("✅ Successfully loaded the execution flow with code data!")
+                else:
+                    print("⚠️ Skipped loading execution flow data.")
+                    execution_flow_data = "[No execution flow with code data provided.]"
             break
         except Exception as e:
             print(f"❌ Failed to read file: {e}")
             continue
 
     # 4. Assemble the final prompt
-    final_prompt = selected_template.format(
+    final_prompt = SIMPLE_PROMPT_TEMPLATE.format(
         requirement=requirement,
         additional_info=additional_info,
-        trace_data=trace_data
+        trace_data=trace_data,
+        execution_flow_data=execution_flow_data
     )
 
     # 5. Write to file
