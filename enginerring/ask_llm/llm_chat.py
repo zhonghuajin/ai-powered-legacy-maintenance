@@ -51,7 +51,7 @@ PROVIDERS = {
         "base_url": "https://api.deepseek.com",
         "default_model": "deepseek-chat",
         "reasoning_style": "deepseek",
-        "max_tokens": 8192,
+        "max_tokens": 128000,
     },
     "deepseek-v4pro": {        
         "sdk": "openai",
@@ -59,7 +59,7 @@ PROVIDERS = {
         "base_url": "https://api.deepseek.com",
         "default_model": "deepseek-v4-pro",
         "reasoning_style": "none",
-        "max_tokens": 16384,
+        "max_tokens": 256000,
     },
     "glm": {
         "sdk": "openai",
@@ -97,9 +97,9 @@ PROVIDERS = {
         "sdk": "openai",
         "env_key": "POE_API_KEY",
         "base_url": "https://api.poe.com/v1",
-        "default_model": "Gemini-3.1-Pro",
+        "default_model": "gemini-3.5-flash",
         "reasoning_style": "poe",
-        "max_tokens": 8192,
+        "max_tokens": 65536,
     },
 }
 
