@@ -15,7 +15,8 @@ import re
 import subprocess
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
 
 def _sort_calltree_markdown(calltree_path, log_file, block_line_mapping_file, block_signature_file):
     if not os.path.isfile(calltree_path):

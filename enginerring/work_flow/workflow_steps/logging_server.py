@@ -248,7 +248,7 @@ def analyze_logs(work_dir, proj_path=None, auto_analyze=False):
     if work_dir not in sys.path:
         sys.path.insert(0, work_dir)
     try:
-        from enginerring import process_logs
+        from enginerring.log_processor import process_logs
     except ImportError as e:
         print_color(f"Failed to import process_logs: {e}", Colors.RED)
         return
