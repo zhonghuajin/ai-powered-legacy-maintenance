@@ -2,8 +2,196 @@ import os
 import sys
 import subprocess
 import shutil
+from datetime import datetime
 
-from print_utils.utils import print_color, Colors
+try:
+    from print_utils.utils import print_color, Colors
+except ImportError:
+    class Colors:
+        RED = '\033[91m'
+        GREEN = '\033[92m'
+        YELLOW = '\033[93m'
+        CYAN = '\033[96m'
+        ENDC = '\033[0m'
+    
+    def print_color(text, color_code):
+        print(f"{color_code}{text}{Colors.ENDC}")
+
+def normalize_path(path):
+    return os.path.normcase(os.path.abspath(path))
+
+def write_merged_file(file_path, entries, file_desc, format_desc, sort_by_key=False):
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    total_entries = len(entries)
+
+    comments = [
+        "# ================================================",
+        f"# {file_desc}",
+        f"# Generation Time: {current_time}",
+        f"# Total Entries: {total_entries}",
+        "# ================================================",
+        f"# Format: {format_desc}",
+        "# Note: This mapping needs to be regenerated after source code modifications and re-instrumentation.\n"
+    ]
+
+
+    if sort_by_key:
+        try:
+            keys_to_write = sorted(entries.keys(), key=lambda x: int(x))
+        except ValueError:
+            keys_to_write = sorted(entries.keys())
+    else:
+        keys_to_write = list(entries.keys()) 
+
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.write("\n".join(comments) + "\n")
+        for key in keys_to_write:
+            f.write(f"{key} = {entries[key]}\n")
+
+def perform_incremental_merge(mapping_file, range_file, signature_file):
+
+    inc_mapping_file = mapping_file.replace(".txt", ".incremental.txt")
+    inc_range_file = range_file.replace(".txt", ".incremental.txt")
+    inc_signature_file = signature_file.replace(".txt", ".incremental.txt")
+
+    if not (os.path.exists(inc_mapping_file) and os.path.exists(inc_range_file) and os.path.exists(inc_signature_file)):
+        print_color("[Merge] Missing one or more incremental files. Skipping merge.", Colors.YELLOW)
+        return False
+
+    print_color("\n--- Starting Deep Incremental Data Merge ---", Colors.CYAN)
+
+
+    modified_files = set()
+    inc_mappings = {}  # Block ID -> File:Line
+    
+    with open(inc_mapping_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            stripped = line.strip()
+            if not stripped or stripped.startswith('#'):
+                continue
+            if '=' in line:
+                block_id, file_and_line = [x.strip() for x in line.split('=', 1)]
+                inc_mappings[block_id] = file_and_line
+                if ':' in file_and_line:
+                    file_path = file_and_line.rsplit(':', 1)[0]
+                    modified_files.add(normalize_path(file_path))
+
+    print(f"[Merge] Identified {len(modified_files)} modified file(s) from incremental mapping:")
+    for f_path in modified_files:
+        print(f"  - {f_path}")
+
+
+    base_mappings = {}
+    obsolete_block_ids = set()
+    
+    if os.path.exists(mapping_file):
+        with open(mapping_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                stripped = line.strip()
+                if not stripped or stripped.startswith('#'):
+                    continue
+                if '=' in line:
+                    block_id, file_and_line = [x.strip() for x in line.split('=', 1)]
+                    base_mappings[block_id] = file_and_line
+                    if ':' in file_and_line:
+                        file_path = file_and_line.rsplit(':', 1)[0]
+                        if normalize_path(file_path) in modified_files:
+                            obsolete_block_ids.add(block_id)
+
+    print(f"[Merge] Found {len(obsolete_block_ids)} obsolete Block ID(s) to be removed.")
+
+
+    cleaned_mappings = {
+        bid: val for bid, val in base_mappings.items() 
+        if bid not in obsolete_block_ids
+    }
+    cleaned_mappings.update(inc_mappings)
+    write_merged_file(
+        mapping_file, 
+        cleaned_mappings, 
+        "Instrumentation Comment -> Integer ID Mapping Table",
+        "Integer ID = File Absolute Path:Code Block Start Line Number",
+        sort_by_key=True
+    )
+
+
+    base_signatures = {}
+    if os.path.exists(signature_file):
+        with open(signature_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                stripped = line.strip()
+                if not stripped or stripped.startswith('#'):
+                    continue
+                if '=' in line:
+                    block_id, sig = [x.strip() for x in line.split('=', 1)]
+                    base_signatures[block_id] = sig
+
+    cleaned_signatures = {
+        bid: sig for bid, sig in base_signatures.items() 
+        if bid not in obsolete_block_ids
+    }
+    
+    with open(inc_signature_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            stripped = line.strip()
+            if not stripped or stripped.startswith('#'):
+                continue
+            if '=' in line:
+                block_id, sig = [x.strip() for x in line.split('=', 1)]
+                cleaned_signatures[block_id] = sig
+
+    write_merged_file(
+        signature_file, 
+        cleaned_signatures, 
+        "Block ID -> Method Signature Mapping Table",
+        "Block ID = Method Signature",
+        sort_by_key=True
+    )
+
+
+    cleaned_ranges = {}  
+    
+    if os.path.exists(range_file):
+        with open(range_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                stripped = line.strip()
+                if not stripped or stripped.startswith('#'):
+                    continue
+                if '=' in line:
+                    key, val = [x.strip() for x in line.split('=', 1)]
+                    if '|' in key:
+                        file_path = key.split('|', 1)[0].strip()
+                        if normalize_path(file_path) in modified_files:
+                            continue
+                    cleaned_ranges[key] = val
+
+    with open(inc_range_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            stripped = line.strip()
+            if not stripped or stripped.startswith('#'):
+                continue
+            if '=' in line:
+                key, val = [x.strip() for x in line.split('=', 1)]
+                cleaned_ranges[key] = val
+
+    write_merged_file(
+        range_file, 
+        cleaned_ranges, 
+        "Method Line Range Mapping Table",
+        "File Absolute Path | Method Name = Start Line-End Line",
+        sort_by_key=False  # 保持原有顺序
+    )
+
+
+    for temp_file in [inc_mapping_file, inc_range_file, inc_signature_file]:
+        try:
+            os.remove(temp_file)
+        except OSError as e:
+            print_color(f"[Merge] Warning: Could not remove {os.path.basename(temp_file)}: {e}", Colors.YELLOW)
+
+    print_color("--- Incremental Data Merge Completed Successfully ---\n", Colors.GREEN)
+    return True
+
 
 def _run_java_instrumentation(target_folders, incremental, mapping_file, range_file, signature_file):
     """Single JAR call, replaces previous multiple subprocesses"""
@@ -22,7 +210,6 @@ def _run_java_instrumentation(target_folders, incremental, mapping_file, range_f
 
     java_cmd = [java_exe, "-jar", pipeline_jar]
     if incremental:
-
         java_cmd += [
             "--incremental",
             "-m", mapping_file,
@@ -58,7 +245,6 @@ def _run_php_instrumentation(target_folders, incremental, mapping_file, range_fi
 
     php_cmd = [php_exe, pipeline_script]
     if incremental:
-
         php_cmd += [
             "--incremental",
             "--mapping", mapping_file,
@@ -187,8 +373,10 @@ def run_instrumentation_flow(target_folders_file=None, target_folders_list=None,
     range_file = os.path.abspath(os.path.join(mapping_dir, "method-range.txt"))
     signature_file = os.path.abspath(os.path.join(mapping_dir, "block-signature.txt"))
 
-    if incremental:
+    
+    should_merge = incremental
 
+    if incremental:
         missing_files = []
         if not os.path.exists(mapping_file):
             missing_files.append(mapping_file)
@@ -203,6 +391,7 @@ def run_instrumentation_flow(target_folders_file=None, target_folders_list=None,
                 print_color(f"  Missing: {mf}", Colors.YELLOW)
             print_color("Falling back to full instrumentation mode.", Colors.YELLOW)
             incremental = False
+            should_merge = False
         else:
             print(f"Incremental mode: merging with existing files:")
             print(f"  Mapping:   {mapping_file}")
@@ -220,7 +409,6 @@ def run_instrumentation_flow(target_folders_file=None, target_folders_list=None,
         success = _run_php_instrumentation(
             target_folders, incremental, mapping_file, range_file, signature_file, work_dir)
     elif lang_lower in ['javascript', 'js']:
-
         work_dir = os.path.abspath(os.getcwd())
         success = _run_javascript_instrumentation(target_folders, work_dir)
     elif lang_lower == 'python':
@@ -231,7 +419,11 @@ def run_instrumentation_flow(target_folders_file=None, target_folders_list=None,
             f"Error: Unsupported language for instrumentation: {language}", Colors.RED)
         return False
 
+    
     if success:
+        if should_merge:
+            perform_incremental_merge(mapping_file, range_file, signature_file)
+
         print("\nInstrumentation phase completed. "
               "Please check the generated log file timestamp and use process-logs-demo.py for subsequent processing.")
 

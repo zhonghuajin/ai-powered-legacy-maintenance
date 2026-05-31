@@ -177,6 +177,16 @@ class InstrumentationPipeline {
         $this->signatureFile = $signatureFile;
     }
 
+    /**
+     * Helper to generate incremental file path (e.g. path/to/file.txt -> path/to/file.incremental.txt)
+     */
+    private function getIncrementalPath(string $filePath): string {
+        $dir = dirname($filePath);
+        $filename = pathinfo($filePath, PATHINFO_FILENAME);
+        $ext = pathinfo($filePath, PATHINFO_EXTENSION);
+        return ($dir !== '.' ? $dir . DIRECTORY_SEPARATOR : '') . $filename . '.incremental.' . $ext;
+    }
+
     public function run(array $targets) {
         // Fall back to full mode if any mapping file is missing in incremental mode
         if ($this->isIncremental && (!file_exists($this->mappingFile) || !file_exists($this->rangeFile) || !file_exists($this->signatureFile))) {
@@ -255,29 +265,15 @@ class InstrumentationPipeline {
 
     /**
      * Update the method-range.txt file.
-     * Supports incremental mode by preserving ranges from non-target files.
+     * In incremental mode, only newly collected ranges are written to the incremental file.
      */
     private function updateMethodRanges(array $files, array $newRanges) {
-        $mergedRanges = [];
+        $targetRanges = [];
 
-        // ---- Step 1. Preserve non-target entries when incremental ----
-        if ($this->isIncremental && file_exists($this->rangeFile)) {
-            $existingRanges = $this->loadRawRanges($this->rangeFile);
-            $targetFilePaths = array_fill_keys($files, true);
-
-            foreach ($existingRanges as $entry) {
-                if (isset($targetFilePaths[$entry['file']])) {
-                    // Belongs to a re-instrumented target file: discard
-                    continue;
-                }
-                $mergedRanges[] = $entry;
-            }
-        }
-
-        // ---- Step 2. Merge newly collected ranges ----
+        // Collect ranges from target files
         foreach ($newRanges as $file => $ranges) {
             foreach ($ranges as $range) {
-                $mergedRanges[] = [
+                $targetRanges[] = [
                     'file'  => $file,
                     'name'  => $range['name'],
                     'start' => $range['start'],
@@ -286,8 +282,8 @@ class InstrumentationPipeline {
             }
         }
 
-        // ---- Step 3. Sort ranges by file path and start line for stability ----
-        usort($mergedRanges, function ($a, $b) {
+        // Sort ranges by file path and start line for stability
+        usort($targetRanges, function ($a, $b) {
             $fileCmp = strcmp($a['file'], $b['file']);
             if ($fileCmp !== 0) {
                 return $fileCmp;
@@ -295,12 +291,18 @@ class InstrumentationPipeline {
             return $a['start'] <=> $b['start'];
         });
 
-        // ---- Step 4. Persist range file ----
-        $this->writeRangeFile($mergedRanges);
-        echo "   Method ranges saved to {$this->rangeFile} (Total: " . count($mergedRanges) . " entries)\n";
+        // Persist range file
+        if ($this->isIncremental) {
+            $outputFile = $this->getIncrementalPath($this->rangeFile);
+            $this->writeRangeFile($outputFile, $targetRanges);
+            echo "   Incremental method ranges saved to {$outputFile} (Total: " . count($targetRanges) . " entries)\n";
+        } else {
+            $this->writeRangeFile($this->rangeFile, $targetRanges);
+            echo "   Method ranges saved to {$this->rangeFile} (Total: " . count($targetRanges) . " entries)\n";
+        }
     }
 
-    private function writeRangeFile(array $ranges): void {
+    private function writeRangeFile(string $filePath, array $ranges): void {
         $lines   = [];
         $lines[] = "# ================================================";
         $lines[] = "# Method Line Range Mapping Table";
@@ -315,11 +317,11 @@ class InstrumentationPipeline {
             $lines[] = "{$entry['file']} | {$entry['name']} = {$entry['start']}-{$entry['end']}";
         }
 
-        $dir = dirname($this->rangeFile);
+        $dir = dirname($filePath);
         if ($dir !== '' && !is_dir($dir)) {
             mkdir($dir, 0777, true);
         }
-        file_put_contents($this->rangeFile, implode("\n", $lines) . "\n");
+        file_put_contents($filePath, implode("\n", $lines) . "\n");
     }
 
     /**
@@ -355,33 +357,18 @@ class InstrumentationPipeline {
      */
     private function generateBlockSignatures(array $files) {
         $blockToSignature = [];
-        $targetFilePaths = array_fill_keys($files, true);
 
-        // ---- Step 1. Preserve non-target entries when incremental ----
-        if ($this->isIncremental && file_exists($this->signatureFile)) {
-            $existingSignatures = $this->loadRawSignatures($this->signatureFile);
-            // Use the backed-up old mapping to safely identify which files the old IDs belong to
-            $commentMap = $this->oldCommentMap;
-
-            foreach ($existingSignatures as $id => $sig) {
-                $comment = $commentMap[$id] ?? null;
-                if ($comment !== null) {
-                    $filePath = $this->extractFilePathFromComment($comment);
-                    if ($filePath !== null && isset($targetFilePaths[$filePath])) {
-                        // Belongs to a re-instrumented target file: discard
-                        continue;
-                    }
-                } else {
-                    // If the ID cannot be found in the old mapping, it is orphaned/invalid: discard
-                    continue;
-                }
-                $blockToSignature[$id] = $sig;
-            }
+        // Load mappings and ranges based on current mode
+        if ($this->isIncremental) {
+            $mappingToLoad = $this->getIncrementalPath($this->mappingFile);
+            $rangesToLoad  = $this->getIncrementalPath($this->rangeFile);
+        } else {
+            $mappingToLoad = $this->mappingFile;
+            $rangesToLoad  = $this->rangeFile;
         }
 
-        // ---- Step 2. Load current mappings and ranges ----
-        $commentMap = $this->loadRawMapping($this->mappingFile);
-        $ranges = $this->loadRawRanges($this->rangeFile);
+        $commentMap = $this->loadRawMapping($mappingToLoad);
+        $ranges = $this->loadRawRanges($rangesToLoad);
 
         // Group ranges by file path for faster lookup
         $rangesByFile = [];
@@ -389,10 +376,10 @@ class InstrumentationPipeline {
             $rangesByFile[$range['file']][] = $range;
         }
 
-        // ---- Step 3. Find signature for target file blocks ----
+        // Find signature for target file blocks
         foreach ($commentMap as $id => $comment) {
             $filePath = $this->extractFilePathFromComment($comment);
-            if ($filePath === null || !isset($targetFilePaths[$filePath])) {
+            if ($filePath === null) {
                 continue;
             }
 
@@ -413,13 +400,19 @@ class InstrumentationPipeline {
             $blockToSignature[$id] = $matchedSignature;
         }
 
-        // ---- Step 4. Persist signature file ----
+        // Persist signature file
         ksort($blockToSignature);
-        $this->writeSignatureFile($blockToSignature);
-        echo "   Block signatures saved to {$this->signatureFile} (Total: " . count($blockToSignature) . " entries)\n";
+        if ($this->isIncremental) {
+            $outputFile = $this->getIncrementalPath($this->signatureFile);
+            $this->writeSignatureFile($outputFile, $blockToSignature);
+            echo "   Incremental block signatures saved to {$outputFile} (Total: " . count($blockToSignature) . " entries)\n";
+        } else {
+            $this->writeSignatureFile($this->signatureFile, $blockToSignature);
+            echo "   Block signatures saved to {$this->signatureFile} (Total: " . count($blockToSignature) . " entries)\n";
+        }
     }
 
-    private function writeSignatureFile(array $signatures): void {
+    private function writeSignatureFile(string $filePath, array $signatures): void {
         $lines   = [];
         $lines[] = "# ================================================";
         $lines[] = "# Block ID -> Method Signature Mapping Table";
@@ -434,11 +427,11 @@ class InstrumentationPipeline {
             $lines[] = "{$id} = {$sig}";
         }
 
-        $dir = dirname($this->signatureFile);
+        $dir = dirname($filePath);
         if ($dir !== '' && !is_dir($dir)) {
             mkdir($dir, 0777, true);
         }
-        file_put_contents($this->signatureFile, implode("\n", $lines) . "\n");
+        file_put_contents($filePath, implode("\n", $lines) . "\n");
     }
 
     private function loadRawSignatures(string $signatureFile): array {
@@ -473,32 +466,17 @@ class InstrumentationPipeline {
      * Build (or update) the comment -> ID mapping.
      */
     private function encodeMapping(array $files) {
-        $idToComment = [];
-        $commentToId = [];
+        $nextId = 1;
 
-        // ---- Step 1. Preserve non-target entries when incremental ----
+        // In incremental mode, read the existing mapping file to find the next available ID
         if ($this->isIncremental && file_exists($this->mappingFile)) {
             $existingMap = $this->loadRawMapping($this->mappingFile);
-
-            // Build a set of target file absolute paths for fast lookup
-            $targetFilePaths = [];
-            foreach ($files as $file) {
-                $targetFilePaths[$file] = true;
-            }
-
-            foreach ($existingMap as $id => $comment) {
-                $filePath = $this->extractFilePathFromComment($comment);
-                if ($filePath !== null && isset($targetFilePaths[$filePath])) {
-                    // Belongs to a re-instrumented target file: discard
-                    continue;
-                }
-                // Preserve this entry with its original ID
-                $idToComment[$id]      = $comment;
-                $commentToId[$comment] = $id;
+            if (!empty($existingMap)) {
+                $nextId = max(array_keys($existingMap)) + 1;
             }
         }
 
-        // ---- Step 2. Scan original comments from target files ----
+        // Scan original comments from target files
         $newComments = [];
         $seen        = [];
         foreach ($files as $file) {
@@ -517,22 +495,21 @@ class InstrumentationPipeline {
         // Sort newly scanned comments by (path, line) for stable IDs
         $this->sortCommentsByPathAndLine($newComments);
 
-        // ---- Step 3. Allocate IDs for new comments ----
-        $nextId = empty($idToComment) ? 1 : (max(array_keys($idToComment)) + 1);
+        // Allocate IDs for new comments
+        $incrementalIdToComment = [];
+        $commentToId = [];
         foreach ($newComments as $comment) {
-            if (!isset($commentToId[$comment])) {
-                $idToComment[$nextId]  = $comment;
-                $commentToId[$comment] = $nextId;
-                $nextId++;
-            }
+            $incrementalIdToComment[$nextId]  = $comment;
+            $commentToId[$comment] = $nextId;
+            $nextId++;
         }
 
-        if (empty($idToComment)) {
-            echo "   No instrumentation points found.\n";
+        if (empty($incrementalIdToComment)) {
+            echo "   No new instrumentation points found.\n";
             return;
         }
 
-        // ---- Step 4. Replace // path:line with // INST#ID in target sources ----
+        // Replace // path:line with // INST#ID in target sources
         foreach ($files as $file) {
             $content = file_get_contents($file);
             $newContent = preg_replace_callback(
@@ -553,13 +530,19 @@ class InstrumentationPipeline {
             }
         }
 
-        // ---- Step 5. Persist mapping file (sorted by ID) ----
-        ksort($idToComment);
-        $this->writeMappingFile($idToComment);
-        echo "   Mapping saved to {$this->mappingFile} (Total: " . count($idToComment) . ")\n";
+        // Persist mapping file
+        ksort($incrementalIdToComment);
+        if ($this->isIncremental) {
+            $outputFile = $this->getIncrementalPath($this->mappingFile);
+            $this->writeMappingFile($outputFile, $incrementalIdToComment);
+            echo "   Incremental mapping saved to {$outputFile} (Total: " . count($incrementalIdToComment) . ")\n";
+        } else {
+            $this->writeMappingFile($this->mappingFile, $incrementalIdToComment);
+            echo "   Mapping saved to {$this->mappingFile} (Total: " . count($incrementalIdToComment) . ")\n";
+        }
     }
 
-    private function writeMappingFile(array $idToComment): void {
+    private function writeMappingFile(string $filePath, array $idToComment): void {
         $lines   = [];
         $lines[] = "# ================================================";
         $lines[] = "# Instrumentation Comment -> Integer ID Mapping Table";
@@ -574,11 +557,11 @@ class InstrumentationPipeline {
             $lines[] = "{$id} = {$comment}";
         }
 
-        $dir = dirname($this->mappingFile);
+        $dir = dirname($filePath);
         if ($dir !== '' && !is_dir($dir)) {
             mkdir($dir, 0777, true);
         }
-        file_put_contents($this->mappingFile, implode("\n", $lines) . "\n");
+        file_put_contents($filePath, implode("\n", $lines) . "\n");
     }
 
     /**
