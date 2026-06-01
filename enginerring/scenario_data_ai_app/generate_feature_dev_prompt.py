@@ -33,20 +33,22 @@ The following data comes from real system runtime trace logs. It is a "zero-nois
 
 ⚠️ **Core Concept**:
 The **[Call Tree]** and the **[Execution Flow with Source Code]** provided below are **two different representations of the exact same execution run**. They are completely equivalent and complementary in terms of timeline, thread allocation, and execution logic:
-- **Call Tree** focuses on the high-level **hierarchical nesting and invocation relationships** between functions.
-- **Execution Flow with Source Code** focuses on the step-by-step **execution details and the actual source code context**.
+- **Call Tree**: Reflects the runtime appearance order of files, sorted by thread within the current scenario, along with their intra-file function call relationships. Within each thread, files are sorted by their runtime appearance order.
+- **Execution Flow with Source Code**: Reflects the runtime appearance order of functions, sorted and presented by thread within the current scenario, along with their source code.
 Please analyze them in tandem to reconstruct the complete execution context.
 
 ⚠️ **Important Premise**:
 - Please reason entirely based on this factual data. **Do not guess, extrapolate, or fabricate** execution paths. 
 - If a piece of code, branch, or function is not present in the data below, **it did not execute** in this specific scenario.
 
-### ✅ Call Tree: Reflects the runtime appearance order of files, sorted by thread within the current scenario, along with their intra-file function call relationships.
+### ✅ Call Tree
+> *Note: Reflects file-level call hierarchies grouped by thread. Within each thread, files are sorted by their runtime appearance order.*
 =========================================
 {trace_data}
 =========================================
 
-### 📝 Execution Flow with Source Code: Reflects the runtime appearance order of functions, sorted and presented by thread within the current scenario, along with their source code.
+### 📝 Execution Flow with Source Code
+> *Note: Reflects step-by-step function execution details and actual source code context.*
 =========================================
 {execution_flow_data}
 =========================================

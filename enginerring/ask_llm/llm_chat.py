@@ -97,7 +97,7 @@ PROVIDERS = {
         "sdk": "openai",
         "env_key": "POE_API_KEY",
         "base_url": "https://api.poe.com/v1",
-        "default_model": "gemini-3.5-flash",
+        "default_model": "gemini-3.1-pro",
         "reasoning_style": "poe",
         "max_tokens": 65536,
     },
