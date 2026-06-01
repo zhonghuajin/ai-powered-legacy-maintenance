@@ -30,17 +30,25 @@ You are a senior software architect and debugging expert. Based on the provided 
 
 ## 🔍 Zero-Noise Scenario Runtime Data
 
-The following data comes from real system runtime trace logs. It is a "zero-noise" factual record of the specific execution scenario that triggered the bug. It contains:
-- **Call Tree (`final-output-calltree.md`)**: Reflects the runtime appearance order of files, sorted by thread within the current scenario, along with their intra-file function call relationships.
-- **Execution Flow with Code (`execution_flow_with_code.md`)**: Reflects the runtime appearance order of functions, sorted and presented by thread within the current scenario, along with their source code.
-- **Important Premise**: Please reason entirely based on this factual data. **Do not guess or fabricate** execution paths. If a piece of code is not in the data, it did not execute.
+The following data comes from real system runtime trace logs. It is a "zero-noise" factual record of the specific execution scenario that triggered the bug. 
 
-### ✅ [Runtime Evidence] Complete Execution Data (Call Tree)
+⚠️ **Core Concept**:
+The **[Call Tree]** and the **[Execution Flow with Source Code]** provided below are **two different representations of the exact same execution run**. They are completely equivalent and complementary in terms of timeline, thread allocation, and execution logic:
+- **Call Tree** focuses on the high-level **hierarchical nesting and invocation relationships** between functions.
+- **Execution Flow with Source Code** focuses on the step-by-step **execution details and the actual source code context**.
+Please analyze them in tandem to reconstruct the complete execution context.
+
+⚠️ **Important Premise**:
+- Please reason entirely based on this factual data. **Do not guess, extrapolate, or fabricate** execution paths. 
+- If a piece of code, branch, or function is not present in the data below, **it did not execute** in this specific scenario.
+
+
+### ✅ Call Tree: Reflects the runtime appearance order of files, sorted by thread within the current scenario, along with their intra-file function call relationships.
 =========================================
 {trace_data}
 =========================================
 
-### 📝 [Runtime Evidence] Detailed Execution Flow with Source Code
+### 📝 Execution Flow with Source Code: Reflects the runtime appearance order of functions, sorted and presented by thread within the current scenario, along with their source code.
 =========================================
 {execution_flow_data}
 =========================================

@@ -27,20 +27,26 @@ You are a senior software architect and code development expert. Based on the ex
 
 ---
 
-## 🔍 Scenario Call Chain Data Description
+## 🔍 Scenario Runtime Data Description
 
-The following data comes from real system runtime trace logs and contains the following core information:
-1. **Trace Sequence**: A linear sequence of basic blocks executed by the thread.
-2. **Call Tree (`final-output-calltree.md`)**: Reflects the runtime appearance order of files, sorted by thread within the current scenario, along with their intra-file function call relationships.
-3. **Execution Flow with Code (`execution_flow_with_code.md`)**: Reflects the runtime appearance order of functions, sorted and presented by thread within the current scenario, along with their source code.
-4. **Important Premise**: The data only contains code that was **actually executed**. If a piece of code does not appear in the data, it means it was not executed in this scenario. Please reason entirely based on this factual data and **never fabricate** nonexistent code structures.
+The following data comes from real system runtime trace logs. It is a "zero-noise" factual record of the specific execution scenario that triggered the bug. 
 
-### ✅ [Reference Scenario] Complete Call Chain Data (Call Tree)
+⚠️ **Core Concept**:
+The **[Call Tree]** and the **[Execution Flow with Source Code]** provided below are **two different representations of the exact same execution run**. They are completely equivalent and complementary in terms of timeline, thread allocation, and execution logic:
+- **Call Tree** focuses on the high-level **hierarchical nesting and invocation relationships** between functions.
+- **Execution Flow with Source Code** focuses on the step-by-step **execution details and the actual source code context**.
+Please analyze them in tandem to reconstruct the complete execution context.
+
+⚠️ **Important Premise**:
+- Please reason entirely based on this factual data. **Do not guess, extrapolate, or fabricate** execution paths. 
+- If a piece of code, branch, or function is not present in the data below, **it did not execute** in this specific scenario.
+
+### ✅ Call Tree: Reflects the runtime appearance order of files, sorted by thread within the current scenario, along with their intra-file function call relationships.
 =========================================
 {trace_data}
 =========================================
 
-### 📝 [Reference Scenario] Detailed Execution Flow with Source Code
+### 📝 Execution Flow with Source Code: Reflects the runtime appearance order of functions, sorted and presented by thread within the current scenario, along with their source code.
 =========================================
 {execution_flow_data}
 =========================================
@@ -86,10 +92,7 @@ Please strictly follow the template below when providing the guidance plan:
 ## 3. Code Implementation (How to modify)
 [Provide the complete modified code using Markdown code blocks, and add prominent comments such as `// [Added]` or `// [Modified]` at newly added/changed parts]
 
-## 4. Potential Risks and Notes
-[List side effects, concurrency hazards, or performance issues to watch out for during development]
-
-## 5. Files To Modify (Machine-Readable Summary)
+## 4. Files To Modify (Machine-Readable Summary)
 
 Summarize **all** files that must be modified or **newly created** based on the Key Hook Point above. This section is intended for automated parsing, so it MUST strictly follow these rules:
 
