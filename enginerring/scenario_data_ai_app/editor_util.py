@@ -61,3 +61,30 @@ def get_multiline_input_via_editor(step_title, prompt_hint):
         return ""
         
     return result
+
+
+def get_multiline_input(prompt_title, default_val=""):
+    """
+    Get multiline input from console (only ':q' as termination marker)
+    """
+    print(f"\n{prompt_title}")
+    print("👉 Instruction: You can press [Enter] to start a new line.")
+    print("   To finish, type ':q' on a new line.")
+    print("-" * 60)
+
+    lines = []
+    while True:
+        try:
+            line = input()
+            if line.strip() == ':q':
+                break
+            lines.append(line)
+        except EOFError:
+            break
+
+    result = "\n".join(lines).strip()
+    print("-" * 60 + "\n✅ Input saved successfully!\n")
+
+    if not result:
+        return default_val
+    return result

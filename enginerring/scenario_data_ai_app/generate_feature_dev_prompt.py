@@ -4,6 +4,8 @@
 import os
 import sys
 
+from editor_util import get_multiline_input
+
 """
 AI will modify codes
 """
@@ -118,46 +120,6 @@ path/to/new/inferred_file.ext
 # 2. Interactive Guidance Logic
 # ==========================================
 
-
-def get_multiline_input(prompt_title, default_val=""):
-    """
-    Generic function to get multiline inputs from the console.
-    """
-    print(f"\n{prompt_title}")
-    print("👉 Instruction: You can press [Enter] to start a new line.")
-    print(
-        "   To finish, press [Enter] twice consecutively, or type ':q' on a new line.")
-    print("-" * 60)
-
-    lines = []
-    empty_count = 0
-
-    while True:
-        try:
-            line = input()
-            if line.strip() == ':q':
-                break
-            if line == '':
-                empty_count += 1
-                if empty_count >= 2:
-                    break
-            else:
-                empty_count = 0
-            lines.append(line)
-        except EOFError:
-            break
-
-    while lines and lines[-1] == '':
-        lines.pop()
-
-    result = "\n".join(lines).strip()
-    print("-" * 60 + "\n✅ Input saved successfully!\n")
-
-    if not result:
-        return default_val
-    return result
-
-
 def prepare_prompt():
     print("#AI will modify codes")
     """
@@ -182,7 +144,6 @@ def prepare_prompt():
         "requirement": requirement,
         "additional_info": additional_info
     }
-
 
 def generate_prompt_with_context(cli_file_path, context):
     """
@@ -272,7 +233,6 @@ def generate_prompt_with_context(cli_file_path, context):
     except Exception as e:
         print(f"\n❌ Failed to save file: {e}")
 
-
 def generate_prompt(cli_file_path=None):
     """
     Legacy wrapper for backward compatibility.
@@ -281,11 +241,9 @@ def generate_prompt(cli_file_path=None):
     context = prepare_prompt()
     generate_prompt_with_context(cli_file_path, context)
 
-
 def main():
     cli_file_path = sys.argv[1] if len(sys.argv) > 1 else None
     generate_prompt(cli_file_path)
-
 
 if __name__ == "__main__":
     try:
