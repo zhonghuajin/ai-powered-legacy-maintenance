@@ -46,7 +46,7 @@ def main():
     parser.add_argument(
         "--skip-npm",
         action="store_true",
-        help="Skip executing 'npm install' in the JavaScript directory"
+        help="Skip executing 'npm install' in the JavaScript and trace-visualizer directories"
     )
     args = parser.parse_args()
 
@@ -460,6 +460,39 @@ def main():
                 sys.exit(1)
             else:
                 print("npm install completed successfully.")
+        except FileNotFoundError:
+            print(
+                f"Error: npm command '{npm_cmd}' not found. "
+                "Please ensure Node.js/npm is installed and in your PATH.",
+                file=sys.stderr
+            )
+            sys.exit(1)
+
+    print("\nStep 11: Executing npm install for trace-visualizer...")
+    trace_vis_dir = os.path.join(script_dir, "trace-visualizer")
+
+    if args.skip_npm:
+        print("Skipped 'npm install' for trace-visualizer as requested.")
+        print("Note: If you need trace-visualizer support later, run it manually:")
+        print(f"      cd {trace_vis_dir}")
+        print("      npm install")
+    else:
+        if not os.path.isdir(trace_vis_dir):
+            print(
+                f"Error: trace-visualizer directory not found at {trace_vis_dir}", file=sys.stderr)
+            sys.exit(1)
+
+        npm_cmd = "npm.cmd" if os.name == "nt" else "npm"
+        try:
+            result = run_without_proxy(
+                [npm_cmd, "install"],
+                cwd=trace_vis_dir
+            )
+            if result.returncode != 0:
+                print("npm install for trace-visualizer failed.", file=sys.stderr)
+                sys.exit(1)
+            else:
+                print("npm install for trace-visualizer completed successfully.")
         except FileNotFoundError:
             print(
                 f"Error: npm command '{npm_cmd}' not found. "
