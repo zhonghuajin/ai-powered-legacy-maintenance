@@ -138,6 +138,48 @@ def _simple_inject(file_path, snippet, content):
         print_color(f"[!] Auto-injection for {filename} is not fully implemented yet. Please add manually:\n{snippet}", Colors.YELLOW)
         return False
 
+def _get_target_folders():
+    """
+    Read target paths from projects/clean_room_revamp_php/target-folders.txt
+    and return them as absolute paths.
+    """
+    target_file = os.path.join('projects', 'clean_room_revamp_php', 'target-folders.txt')
+    if not os.path.exists(target_file):
+        return []
+    
+    allowed_paths = []
+    try:
+        with open(target_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                stripped = line.strip()
+                if stripped and not stripped.startswith('#'):
+                    allowed_paths.append(os.path.abspath(stripped))
+    except Exception as e:
+        print_color(f"[!] Error reading target folders file: {e}", Colors.RED)
+    return allowed_paths
+
+def _is_allowed_directory(dir_name, target_paths):
+    """
+    Check if dir_name is one of the target paths or a parent directory of any target path.
+    """
+    if not target_paths:
+        return False
+
+    dir_abs = os.path.abspath(dir_name)
+    for target in target_paths:
+        target_abs = os.path.abspath(target)
+        if dir_abs == target_abs:
+            return True
+        try:
+            # Check if dir_abs is a parent of target_abs
+            common = os.path.commonpath([dir_abs, target_abs])
+            if common == dir_abs:
+                return True
+        except ValueError:
+            # Handle different drives on Windows
+            continue
+    return False
+
 def update_dependencies(successful_files):
     """
     Navigate to the directories of the successfully modified files 
@@ -145,6 +187,9 @@ def update_dependencies(successful_files):
     """
     if not successful_files:
         return
+
+    # Load target paths for filtering
+    target_paths = _get_target_folders()
 
     print_color(f"\n>>> Updating dependencies for {len(successful_files)} files...", Colors.CYAN)
     original_cwd = os.getcwd()
@@ -154,6 +199,12 @@ def update_dependencies(successful_files):
     
     for file_path in successful_files:
         dir_name = os.path.dirname(file_path)
+        
+        # Filter based on target paths
+        if not _is_allowed_directory(dir_name, target_paths):
+            print_color(f"[-] Skipping dependency update in {dir_name} (Not in target-folders or its parent paths)", Colors.YELLOW)
+            continue
+
         file_name = os.path.basename(file_path).lower()
         
         cmd = []
