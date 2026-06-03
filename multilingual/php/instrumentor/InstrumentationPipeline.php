@@ -9,9 +9,6 @@ use PhpParser\NodeVisitorAbstract;
 use PhpParser\ParserFactory;
 use PhpParser\PrettyPrinter;
 
-/**
- * AST Traverser: Insert instrumentation comment at the beginning of executable blocks
- */
 class BlockInstrumentorVisitor extends NodeVisitorAbstract {
     private $filePath;
 
@@ -90,28 +87,17 @@ class BlockInstrumentorVisitor extends NodeVisitorAbstract {
     }
 }
 
-/**
- * AST Traverser: Collect line ranges of all functions, class methods and closures.
- *
- * A node stack is maintained so that anonymous closures can be given a
- * descriptive, context-aware name (mirroring the JS pipeline). Named functions
- * and methods are already unique within a file (namespace / Class::method
- * prefix), so they keep their plain names; only closures receive an '@line'
- * suffix to guarantee uniqueness.
- */
 class MethodRangeVisitor extends NodeVisitorAbstract {
     private $namespace = '';
     private $classStack = [];
     private $ranges = [];
 
-    /** @var Node[] Stack of ancestor nodes (excluding the node currently entered). */
     private $nodeStack = [];
-    /** @var array<int,string> spl_object_id(closure) => base name computed on enter. */
+
     private $closureNames = [];
 
     public function enterNode(Node $node) {
-        // Compute the closure's contextual name BEFORE pushing it onto the
-        // stack, so that the stack top is still its parent.
+
         if ($node instanceof Node\Expr\Closure) {
             $this->closureNames[spl_object_id($node)] = $this->computeClosureName();
         }
@@ -132,7 +118,7 @@ class MethodRangeVisitor extends NodeVisitorAbstract {
     }
 
     public function leaveNode(Node $node) {
-        // Keep the stack balanced (enterNode always pushes exactly one node).
+
         array_pop($this->nodeStack);
 
         if ($node instanceof Node\Stmt\Namespace_) {
@@ -148,8 +134,9 @@ class MethodRangeVisitor extends NodeVisitorAbstract {
         if ($node instanceof Node\Stmt\Function_) {
             $name = $node->name->toString();
             $fullName = $this->namespace ? "{$this->namespace}\\{$name}" : $name;
+
             $this->ranges[] = [
-                'name'  => $fullName,
+                'name'  => $fullName . '@' . $node->getStartLine(),
                 'start' => $node->getStartLine(),
                 'end'   => $node->getEndLine(),
             ];
@@ -162,14 +149,13 @@ class MethodRangeVisitor extends NodeVisitorAbstract {
             } else {
                 $fullName = $methodName;
             }
+
             $this->ranges[] = [
-                'name'  => $fullName,
+                'name'  => $fullName . '@' . $node->getStartLine(),
                 'start' => $node->getStartLine(),
                 'end'   => $node->getEndLine(),
             ];
         } elseif ($node instanceof Node\Expr\Closure) {
-            // Closures share names easily, so append the start line to keep the
-            // signature unique within the file (parallel to the JS '@line' rule).
             $base = $this->closureNames[spl_object_id($node)] ?? 'closure';
             $this->ranges[] = [
                 'name'  => $base . '@' . $node->getStartLine(),
@@ -180,16 +166,11 @@ class MethodRangeVisitor extends NodeVisitorAbstract {
         return null;
     }
 
-    /**
-     * Derive a descriptive base name for the closure currently being entered,
-     * using its parent / grandparent on the node stack.
-     */
     private function computeClosureName(): string {
         $n = count($this->nodeStack);
         $parent = $n >= 1 ? $this->nodeStack[$n - 1] : null;
         $grand  = $n >= 2 ? $this->nodeStack[$n - 2] : null;
 
-        // $fn = function () { ... }  /  $this->handler = function () { ... }
         if ($parent instanceof Node\Expr\Assign) {
             $var = $parent->var;
             if ($var instanceof Node\Expr\Variable && is_string($var->name)) {
@@ -203,7 +184,6 @@ class MethodRangeVisitor extends NodeVisitorAbstract {
             }
         }
 
-        // Callback argument: array_map(function () {}, ...) / $x->each(function () {})
         if ($parent instanceof Node\Arg) {
             $callee = 'callback';
             if ($grand instanceof Node\Expr\FuncCall && $grand->name instanceof Node\Name) {
@@ -224,20 +204,16 @@ class MethodRangeVisitor extends NodeVisitorAbstract {
     }
 }
 
-/**
- * Core Pipeline Class
- */
 class InstrumentationPipeline {
     private $mappingFile;
     private $rangeFile;
     private $signatureFile;
     private $isIncremental;
-    /** @var array Backup of the mapping file before running the pipeline steps (used for incremental mapping checks) */
+
     private $oldCommentMap = [];
 
-    /** Match original comments injected during instrumentation, e.g. // /abs/path/foo.php:123 */
     private const ORIGINAL_COMMENT_PATTERN = '/^(\s*)\/\/\s*(.+\.php:\d+)\s*$/m';
-    /** Match already-mapped comments, e.g. // INST#42 */
+
     private const MAPPED_COMMENT_PATTERN   = '/^(\s*)\/\/\s*INST#(\d+)\s*$/m';
 
     public function __construct(bool $isIncremental, string $mappingFile, string $rangeFile, string $signatureFile) {
@@ -247,9 +223,6 @@ class InstrumentationPipeline {
         $this->signatureFile = $signatureFile;
     }
 
-    /**
-     * Helper to generate incremental file path (e.g. path/to/file.txt -> path/to/file.incremental.txt)
-     */
     private function getIncrementalPath(string $filePath): string {
         $dir = dirname($filePath);
         $filename = pathinfo($filePath, PATHINFO_FILENAME);
@@ -258,13 +231,12 @@ class InstrumentationPipeline {
     }
 
     public function run(array $targets) {
-        // Fall back to full mode if any mapping file is missing in incremental mode
+
         if ($this->isIncremental && (!file_exists($this->mappingFile) || !file_exists($this->rangeFile) || !file_exists($this->signatureFile))) {
             echo "Warning: mapping, range or signature file not found, falling back to full mode.\n";
             $this->isIncremental = false;
         }
 
-        // In incremental mode, back up the original mapping file BEFORE any steps modify files or mappings.
         if ($this->isIncremental && file_exists($this->mappingFile)) {
             $this->oldCommentMap = $this->loadRawMapping($this->mappingFile);
         }
@@ -277,23 +249,18 @@ class InstrumentationPipeline {
             die("No PHP files found.\n");
         }
 
-        // Step 1: Instrument (AST parse, collect ranges, and comment injection)
         echo ">> Step: Code Instrumentation & Range Collection\n";
         $newRanges = $this->instrumentFiles($files);
 
-        // Step 1.5: Update Method Ranges File
         echo ">> Step: Updating Method Ranges\n";
         $this->updateMethodRanges($files, $newRanges);
 
-        // Step 2: Encoding (generate / update ID mapping)
         echo ">> Step: Encoding Mapping\n";
         $this->encodeMapping($files);
 
-        // Step 2.5: Generate Block to Signature Mapping
         echo ">> Step: Generating Block to Signature Mapping\n";
         $this->generateBlockSignatures($files);
 
-        // Step 3: Activation (replace comments with function calls)
         echo ">> Step: Activation\n";
         $this->activate($files);
 
@@ -310,14 +277,12 @@ class InstrumentationPipeline {
             try {
                 $ast = $parser->parse($code);
 
-                // 1. Collect original method ranges before modifying AST
                 $rangeTraverser = new NodeTraverser();
                 $rangeVisitor = new MethodRangeVisitor();
                 $rangeTraverser->addVisitor($rangeVisitor);
                 $rangeTraverser->traverse($ast);
                 $allRanges[$file] = $rangeVisitor->getRanges();
 
-                // 2. Perform instrumentation comment injection
                 $traverser = new NodeTraverser();
                 $traverser->addVisitor(new BlockInstrumentorVisitor($file));
 
@@ -333,14 +298,9 @@ class InstrumentationPipeline {
         return $allRanges;
     }
 
-    /**
-     * Update the method-range.txt file.
-     * In incremental mode, only newly collected ranges are written to the incremental file.
-     */
     private function updateMethodRanges(array $files, array $newRanges) {
         $targetRanges = [];
 
-        // Collect ranges from target files
         foreach ($newRanges as $file => $ranges) {
             foreach ($ranges as $range) {
                 $targetRanges[] = [
@@ -352,7 +312,6 @@ class InstrumentationPipeline {
             }
         }
 
-        // Sort ranges by file path and start line for stability
         usort($targetRanges, function ($a, $b) {
             $fileCmp = strcmp($a['file'], $b['file']);
             if ($fileCmp !== 0) {
@@ -361,7 +320,6 @@ class InstrumentationPipeline {
             return $a['start'] <=> $b['start'];
         });
 
-        // Persist range file
         if ($this->isIncremental) {
             $outputFile = $this->getIncrementalPath($this->rangeFile);
             $this->writeRangeFile($outputFile, $targetRanges);
@@ -394,9 +352,6 @@ class InstrumentationPipeline {
         file_put_contents($filePath, implode("\n", $lines) . "\n");
     }
 
-    /**
-     * Read an existing range file.
-     */
     private function loadRawRanges(string $rangeFile): array {
         $result = [];
         $lines  = @file($rangeFile, FILE_IGNORE_NEW_LINES);
@@ -409,7 +364,7 @@ class InstrumentationPipeline {
             if ($trimmed === '' || $trimmed[0] === '#') {
                 continue;
             }
-            // Format: File Absolute Path | Method Name = Start Line-End Line
+
             if (preg_match('/^(.+?)\s*\|\s*(.+?)\s*=\s*(\d+)-(\d+)$/', $trimmed, $m)) {
                 $result[] = [
                     'file'  => trim($m[1]),
@@ -422,13 +377,9 @@ class InstrumentationPipeline {
         return $result;
     }
 
-    /**
-     * Build (or update) the block ID -> Method Signature mapping.
-     */
     private function generateBlockSignatures(array $files) {
         $blockToSignature = [];
 
-        // Load mappings and ranges based on current mode
         if ($this->isIncremental) {
             $mappingToLoad = $this->getIncrementalPath($this->mappingFile);
             $rangesToLoad  = $this->getIncrementalPath($this->rangeFile);
@@ -440,13 +391,11 @@ class InstrumentationPipeline {
         $commentMap = $this->loadRawMapping($mappingToLoad);
         $ranges = $this->loadRawRanges($rangesToLoad);
 
-        // Group ranges by file path for faster lookup
         $rangesByFile = [];
         foreach ($ranges as $range) {
             $rangesByFile[$range['file']][] = $range;
         }
 
-        // Find signature for target file blocks
         foreach ($commentMap as $id => $comment) {
             $filePath = $this->extractFilePathFromComment($comment);
             if ($filePath === null) {
@@ -458,12 +407,9 @@ class InstrumentationPipeline {
                 continue;
             }
 
-            $matchedSignature = '[Global]'; // Default if outside any function
+            $matchedSignature = '[Global]';
             if (isset($rangesByFile[$filePath])) {
-                // Pick the INNERMOST enclosing range (largest start; on a tie,
-                // the smallest span). The previous "break on first match" picked
-                // the OUTERMOST range, so a closure / nested function body would
-                // be wrongly attributed to its enclosing method.
+
                 $best = null;
                 foreach ($rangesByFile[$filePath] as $range) {
                     if ($line >= $range['start'] && $line <= $range['end']) {
@@ -481,7 +427,6 @@ class InstrumentationPipeline {
             $blockToSignature[$id] = $matchedSignature;
         }
 
-        // Persist signature file
         ksort($blockToSignature);
         if ($this->isIncremental) {
             $outputFile = $this->getIncrementalPath($this->signatureFile);
@@ -543,13 +488,9 @@ class InstrumentationPipeline {
         return (int) $afterColon;
     }
 
-    /**
-     * Build (or update) the comment -> ID mapping.
-     */
     private function encodeMapping(array $files) {
         $nextId = 1;
 
-        // In incremental mode, read the existing mapping file to find the next available ID
         if ($this->isIncremental && file_exists($this->mappingFile)) {
             $existingMap = $this->loadRawMapping($this->mappingFile);
             if (!empty($existingMap)) {
@@ -557,7 +498,6 @@ class InstrumentationPipeline {
             }
         }
 
-        // Scan original comments from target files
         $newComments = [];
         $seen        = [];
         foreach ($files as $file) {
@@ -573,10 +513,8 @@ class InstrumentationPipeline {
             }
         }
 
-        // Sort newly scanned comments by (path, line) for stable IDs
         $this->sortCommentsByPathAndLine($newComments);
 
-        // Allocate IDs for new comments
         $incrementalIdToComment = [];
         $commentToId = [];
         foreach ($newComments as $comment) {
@@ -590,7 +528,6 @@ class InstrumentationPipeline {
             return;
         }
 
-        // Replace // path:line with // INST#ID in target sources
         foreach ($files as $file) {
             $content = file_get_contents($file);
             $newContent = preg_replace_callback(
@@ -611,7 +548,6 @@ class InstrumentationPipeline {
             }
         }
 
-        // Persist mapping file
         ksort($incrementalIdToComment);
         if ($this->isIncremental) {
             $outputFile = $this->getIncrementalPath($this->mappingFile);
@@ -645,10 +581,6 @@ class InstrumentationPipeline {
         file_put_contents($filePath, implode("\n", $lines) . "\n");
     }
 
-    /**
-     * Read an existing mapping file. Lines starting with '#' or empty lines
-     * are ignored. Each entry has the form "<id> = <comment>".
-     */
     private function loadRawMapping(string $mappingFile): array {
         $result = [];
         $lines  = @file($mappingFile, FILE_IGNORE_NEW_LINES);
@@ -668,10 +600,6 @@ class InstrumentationPipeline {
         return $result;
     }
 
-    /**
-     * Extract the file path part from a comment like "/abs/path/foo.php:123".
-     * Returns null if the suffix after the last colon is not numeric.
-     */
     private function extractFilePathFromComment(string $comment): ?string {
         $lastColon = strrpos($comment, ':');
         if ($lastColon === false || $lastColon === 0) {
@@ -746,7 +674,6 @@ class InstrumentationPipeline {
     }
 }
 
-// CLI entry point
 if (php_sapi_name() === 'cli') {
     $options     = getopt("", ["incremental", "mapping:", "range:", "signature:"]);
     $incremental = isset($options['incremental']);

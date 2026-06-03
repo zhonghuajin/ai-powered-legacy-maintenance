@@ -5,6 +5,7 @@ require_once __DIR__ . '/../vendor/autoload.php';
 use PhpParser\ParserFactory;
 use PhpParser\PrettyPrinter\Standard as PrettyPrinter;
 use PhpParser\Node;
+use PhpParser\Comment;
 
 class BlockLocation
 {
@@ -168,12 +169,12 @@ class BlockPruner
                 continue;
             }
 
-            $prunedCount = self::pruneUnexecutedBlocks($ast, $unexecutedLines, $executedLineToId, $threadName);
+            $prunedCount = self::pruneUnexecutedBlocks($ast, $unexecutedLines);
 
             $matchingSourceDir = self::findMatchingSourceDir($srcFile, $sourceDirs);
             $relativePathBase = ($baseRefDir !== null) ? $baseRefDir : $matchingSourceDir;
             $relativePath = self::getRelativePath($relativePathBase, $srcFile);
-            
+
             $outFile = $outputDir . DIRECTORY_SEPARATOR . $safeDirName . DIRECTORY_SEPARATOR . $relativePath;
 
             $outDir = dirname($outFile);
@@ -184,11 +185,8 @@ class BlockPruner
             $printer = new PrettyPrinter();
             file_put_contents($outFile, $printer->prettyPrintFile($ast) . "\n");
 
-            $totalBlocks = count($lineToBlockId);
-            $keptBlocks = count($executedLineToId);
             $clearedBlocks = count($unexecutedLines);
-            printf("  %-55s  Kept %3d | Cleared %3d | Total %3d blocks",
-                basename($srcFile), $keptBlocks, $clearedBlocks, $totalBlocks);
+            printf("  %-55s  Cleared %3d unexecuted blocks", basename($srcFile), $clearedBlocks);
 
             if ($prunedCount !== $clearedBlocks) {
                 printf("  ⚠ AST matched %d/%d", $prunedCount, $clearedBlocks);
@@ -219,13 +217,41 @@ class BlockPruner
         return $best;
     }
 
-    private static function pruneUnexecutedBlocks(
-        array  &$ast,
-        array  $unexecutedLines,
-        array  $executedLineToId,
-        string $threadName
-    ): int {
-        if (empty($unexecutedLines) && empty($executedLineToId)) return 0;
+    private static function pruneUnexecutedBlocks(array &$ast, array $unexecutedLines): int
+    {
+        if (empty($unexecutedLines)) return 0;
+
+        self::walkAstWithDepth($ast, 0, function (Node $node) {
+            $isAnyFunction = $node instanceof Node\Stmt\Function_
+                || $node instanceof Node\Stmt\ClassMethod
+                || $node instanceof Node\Expr\Closure
+                || $node instanceof Node\Expr\ArrowFunction;
+
+            if ($isAnyFunction) {
+                $startLine = $node->getStartLine();
+                if ($startLine >= 0) {
+                    $commentText = " line: {$startLine} ";
+
+                    $hasLineComment = false;
+                    $comments = $node->getComments();
+                    if (!empty($comments)) {
+                        foreach ($comments as $comment) {
+                            if (trim($comment->getText()) === "line: {$startLine}" || trim($comment->getText()) === "// line: {$startLine}") {
+                                $hasLineComment = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!$hasLineComment) {
+                        $newComment = new Comment("//{$commentText}");
+                        $existingComments = $node->getAttribute('comments', []);
+                        array_unshift($existingComments, $newComment);
+                        $node->setAttribute('comments', $existingComments);
+                    }
+                }
+            }
+        });
 
         $unexecutedBlocks = [];
 
@@ -237,7 +263,20 @@ class BlockPruner
             $startLine = $node->getStartLine();
             if ($startLine < 0) return;
 
-            if (isset($unexecutedLines[$startLine])) {
+            $hasExecutedDescendant = false;
+            self::walkAstWithDepth($node, 0, function (Node $subNode) use ($unexecutedLines, &$hasExecutedDescendant, $node) {
+
+                if ($subNode === $node) return;
+
+                if (self::isBlockNode($subNode)) {
+                    $subStartLine = $subNode->getStartLine();
+                    if ($subStartLine >= 0 && !isset($unexecutedLines[$subStartLine])) {
+                        $hasExecutedDescendant = true;
+                    }
+                }
+            });
+
+            if (isset($unexecutedLines[$startLine]) && !$hasExecutedDescendant) {
                 $node->setAttribute('_pruner_depth', $depth);
                 $unexecutedBlocks[] = $node;
             }
@@ -249,17 +288,9 @@ class BlockPruner
             return $depthB - $depthA;
         });
 
-        $executedLineSet = $executedLineToId;
-
         $prunedCount = 0;
         foreach ($unexecutedBlocks as $block) {
-            if (!self::containsExecutedBlock($block, $executedLineSet)) {
-
-                self::clearBlockStmts($block);
-            } else {
-
-                self::removeNonExecutedChildren($block, $executedLineSet);
-            }
+            self::clearBlockStmts($block);
             $prunedCount++;
         }
 
@@ -276,47 +307,6 @@ class BlockPruner
         if (property_exists($node, 'stmts') && is_array($node->stmts)) {
             $node->stmts = [];
         }
-    }
-
-    private static function removeNonExecutedChildren(Node $block, array $executedLineSet): void
-    {
-        if (!property_exists($block, 'stmts') || !is_array($block->stmts)) return;
-
-        $kept = [];
-        foreach ($block->stmts as $stmt) {
-            if ($stmt instanceof Node && self::containsExecutedBlock($stmt, $executedLineSet)) {
-                $kept[] = $stmt;
-            }
-        }
-        $block->stmts = $kept;
-    }
-
-    private static function containsExecutedBlock(Node $node, array $executedLineSet): bool
-    {
-
-        if (self::isBlockNode($node)) {
-            $startLine = $node->getStartLine();
-            if ($startLine >= 0 && isset($executedLineSet[$startLine])) {
-                return true;
-            }
-        }
-
-        foreach ($node->getSubNodeNames() as $name) {
-            $subNode = $node->{$name};
-            if ($subNode instanceof Node) {
-                if (self::containsExecutedBlock($subNode, $executedLineSet)) {
-                    return true;
-                }
-            } elseif (is_array($subNode)) {
-                foreach ($subNode as $item) {
-                    if ($item instanceof Node && self::containsExecutedBlock($item, $executedLineSet)) {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        return false;
     }
 
     private static function walkAstWithDepth($nodes, int $depth, callable $callback): void
@@ -401,7 +391,7 @@ class BlockPruner
             $line = trim($line);
             if (empty($line) || $line[0] === '#') continue;
 
-            if (preg_match('/^\[(.+?)]/', $line, $matches)) {
+            if (preg_match('/^\[(.+?)\]/', $line, $matches)) {
                 $currentThread = $matches[1];
                 if (!isset($result[$currentThread])) {
                     $result[$currentThread] = [];
