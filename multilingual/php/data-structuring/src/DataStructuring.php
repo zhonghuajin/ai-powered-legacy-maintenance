@@ -123,19 +123,19 @@ class MethodCollectorVisitor extends NodeVisitorAbstract
             }
 
             if ($node instanceof Function_) {
-                $fullName = $this->namespace ? "{$this->namespace}\\{$methodName}" : $methodName;
+                $fullName = $this->namespace ? $this->namespace . '\\' . $methodName : $methodName;
 
-                $signature = "{$fullName}@{$startLine}";
+                $signature = $fullName . '@' . $startLine;
                 $className = '<global>';
             } else {
                 $currentClass = end($this->classStack) ?: '';
                 if ($currentClass) {
-                    $fullClassName = $this->namespace ? "{$this->namespace}\\{$currentClass}" : $currentClass;
+                    $fullClassName = $this->namespace ? $this->namespace . '\\' . $currentClass : $currentClass;
 
-                    $signature = "{$fullClassName}::{$methodName}@{$startLine}";
+                    $signature = $fullClassName . '::' . $methodName . '@' . $startLine;
                     $className = $fullClassName;
                 } else {
-                    $signature = "{$methodName}@{$startLine}";
+                    $signature = $methodName . '@' . $startLine;
                     $className = '';
                 }
             }
@@ -236,9 +236,10 @@ class DataStructuring
             return 1;
         }
 
-        $md = "# File-Internal Method Index\n\n";
+        $md = "# File-Internal Method Index (Call Tree View)\n\n";
         $md .= "> **Description & Legend:**\n";
-        $md .= "> This document lists every function/method extracted via AST analysis.\n";
+        $md .= "> This document lists every function/method extracted via AST analysis, organized as a Call Tree.\n";
+        $md .= "> - Indentation represents the file-internal calling hierarchy.\n";
         $md .= "> - Each method is emitted with a signature identical to the instrumentation pipeline (`name@line`, or `Class::method@line`).\n";
         $md .= "> - The line numbers and signatures are mapped back to the **original source code** using the injected comments.\n";
         $md .= "> - `*Calls:*` lists direct call expressions for reference only; it does not affect signature matching.\n\n";
@@ -286,10 +287,7 @@ class DataStructuring
 
                     $md .= "## File: `{$relativePath}`\n\n";
 
-                    foreach ($visitor->methods as $node) {
-                        $md .= self::renderMethod($node);
-                        $md .= "---\n\n";
-                    }
+                    $md .= self::renderCallTree($visitor->methods);
 
                 } catch (\Throwable $e) {
                     fwrite(STDERR, "Warning: Failed to parse file {$phpFile} : " . $e->getMessage() . "\n");
@@ -315,28 +313,112 @@ class DataStructuring
         return $files;
     }
 
-    private static function renderMethod(MethodNode $node): string
+    private static function renderCallTree(array $methods): string
     {
-        $md = "- **Method:** `{$node->signature}` (Params: {$node->paramCount})\n";
-        $md .= "- **File Path:** `{$node->filePath}`\n";
-        $md .= "- **Original Line:** `{$node->startLine}`\n\n";
+        $md = "";
+
+        $calledSignatures = [];
+        $adjacencyList = [];
+
+        foreach ($methods as $sig => $node) {
+            $adjacencyList[$sig] = [];
+            foreach ($node->calls as $call) {
+
+                foreach ($methods as $targetSig => $targetNode) {
+                    if ($targetNode->methodName === $call->name) {
+                        $isMatch = false;
+                        if ($call->scope === null || in_array($call->scope, ['this', 'self', 'static', 'parent'])) {
+                            $isMatch = true;
+                        } elseif ($call->scope === $targetNode->className || str_ends_with($targetNode->className, '\\' . $call->scope)) {
+                            $isMatch = true;
+                        }
+
+                        if ($isMatch) {
+                            $adjacencyList[$sig][] = $targetSig;
+                            $calledSignatures[$targetSig] = true;
+                        }
+                    }
+                }
+            }
+
+            $adjacencyList[$sig] = array_unique($adjacencyList[$sig]);
+        }
+
+        $rootSignatures = [];
+        foreach (array_keys($methods) as $sig) {
+            if (!isset($calledSignatures[$sig])) {
+                $rootSignatures[] = $sig;
+            }
+        }
+
+        if (empty($rootSignatures)) {
+            $rootSignatures = array_keys($methods);
+        }
+
+        $visited = [];
+        foreach ($rootSignatures as $rootSig) {
+            $md .= self::dfsRender($rootSig, $methods, $adjacencyList, 0, $visited);
+        }
+
+        foreach ($methods as $sig => $node) {
+            if (!isset($visited[$sig])) {
+                $md .= self::dfsRender($sig, $methods, $adjacencyList, 0, $visited);
+            }
+        }
+
+        return $md;
+    }
+
+    private static function dfsRender(string $sig, array $methods, array $adjacencyList, int $depth, array &$visited): string
+    {
+        if (isset($visited[$sig])) {
+            $node = $methods[$sig];
+            $indent = str_repeat('    ', $depth);
+            return $indent . '- **Method:** `' . $node->signature . "` *(See above)*\n" . $indent . "---\n\n";
+        }
+
+        $visited[$sig] = true;
+        $node = $methods[$sig];
+        $md = self::renderMethod($node, $depth);
+        $md .= str_repeat('    ', $depth) . "---\n\n";
+
+        if (isset($adjacencyList[$sig])) {
+            foreach ($adjacencyList[$sig] as $childSig) {
+                $md .= self::dfsRender($childSig, $methods, $adjacencyList, $depth + 1, $visited);
+            }
+        }
+
+        return $md;
+    }
+
+    private static function renderMethod(MethodNode $node, int $depth = 0): string
+    {
+        $indent = str_repeat('    ', $depth);
+
+        $md = $indent . '- **Method:** `' . $node->signature . '` (Params: ' . $node->paramCount . ")\n";
+        $md .= $indent . '- **File Path:** `' . $node->filePath . "`\n";
+        $md .= $indent . '- **Original Line:** `' . $node->startLine . "`\n\n";
 
         if ($node->sourceCode !== '') {
             $source = trim($node->sourceCode);
-            $md .= "```php\n";
-            $md .= $source . "\n";
-            $md .= "```\n";
+
+            $lines = explode("\n", $source);
+            $indentedSource = implode("\n" . $indent, $lines);
+
+            $md .= $indent . "```php\n";
+            $md .= $indent . $indentedSource . "\n";
+            $md .= $indent . "```\n";
         }
 
         if (!empty($node->calls)) {
-            $md .= "\n*Calls:*\n";
+            $md .= "\n" . $indent . "*Calls:*\n";
             foreach ($node->calls as $call) {
                 $scopeStr = $call->scope ? $call->scope . '->' : '';
 
                 if ($call->scope !== null && !in_array($call->scope, ['this', 'self', 'parent', 'static'])) {
                     $scopeStr = $call->scope . '::';
                 }
-                $md .= "    - `{$scopeStr}{$call->name}({$call->argCount} args)`\n";
+                $md .= $indent . '    - `' . $scopeStr . $call->name . '(' . $call->argCount . " args)`\n";
             }
         }
 
