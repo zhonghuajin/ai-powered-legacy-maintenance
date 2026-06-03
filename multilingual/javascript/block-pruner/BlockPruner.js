@@ -140,7 +140,6 @@ class BlockPruner {
     }
 
     static pruneUnexecutedBlocks(ast, unexecutedLines) {
-        const unexecutedBlocks = [];
 
         traverse(ast, {
             enter(path) {
@@ -169,6 +168,12 @@ class BlockPruner {
                 }
             }
         });
+
+        if (!unexecutedLines || Object.keys(unexecutedLines).length === 0) {
+            return 0;
+        }
+
+        const unexecutedBlocks = [];
 
         traverse(ast, {
             BlockStatement: {

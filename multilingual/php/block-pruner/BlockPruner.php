@@ -219,7 +219,6 @@ class BlockPruner
 
     private static function pruneUnexecutedBlocks(array &$ast, array $unexecutedLines): int
     {
-        if (empty($unexecutedLines)) return 0;
 
         self::walkAstWithDepth($ast, 0, function (Node $node) {
             $isAnyFunction = $node instanceof Node\Stmt\Function_
@@ -252,6 +251,8 @@ class BlockPruner
                 }
             }
         });
+
+        if (empty($unexecutedLines)) return 0;
 
         $unexecutedBlocks = [];
 
