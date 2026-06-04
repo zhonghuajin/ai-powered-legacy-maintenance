@@ -277,4 +277,4 @@ def handle_instrumentation_dependencies(work_dir, proj_path, git_root, ask_llm_d
     print_color(
         "\n>>> Parsing LLM response and injecting dependencies...", Colors.CYAN)
 
-    run_injection(llm_response_file, snippets_json_path, work_dir)
+    run_injection(llm_response_file, snippets_json_path, work_dir, proj_path)

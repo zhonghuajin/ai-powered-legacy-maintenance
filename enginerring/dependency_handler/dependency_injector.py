@@ -138,12 +138,10 @@ def _simple_inject(file_path, snippet, content):
         print_color(f"[!] Auto-injection for {filename} is not fully implemented yet. Please add manually:\n{snippet}", Colors.YELLOW)
         return False
 
-def _get_target_folders():
-    """
-    Read target paths from projects/clean_room_revamp_php/target-folders.txt
-    and return them as absolute paths.
-    """
-    target_file = os.path.join('projects', 'clean_room_revamp_php', 'target-folders.txt')
+def _get_target_folders(proj_path):
+
+    target_file = os.path.join(proj_path, 'target-folders.txt')
+
     if not os.path.exists(target_file):
         return []
     
@@ -185,7 +183,7 @@ def _is_allowed_directory(dir_name, target_paths):
             continue
     return False
 
-def update_dependencies(successful_files):
+def update_dependencies(successful_files, proj_path):
     """
     Navigate to the directories of the successfully modified files 
     and execute the corresponding package manager update commands.
@@ -194,7 +192,7 @@ def update_dependencies(successful_files):
         return
 
     # Load target paths for filtering
-    target_paths = _get_target_folders()
+    target_paths = _get_target_folders(proj_path)
 
     print_color(f"\n>>> Updating dependencies for {len(successful_files)} files...", Colors.CYAN)
     original_cwd = os.getcwd()
@@ -236,7 +234,7 @@ def update_dependencies(successful_files):
             # Always ensure we return to the original working directory
             os.chdir(original_cwd)
 
-def run_injection(llm_response_file, snippets_json_path, work_dir=None):
+def run_injection(llm_response_file, snippets_json_path, work_dir=None, proj_path=None):
     if not os.path.exists(llm_response_file):
         print_color(f"[!] LLM response file not found: {llm_response_file}", Colors.RED)
         return []
@@ -273,6 +271,6 @@ def run_injection(llm_response_file, snippets_json_path, work_dir=None):
             
     # Trigger the dependency update process for successfully modified files
     if successful_files:
-        update_dependencies(successful_files)
+        update_dependencies(successful_files, proj_path)
         
     return successful_files
