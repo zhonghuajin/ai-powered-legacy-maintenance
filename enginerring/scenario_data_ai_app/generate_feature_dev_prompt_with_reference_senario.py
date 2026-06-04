@@ -5,6 +5,8 @@ import os
 import sys
 
 from editor_util import get_multiline_input
+# 导入公共模块
+from prompt_common import load_trace_and_flow_data, save_prompt_to_file
 
 """
 AI will modify codes
@@ -127,37 +129,27 @@ path/to/new/inferred_file.ext
 # 2. Interactive Guidance Logic
 # ==========================================
 
-def prepare_prompt(proj_path=None): # ✨ [Added] Added optional parameter proj_path to support precise scan scenario
+
+def prepare_prompt(proj_path=None):
     print("# AI will modify codes")
-    """
-    Phase 1: Interactive prompt preparation.
-    Collects user inputs before long-running tasks.
-    """
     print("="*50)
     print("🚀 AI Secondary Development Prompt Auto Generator")
     print("="*50)
     print("Please enter the required information as prompted.\n")
 
-    # 1. Collect target feature (supporting multiline input)
     requirement = get_multiline_input(
         "🎯 1. Please enter the [Target New Feature] (e.g., add a Semaphore-based test scenario):",
         default_val="[No specific requirement provided, please let the AI analyze possible extension points in the current scenario]"
     )
-
-    # 2. Skip additional notes step
     additional_info = "[No additional notes provided.]"
 
-    # ✨ [Added] Advance interaction for Select Another Scenario for Trace Data
     other_trace_data_content = ""
     if proj_path:
-        # proj_path usually follows the structure: work_dir/projects/project_name
-        # we can locate the projects directory via its parent directory
         projects_dir = os.path.dirname(proj_path)
         scenarios = []
         if os.path.exists(projects_dir):
             for root, dirs, files in os.walk(projects_dir):
                 if 'final-output-calltree.md' in files:
-                    # Exclude the currently running scenario directory itself
                     if os.path.abspath(root) != os.path.abspath(proj_path):
                         scenarios.append(root)
 
@@ -170,32 +162,32 @@ def prepare_prompt(proj_path=None): # ✨ [Added] Added optional parameter proj_
                 print(f"  {i}. {rel_path}")
             print('========================================')
 
-            choice = input(f'Enter your choice to inject reference trace (1-{len(scenarios)}, or press Enter to skip): ').strip()
+            choice = input(
+                f'Enter your choice to inject reference trace (1-{len(scenarios)}, or press Enter to skip): ').strip()
             if choice.isdigit() and 1 <= int(choice) <= len(scenarios):
                 selected_scenario_dir = scenarios[int(choice) - 1]
-                trace_file_path = os.path.join(selected_scenario_dir, 'final-output-calltree.md')
-                flow_file_path = os.path.join(selected_scenario_dir, 'execution_flow_with_code.md')
+                trace_file_path = os.path.join(
+                    selected_scenario_dir, 'final-output-calltree.md')
+                flow_file_path = os.path.join(
+                    selected_scenario_dir, 'execution_flow_with_code.md')
 
                 try:
-                    # 1. Read call tree data
                     with open(trace_file_path, 'r', encoding='utf-8') as tf:
                         trace_data = tf.read()
 
-                    # 2. Read execution flow data (if exists)
                     flow_data = ""
                     if os.path.exists(flow_file_path):
                         try:
                             with open(flow_file_path, 'r', encoding='utf-8') as ff:
                                 flow_data = ff.read()
                         except Exception as fe:
-                            print(f"[!] Failed to read execution flow from reference scenario: {fe}")
+                            print(
+                                f"[!] Failed to read execution flow from reference scenario: {fe}")
 
                     other_trace_data_header = f"\n\n=========================================\n### Trace Data from Other Scenario: {os.path.basename(selected_scenario_dir)}\n> **Note**: This is runtime data from another scenario and may be helpful as a reference for the current implementation requirements.\n=========================================\n"
-                    
-                    # Append call tree data (using global constant CALL_TREE_DESC)
-                    other_trace_data_content = other_trace_data_header + f"#### Call Tree. {CALL_TREE_DESC}:\n" + trace_data
-                    
-                    # ✨ [Modified] Inject execution_flow_with_code.md data from the same directory (using global constant EXEC_FLOW_DESC)
+                    other_trace_data_content = other_trace_data_header + \
+                        f"#### Call Tree. {CALL_TREE_DESC}:\n" + trace_data
+
                     if flow_data:
                         other_trace_data_content += f"\n\n#### Execution Flow with Code. {EXEC_FLOW_DESC}:\n" + flow_data
                     else:
@@ -203,10 +195,11 @@ def prepare_prompt(proj_path=None): # ✨ [Added] Added optional parameter proj_
 
                     reference_note = "\n=========================================\n"
                     other_trace_data_content += reference_note
-                    
-                    print(f"[+] Successfully scheduled reference trace data and execution flow from {os.path.basename(selected_scenario_dir)} for injection.")
+                    print(
+                        f"[+] Successfully scheduled reference trace data and execution flow from {os.path.basename(selected_scenario_dir)} for injection.")
                 except Exception as e:
-                    print(f"[!] Failed to read trace data from reference scenario: {e}")
+                    print(
+                        f"[!] Failed to read trace data from reference scenario: {e}")
             else:
                 print('[!] Skipping reference trace data injection.')
         else:
@@ -215,120 +208,48 @@ def prepare_prompt(proj_path=None): # ✨ [Added] Added optional parameter proj_
     return {
         "requirement": requirement,
         "additional_info": additional_info,
-        "other_trace_data": other_trace_data_content # ✨ [Added] Store in context and pass to Phase 2
+        "other_trace_data": other_trace_data_content
     }
 
+
 def generate_prompt_with_context(cli_file_path, context):
-    """
-    Phase 2: Generate the final prompt using the collected context and trace data.
-    """
     if not context:
         context = prepare_prompt()
 
     requirement = context.get("requirement", "")
     additional_info = context.get("additional_info", "")
-    # ✨ [Added] Extract reference trace data pre-selected in Phase 1 from context
     other_trace_data = context.get("other_trace_data", "")
 
-    # Fallback to empty string if context does not contain it
     if not other_trace_data:
         other_trace_data = ""
 
-    # 3. Read trace data file
-    trace_data = ""
-    execution_flow_data = ""
+    trace_data, execution_flow_data = load_trace_and_flow_data(cli_file_path)
 
-    while True:
-        if cli_file_path:
-            file_path = cli_file_path
-            print(
-                f"\n📁 2. Using Call Chain Data File from arguments: {file_path}")
-            cli_file_path = None
-        else:
-            file_path = input(
-                "\n📁 2. Please enter the path to the [Call Chain Data File] (e.g., final-output-calltree.md):\n> ").strip()
-            # Remove possible quotes
-            file_path = file_path.strip('\'"')
-
-        if not file_path:
-            print("❌ File path cannot be empty. Please enter it again!")
-            continue
-
-        if not os.path.exists(file_path):
-            print(
-                f"❌ File not found: {file_path}. Please check whether the path is correct!")
-            continue
-
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                trace_data = f.read()
-            print("✅ Successfully loaded the call chain data!")
-
-            # Auto-detect execution_flow_with_code.md in the same directory
-            dir_name = os.path.dirname(os.path.abspath(file_path))
-            flow_path = os.path.join(dir_name, "execution_flow_with_code.md")
-
-            if os.path.exists(flow_path):
-                print(
-                    f"📁 Auto-detected execution flow file in the same directory: {flow_path}")
-                with open(flow_path, 'r', encoding='utf-8') as f_flow:
-                    execution_flow_data = f_flow.read()
-                print("✅ Successfully loaded the execution flow with code data!")
-            else:
-                print(
-                    f"⚠️ Warning: 'execution_flow_with_code.md' not found in {dir_name}.")
-                manual_flow_path = input(
-                    "👉 Please enter the path to [execution_flow_with_code.md] manually (or press Enter to skip):\n> ").strip().strip('\'"')
-                if manual_flow_path and os.path.exists(manual_flow_path):
-                    with open(manual_flow_path, 'r', encoding='utf-8') as f_flow:
-                        execution_flow_data = f_flow.read()
-                    print("✅ Successfully loaded the execution flow with code data!")
-                else:
-                    print("⚠️ Skipped loading execution flow data.")
-                    execution_flow_data = "[No execution flow with code data provided.]"
-            break
-        except Exception as e:
-            print(f"❌ Failed to read file: {e}")
-            continue
-
-    # 4. Assemble the final prompt (formatting global descriptions dynamically)
     formatted_template = PROMPT_TEMPLATE.format(
         call_tree_desc=CALL_TREE_DESC,
         exec_flow_desc=EXEC_FLOW_DESC
     )
-    
+
     final_prompt = formatted_template.format(
         requirement=requirement,
         additional_info=additional_info,
         trace_data=trace_data,
         execution_flow_data=execution_flow_data,
-        other_trace_data=other_trace_data # Fill in reference trace data
+        other_trace_data=other_trace_data
     )
 
-    # 5. Write to file
-    output_filename = "AI_Task_Prompt.md"
-    try:
-        with open(output_filename, 'w', encoding='utf-8') as f:
-            f.write(final_prompt)
-        print("\n" + "="*50)
-        print(
-            f"🎉 Success! The complete prompt has been generated and saved in the current directory as: {output_filename}")
-        print("👉 You can now open this file directly, copy all its contents, and send them to the AI!")
-        print("="*50)
-    except Exception as e:
-        print(f"\n❌ Failed to save file: {e}")
+    save_prompt_to_file(final_prompt)
+
 
 def generate_prompt(cli_file_path=None):
-    """
-    Legacy wrapper for backward compatibility.
-    Executes both phases sequentially.
-    """
     context = prepare_prompt()
     generate_prompt_with_context(cli_file_path, context)
+
 
 def main():
     cli_file_path = sys.argv[1] if len(sys.argv) > 1 else None
     generate_prompt(cli_file_path)
+
 
 if __name__ == "__main__":
     try:
