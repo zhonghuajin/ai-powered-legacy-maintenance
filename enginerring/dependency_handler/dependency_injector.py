@@ -160,23 +160,28 @@ def _get_target_folders():
 
 def _is_allowed_directory(dir_name, target_paths):
     """
-    Check if dir_name is one of the target paths or a parent directory of any target path.
+    Check if dir_name is one of the target paths OR an ancestor directory of any target path.
+    (e.g., dir_name is '.../broadband-backend' and target is '.../broadband-backend/app/Http')
     """
     if not target_paths:
         return False
 
-    dir_abs = os.path.abspath(dir_name)
+    # Normalize case and path separators for robust Windows comparison
+    dir_abs = os.path.normcase(os.path.normpath(os.path.abspath(dir_name)))
+    
     for target in target_paths:
-        target_abs = os.path.abspath(target)
+        target_abs = os.path.normcase(os.path.normpath(os.path.abspath(target)))
+        
         if dir_abs == target_abs:
             return True
         try:
-            # Check if dir_abs is a parent of target_abs
-            common = os.path.commonpath([dir_abs, target_abs])
+            # Find the common path between the directory and the target
+            common = os.path.normcase(os.path.normpath(os.path.commonpath([dir_abs, target_abs])))
+            # If the common path is dir_abs, it means dir_abs is a parent/ancestor of target_abs
             if common == dir_abs:
                 return True
         except ValueError:
-            # Handle different drives on Windows
+            # Handle different drives on Windows (e.g. C:\\ vs D:\\)
             continue
     return False
 
