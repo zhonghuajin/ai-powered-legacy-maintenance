@@ -156,7 +156,7 @@ class InstrumentationPipeline {
                 }
                 const methodName = p.node.key.name || 'anonymous';
                 ranges.push({
-                    name: `${className}::${methodName}`,
+                    name: self.buildRangeName(`${className}::${methodName}`, p.node),
                     start: p.node.loc.start.line,
                     end: p.node.loc.end.line
                 });
