@@ -248,7 +248,7 @@ def run_initial_startup_verification(work_dir, proj_path):
         }
         if config_path and os.path.exists(config_path):
             try:
-                with open(config_path, "w", encoding="utf-8") as f:
+                with open(config_data, "w", encoding="utf-8") as f:
                     json.dump(config_data, f, indent=4, ensure_ascii=False)
                 print_color(f"[Config] Successfully saved {config_key} to config.json", Colors.GREEN)
             except Exception as e:
@@ -467,6 +467,14 @@ def main():
                         os.chdir(original_cwd)
             else:
                 print_color("\n[!] Prompt generation was skipped or failed. No further actions taken.", Colors.YELLOW)
+
+            # Automatically switch to the project's source branch once entering the Choose action stage
+            if proj_path:
+                print_color("\n[System] Entering Choose action stage. Enforcing branch switch...", Colors.YELLOW)
+                try:
+                    switch_to_source_branch(proj_path)
+                except Exception as e:
+                    print_color(f"[WARN] Failed to switch branch: {e}", Colors.RED)
 
             print_color('\n[Scenario Schema] Choose action:', Colors.CYAN)
             print('  1. Skip generate_scenario_description (Default)')
