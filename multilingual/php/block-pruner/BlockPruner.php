@@ -219,7 +219,6 @@ class BlockPruner
 
     private static function pruneUnexecutedBlocks(array &$ast, array $unexecutedLines): int
     {
-
         self::walkAstWithDepth($ast, 0, function (Node $node) {
             $isAnyFunction = $node instanceof Node\Stmt\Function_
                 || $node instanceof Node\Stmt\ClassMethod
@@ -230,23 +229,50 @@ class BlockPruner
                 $startLine = $node->getStartLine();
                 if ($startLine >= 0) {
                     $commentText = " line: {$startLine} ";
+                    $newComment = new Comment("//{$commentText}");
 
-                    $hasLineComment = false;
-                    $comments = $node->getComments();
-                    if (!empty($comments)) {
-                        foreach ($comments as $comment) {
-                            if (trim($comment->getText()) === "line: {$startLine}" || trim($comment->getText()) === "// line: {$startLine}") {
-                                $hasLineComment = true;
-                                break;
+                    if ($node instanceof Node\Expr\ArrowFunction) {
+                        $expr = $node->expr;
+                        if ($expr instanceof Node) {
+                            $existingComments = $expr->getAttribute('comments', []);
+                            $hasLineComment = false;
+                            foreach ($existingComments as $comment) {
+                                if (trim($comment->getText()) === "line: {$startLine}" || trim($comment->getText()) === "// line: {$startLine}") {
+                                    $hasLineComment = true;
+                                    break;
+                                }
+                            }
+                            if (!$hasLineComment) {
+                                array_unshift($existingComments, $newComment);
+                                $expr->setAttribute('comments', $existingComments);
                             }
                         }
                     }
 
-                    if (!$hasLineComment) {
-                        $newComment = new Comment("//{$commentText}");
-                        $existingComments = $node->getAttribute('comments', []);
-                        array_unshift($existingComments, $newComment);
-                        $node->setAttribute('comments', $existingComments);
+                    elseif (property_exists($node, 'stmts') && is_array($node->stmts)) {
+                        if (empty($node->stmts)) {
+
+                            $nop = new Node\Stmt\Nop();
+                            $nop->setAttribute('comments', [$newComment]);
+                            $node->stmts = [$nop];
+                        } else {
+
+                            $firstStmt = $node->stmts[0];
+                            $existingComments = $firstStmt->getAttribute('comments', []);
+
+                            $hasLineComment = false;
+                            foreach ($existingComments as $comment) {
+                                if (trim($comment->getText()) === "line: {$startLine}" || trim($comment->getText()) === "// line: {$startLine}") {
+                                    $hasLineComment = true;
+                                    break;
+                                }
+                            }
+
+                            if (!$hasLineComment) {
+                                array_unshift($existingComments, $newComment);
+                                $firstStmt->setAttribute('comments', $existingComments);
+                            }
+                        }
                     }
                 }
             }

@@ -7,6 +7,8 @@ use PhpParser\ParserFactory;
 use PhpParser\Node;
 use PhpParser\Node\Stmt\ClassMethod;
 use PhpParser\Node\Stmt\Function_;
+use PhpParser\Node\Expr\Closure;
+use PhpParser\Node\Expr\ArrowFunction;
 use PhpParser\Node\Expr\MethodCall;
 use PhpParser\Node\Expr\StaticCall;
 use PhpParser\Node\Expr\FuncCall;
@@ -67,6 +69,9 @@ class MethodCollectorVisitor extends NodeVisitorAbstract
     private string $filePath;
     private string $fileContent;
 
+    private array $nodeStack = [];
+    private array $closureNames = [];
+
     public function __construct(string $filePath, string $fileContent)
     {
         $this->filePath = $filePath;
@@ -75,6 +80,29 @@ class MethodCollectorVisitor extends NodeVisitorAbstract
 
     private function getOriginalLine(Node $node): int
     {
+        if (property_exists($node, 'stmts') && is_array($node->stmts) && !empty($node->stmts)) {
+            $firstStmt = $node->stmts[0];
+            $comments = $firstStmt->getComments();
+            if (!empty($comments)) {
+                foreach ($comments as $comment) {
+                    if (preg_match('/line:\s*(\d+)/', $comment->getText(), $matches)) {
+                        return (int)$matches[1];
+                    }
+                }
+            }
+        }
+
+        if ($node instanceof ArrowFunction && isset($node->expr)) {
+            $comments = $node->expr->getComments();
+            if (!empty($comments)) {
+                foreach ($comments as $comment) {
+                    if (preg_match('/line:\s*(\d+)/', $comment->getText(), $matches)) {
+                        return (int)$matches[1];
+                    }
+                }
+            }
+        }
+
         $comments = $node->getComments();
         if (!empty($comments)) {
             foreach ($comments as $comment) {
@@ -83,11 +111,50 @@ class MethodCollectorVisitor extends NodeVisitorAbstract
                 }
             }
         }
+
         return $node->getStartLine();
+    }
+
+    private function computeClosureName(): string {
+        $n = count($this->nodeStack);
+        $parent = $n >= 1 ? $this->nodeStack[$n - 1] : null;
+        $grand  = $n >= 2 ? $this->nodeStack[$n - 2] : null;
+
+        if ($parent instanceof Node\Expr\Assign) {
+            $var = $parent->var;
+            if ($var instanceof Node\Expr\Variable && is_string($var->name)) {
+                return $var->name;
+            }
+            if ($var instanceof Node\Expr\PropertyFetch && $var->name instanceof Node\Identifier) {
+                return $var->name->toString();
+            }
+            if ($var instanceof Node\Expr\StaticPropertyFetch && $var->name instanceof Node\VarLikeIdentifier) {
+                return $var->name->toString();
+            }
+        }
+
+        if ($parent instanceof Node\Arg) {
+            $callee = 'callback';
+            if ($grand instanceof Node\Expr\FuncCall && $grand->name instanceof Node\Name) {
+                $callee = $grand->name->toString();
+            } elseif ($grand instanceof Node\Expr\MethodCall && $grand->name instanceof Node\Identifier) {
+                $callee = $grand->name->toString();
+            } elseif ($grand instanceof Node\Expr\StaticCall && $grand->name instanceof Node\Identifier) {
+                $callee = $grand->name->toString();
+            }
+            return $callee . '$cb';
+        }
+
+        return 'closure';
     }
 
     public function enterNode(Node $node)
     {
+
+        if ($node instanceof Closure || $node instanceof ArrowFunction) {
+            $this->closureNames[spl_object_id($node)] = $this->computeClosureName();
+        }
+
         if ($node instanceof Node\Stmt\Namespace_) {
             $this->namespace = $node->name ? $node->name->toString() : '';
         }
@@ -100,19 +167,31 @@ class MethodCollectorVisitor extends NodeVisitorAbstract
             $this->classStack[] = $className;
         }
 
-        if ($node instanceof ClassMethod || $node instanceof Function_) {
+        $this->nodeStack[] = $node;
+
+        if (
+            $node instanceof ClassMethod ||
+            $node instanceof Function_ ||
+            $node instanceof Closure ||
+            $node instanceof ArrowFunction
+        ) {
             if ($this->isEmptyMethod($node)) {
                 return null;
             }
 
-            $methodName = $node->name->toString();
+            if ($node instanceof ClassMethod) {
+                $methodName = $node->name->toString();
+                if (strcasecmp($methodName, '__construct') === 0 || strcasecmp($methodName, '__destruct') === 0) {
+                    return null;
+                }
+            } elseif ($node instanceof Function_) {
+                $methodName = $node->name->toString();
+            } else {
 
-            if (strcasecmp($methodName, '__construct') === 0 || strcasecmp($methodName, '__destruct') === 0) {
-                return null;
+                $methodName = $this->closureNames[spl_object_id($node)] ?? 'closure';
             }
 
             $paramCount = count($node->params);
-
             $startLine = $this->getOriginalLine($node);
 
             $startFilePos = $node->getStartFilePos();
@@ -124,14 +203,12 @@ class MethodCollectorVisitor extends NodeVisitorAbstract
 
             if ($node instanceof Function_) {
                 $fullName = $this->namespace ? $this->namespace . '\\' . $methodName : $methodName;
-
                 $signature = $fullName . '@' . $startLine;
                 $className = '<global>';
             } else {
                 $currentClass = end($this->classStack) ?: '';
                 if ($currentClass) {
                     $fullClassName = $this->namespace ? $this->namespace . '\\' . $currentClass : $currentClass;
-
                     $signature = $fullClassName . '::' . $methodName . '@' . $startLine;
                     $className = $fullClassName;
                 } else {
@@ -153,6 +230,8 @@ class MethodCollectorVisitor extends NodeVisitorAbstract
 
     public function leaveNode(Node $node)
     {
+        array_pop($this->nodeStack);
+
         if ($node instanceof Node\Stmt\Namespace_) {
             $this->namespace = '';
         } elseif (
@@ -167,6 +246,9 @@ class MethodCollectorVisitor extends NodeVisitorAbstract
 
     private function isEmptyMethod(Node $node): bool
     {
+        if ($node instanceof ArrowFunction) {
+            return !isset($node->expr);
+        }
         if (!isset($node->stmts) || $node->stmts === null) {
             return true;
         }
@@ -183,7 +265,12 @@ class MethodCollectorVisitor extends NodeVisitorAbstract
             }
             public function enterNode(Node $node) {
 
-                if ($node instanceof ClassMethod || $node instanceof Function_) {
+                if (
+                    $node instanceof ClassMethod ||
+                    $node instanceof Function_ ||
+                    $node instanceof Closure ||
+                    $node instanceof ArrowFunction
+                ) {
                     return NodeTraverser::DONT_TRAVERSE_CHILDREN;
                 }
 
@@ -214,7 +301,15 @@ class MethodCollectorVisitor extends NodeVisitorAbstract
             }
         };
         $traverser->addVisitor($visitor);
-        $traverser->traverse($parentNode->stmts ?? []);
+
+        $stmts = [];
+        if ($parentNode instanceof ArrowFunction) {
+            $stmts = [$parentNode->expr];
+        } else {
+            $stmts = $parentNode->stmts ?? [];
+        }
+
+        $traverser->traverse($stmts);
     }
 }
 

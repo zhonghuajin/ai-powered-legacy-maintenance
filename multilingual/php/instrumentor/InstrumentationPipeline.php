@@ -157,8 +157,17 @@ class MethodRangeVisitor extends NodeVisitorAbstract {
             ];
         } elseif ($node instanceof Node\Expr\Closure) {
             $base = $this->closureNames[spl_object_id($node)] ?? 'closure';
+
+            $className = end($this->classStack) ?: '';
+            if ($className) {
+                $fullClassName = $this->namespace ? "{$this->namespace}\\{$className}" : $className;
+                $fullName = "{$fullClassName}::{$base}";
+            } else {
+                $fullName = $this->namespace ? "{$this->namespace}\\{$base}" : $base;
+            }
+
             $this->ranges[] = [
-                'name'  => $base . '@' . $node->getStartLine(),
+                'name'  => $fullName . '@' . $node->getStartLine(),
                 'start' => $node->getStartLine(),
                 'end'   => $node->getEndLine(),
             ];
