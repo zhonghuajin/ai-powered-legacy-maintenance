@@ -44,6 +44,30 @@ function getJsFilesRecursively(dir) {
 }
 
 function getOriginalLine(node) {
+  if (node.body && node.body.type === 'BlockStatement' && node.body.body.length > 0) {
+    const firstStmt = node.body.body[0];
+    if (firstStmt.leadingComments && firstStmt.leadingComments.length > 0) {
+      for (const comment of firstStmt.leadingComments) {
+        const match = comment.value.match(/line:\s*(\d+)/);
+        if (match) {
+          return parseInt(match[1], 10);
+        }
+      }
+    }
+  }
+
+  if (node.body && node.body.type !== 'BlockStatement') {
+    if (node.body.leadingComments && node.body.leadingComments.length > 0) {
+      for (const comment of node.body.leadingComments) {
+        const match = comment.value.match(/line:\s*(\d+)/);
+        if (match) {
+          return parseInt(match[1], 10);
+        }
+      }
+    }
+  }
+
+  // 3. 兜底逻辑：从函数节点本身的头部注释中寻找行号
   if (node.leadingComments && node.leadingComments.length > 0) {
     for (const comment of node.leadingComments) {
       const match = comment.value.match(/line:\s*(\d+)/);
@@ -52,6 +76,7 @@ function getOriginalLine(node) {
       }
     }
   }
+
   return node.loc ? node.loc.start.line : 0;
 }
 
@@ -106,6 +131,10 @@ function buildRangeName(baseName, originalLine) {
 function isEmptyFunction(node) {
   if (!node.body) return true;
   if (node.body.type === 'BlockStatement') {
+    // 过滤掉只有我们插入的 EmptyStatement 的空函数
+    if (node.body.body.length === 1 && node.body.body[0].type === 'EmptyStatement') {
+      return true;
+    }
     return node.body.body.length === 0;
   }
   return false;
@@ -187,7 +216,6 @@ function analyzeFile(filePath, code, absPath) {
       const name = computeFunctionName(p);
       const origLine = getOriginalLine(p.node);
       
-      // 【修改点】向上寻找可能包裹该闭包的类，并统一签名格式
       let className = null;
       const classParent = p.findParent(parent => parent.isClassDeclaration() || parent.isClassExpression());
       if (classParent && classParent.node.id) {

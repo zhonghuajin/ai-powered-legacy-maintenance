@@ -140,7 +140,6 @@ class BlockPruner {
     }
 
     static pruneUnexecutedBlocks(ast, unexecutedLines) {
-
         traverse(ast, {
             enter(path) {
                 const node = path.node;
@@ -158,12 +157,31 @@ class BlockPruner {
                     const startLine = node.loc.start.line;
                     const commentValue = ` line: ${startLine} `;
 
-                    const hasLineComment = (node.leadingComments || []).some(
-                        c => c.value.trim() === `line: ${startLine}`
-                    );
+                    if (node.body && t.isBlockStatement(node.body)) {
+                        if (node.body.body.length === 0) {
 
-                    if (!hasLineComment) {
-                        t.addComment(node, 'leading', commentValue, true);
+                            const emptyStmt = t.emptyStatement();
+                            t.addComment(emptyStmt, 'leading', commentValue, true);
+                            node.body.body.push(emptyStmt);
+                        } else {
+                            const firstStmt = node.body.body[0];
+                            const hasLineComment = (firstStmt.leadingComments || []).some(
+                                c => c.value.trim() === `line: ${startLine}`
+                            );
+                            if (!hasLineComment) {
+                                t.addComment(firstStmt, 'leading', commentValue, true);
+                            }
+                        }
+                    }
+
+                    else if (node.body && !t.isBlockStatement(node.body)) {
+                        const expr = node.body;
+                        const hasLineComment = (expr.leadingComments || []).some(
+                            c => c.value.trim() === `line: ${startLine}`
+                        );
+                        if (!hasLineComment) {
+                            t.addComment(expr, 'leading', commentValue, true);
+                        }
                     }
                 }
             }
