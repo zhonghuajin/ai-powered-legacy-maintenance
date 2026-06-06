@@ -468,6 +468,14 @@ def main():
             else:
                 print_color("\n[!] Prompt generation was skipped or failed. No further actions taken.", Colors.YELLOW)
 
+            # Automatically switch to the project's source branch once entering the Choose action stage
+            if proj_path:
+                print_color("\n[System] Entering Choose action stage. Enforcing branch switch...", Colors.YELLOW)
+                try:
+                    switch_to_source_branch(proj_path)
+                except Exception as e:
+                    print_color(f"[WARN] Failed to switch branch: {e}", Colors.RED)
+
             print_color('\n[Scenario Schema] Choose action:', Colors.CYAN)
             print('  1. Skip generate_scenario_description (Default)')
             print('  2. Execute generate_scenario_description')
