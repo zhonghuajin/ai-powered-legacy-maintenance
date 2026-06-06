@@ -171,16 +171,33 @@ class InstrumentationPipeline {
             },
             ArrowFunctionExpression(p) {
                 const name = self.computeFunctionName(p);
+                
+                let className = null;
+                const classParent = p.findParent(parent => parent.isClassDeclaration() || parent.isClassExpression());
+                if (classParent && classParent.node.id) {
+                    className = classParent.node.id.name;
+                }
+                
+                const finalName = className ? `${className}::${name}` : name;
                 ranges.push({
-                    name: self.buildRangeName(name, p.node),
+                    name: self.buildRangeName(finalName, p.node),
                     start: p.node.loc.start.line,
                     end: p.node.loc.end.line
                 });
             },
             FunctionExpression(p) {
                 const name = self.computeFunctionName(p);
+                
+                // 【修改点】向上寻找可能包裹该闭包的类
+                let className = null;
+                const classParent = p.findParent(parent => parent.isClassDeclaration() || parent.isClassExpression());
+                if (classParent && classParent.node.id) {
+                    className = classParent.node.id.name;
+                }
+                
+                const finalName = className ? `${className}::${name}` : name;
                 ranges.push({
-                    name: self.buildRangeName(name, p.node),
+                    name: self.buildRangeName(finalName, p.node),
                     start: p.node.loc.start.line,
                     end: p.node.loc.end.line
                 });

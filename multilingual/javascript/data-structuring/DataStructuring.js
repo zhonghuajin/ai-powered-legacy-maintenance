@@ -172,13 +172,30 @@ function analyzeFile(filePath, code, absPath) {
     ArrowFunctionExpression(p) {
       const name = computeFunctionName(p);
       const origLine = getOriginalLine(p.node);
-      pushMethod(buildRangeName(name, origLine), '<anonymous>', name, p.node, origLine);
+      
+      let className = null;
+      const classParent = p.findParent(parent => parent.isClassDeclaration() || parent.isClassExpression());
+      if (classParent && classParent.node.id) {
+        className = classParent.node.id.name;
+      }
+
+      const signature = className ? `${className}::${name}@${origLine}` : `${name}@${origLine}`;
+      pushMethod(signature, className || '<anonymous>', name, p.node, origLine);
     },
 
     FunctionExpression(p) {
       const name = computeFunctionName(p);
       const origLine = getOriginalLine(p.node);
-      pushMethod(buildRangeName(name, origLine), '<anonymous>', name, p.node, origLine);
+      
+      // 【修改点】向上寻找可能包裹该闭包的类，并统一签名格式
+      let className = null;
+      const classParent = p.findParent(parent => parent.isClassDeclaration() || parent.isClassExpression());
+      if (classParent && classParent.node.id) {
+        className = classParent.node.id.name;
+      }
+
+      const signature = className ? `${className}::${name}@${origLine}` : `${name}@${origLine}`;
+      pushMethod(signature, className || '<anonymous>', name, p.node, origLine);
     }
   });
 
