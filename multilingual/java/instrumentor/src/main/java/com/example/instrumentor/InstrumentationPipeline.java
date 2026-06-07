@@ -10,28 +10,49 @@ public class InstrumentationPipeline {
 
     private final List<InstrumentationStep> steps = List.of(
             new InstrumentStep(),
+            new MethodRangeStep(),
             new EncodingStep(),
+            new SignatureStep(),
             new ActivationStep()
     );
 
     public static void main(String[] args) throws Exception {
         if (args.length < 1) {
-            System.err.println("Usage: InstrumentationPipeline [--incremental] [-m mappingFile] <target1> [target2 ...]");
+            System.err.println("Usage: InstrumentationPipeline [--incremental] [--mapping mappingFile] "
+                    + "[--range rangeFile] [--signature signatureFile] <target1> [target2 ...]");
             System.exit(1);
         }
 
         boolean incremental = false;
         Path mappingFile = null;
+        Path rangeFile = null;
+        Path signatureFile = null;
         List<Path> targets = new ArrayList<>();
 
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
                 case "--incremental" -> incremental = true;
-                case "-m" -> {
+                case "-m", "--mapping" -> {
                     if (i + 1 < args.length) {
                         mappingFile = Paths.get(args[++i]).toAbsolutePath().normalize();
                     } else {
-                        System.err.println("Missing value for -m");
+                        System.err.println("Missing value for " + args[i]);
+                        System.exit(1);
+                    }
+                }
+                case "--range" -> {
+                    if (i + 1 < args.length) {
+                        rangeFile = Paths.get(args[++i]).toAbsolutePath().normalize();
+                    } else {
+                        System.err.println("Missing value for --range");
+                        System.exit(1);
+                    }
+                }
+                case "--signature" -> {
+                    if (i + 1 < args.length) {
+                        signatureFile = Paths.get(args[++i]).toAbsolutePath().normalize();
+                    } else {
+                        System.err.println("Missing value for --signature");
                         System.exit(1);
                     }
                 }
@@ -47,13 +68,19 @@ public class InstrumentationPipeline {
         if (mappingFile == null) {
             mappingFile = Paths.get("block-line-mapping.txt").toAbsolutePath().normalize();
         }
+        if (rangeFile == null) {
+            rangeFile = Paths.get("method-range.txt").toAbsolutePath().normalize();
+        }
+        if (signatureFile == null) {
+            signatureFile = Paths.get("block-signature.txt").toAbsolutePath().normalize();
+        }
 
         if (incremental && !Files.exists(mappingFile)) {
             System.out.println("Warning: mapping file not found, falling back to full mode.");
             incremental = false;
         }
 
-        PipelineContext context = new PipelineContext(incremental, mappingFile);
+        PipelineContext context = new PipelineContext(incremental, mappingFile, rangeFile, signatureFile);
         InstrumentationPipeline pipeline = new InstrumentationPipeline();
         pipeline.run(targets, context);
     }
