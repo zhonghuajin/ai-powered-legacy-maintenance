@@ -4,8 +4,10 @@ import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.comments.LineComment;
+import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.stmt.BlockStmt;
-import com.github.javaparser.ast.stmt.Statement;
 
 import java.io.File;
 import java.io.IOException;
@@ -141,12 +143,9 @@ public class BlockPruner {
             if (lineToBlockId == null) continue;
 
             Set<Integer> unexecutedLines = new LinkedHashSet<>();
-            Map<Integer, Integer> executedLineToId = new LinkedHashMap<>();
 
             for (Map.Entry<Integer, Integer> e : lineToBlockId.entrySet()) {
-                if (executedIds.contains(e.getValue())) {
-                    executedLineToId.put(e.getKey(), e.getValue());
-                } else {
+                if (!executedIds.contains(e.getValue())) {
                     unexecutedLines.add(e.getKey());
                 }
             }
@@ -165,7 +164,7 @@ public class BlockPruner {
                 continue;
             }
 
-            int prunedCount = pruneUnexecutedBlocks(cu, unexecutedLines, executedLineToId, threadName);
+            int prunedCount = pruneUnexecutedBlocks(cu, unexecutedLines);
 
             Path matchingSourceDir = findMatchingSourceDir(srcFile, sourceDirs);
 
@@ -176,13 +175,12 @@ public class BlockPruner {
             Files.createDirectories(outFile.getParent());
             Files.writeString(outFile, cu.toString(), StandardCharsets.UTF_8);
 
-            int totalBlocks = lineToBlockId.size();
-            int keptBlocks = totalBlocks - unexecutedLines.size();
-            System.out.printf("  %-55s  Kept %3d | Cleared %3d | Total %3d blocks",
-                    relativePath.getFileName(), keptBlocks, unexecutedLines.size(), totalBlocks);
+            int clearedBlocks = unexecutedLines.size();
+            System.out.printf("  %-55s  Cleared %3d unexecuted blocks",
+                    relativePath.getFileName(), clearedBlocks);
 
-            if (prunedCount != unexecutedLines.size()) {
-                System.out.printf("  ⚠ AST matched %d/%d", prunedCount, unexecutedLines.size());
+            if (prunedCount != clearedBlocks) {
+                System.out.printf("  ⚠ AST matched %d/%d", prunedCount, clearedBlocks);
             }
             System.out.println();
         }
@@ -208,52 +206,86 @@ public class BlockPruner {
         return best;
     }
 
-    private static int pruneUnexecutedBlocks(CompilationUnit cu,
-                                             Set<Integer> unexecutedLines,
-                                             Map<Integer, Integer> executedLineToId,
-                                             String threadName) {
-        if (unexecutedLines.isEmpty() && executedLineToId.isEmpty()) return 0;
+    /**
+     * Two-phase pruning aligned with the PHP/JS implementations:
+     * <ol>
+     *   <li>Inject a {@code // line: N} comment into the first statement of every method/lambda so
+     *       that {@code data-structuring} can recover the original source line.</li>
+     *   <li>Clear the body of every block whose start line is unexecuted and which has no executed
+     *       descendant block, processing the deepest blocks first.</li>
+     * </ol>
+     *
+     * @return the number of blocks whose bodies were cleared.
+     */
+    private static int pruneUnexecutedBlocks(CompilationUnit cu, Set<Integer> unexecutedLines) {
+        injectLineComments(cu);
+
+        if (unexecutedLines.isEmpty()) return 0;
 
         List<BlockStmt> unexecutedBlocks = new ArrayList<>();
-        cu.walk(BlockStmt.class, block ->
-                block.getBegin().ifPresent(pos -> {
-                    if (unexecutedLines.contains(pos.line)) {
-                        unexecutedBlocks.add(block);
-                    }
-                })
-        );
+        cu.findAll(BlockStmt.class).forEach(block -> {
+            int startLine = block.getBegin().map(p -> p.line).orElse(-1);
+            if (startLine < 0 || !unexecutedLines.contains(startLine)) {
+                return;
+            }
+            if (!hasExecutedDescendant(block, unexecutedLines)) {
+                unexecutedBlocks.add(block);
+            }
+        });
 
         unexecutedBlocks.sort(Comparator.comparingInt(BlockPruner::nodeDepth).reversed());
 
-        Set<Integer> executedLines = executedLineToId.keySet();
         int prunedCount = 0;
-
         for (BlockStmt block : unexecutedBlocks) {
-            if (!containsExecutedBlock(block, executedLines)) {
-
-                block.getStatements().clear();
-            } else {
-
-                List<Statement> toRemove = new ArrayList<>();
-                for (Statement stmt : block.getStatements()) {
-                    if (!containsExecutedBlock(stmt, executedLines)) {
-                        toRemove.add(stmt);
-                    }
-                }
-                for (Statement stmt : toRemove) {
-                    stmt.remove();
-                }
-            }
+            block.getStatements().clear();
             prunedCount++;
         }
 
         return prunedCount;
     }
 
-    private static boolean containsExecutedBlock(Node node, Set<Integer> executedLines) {
-        for (BlockStmt block : node.findAll(BlockStmt.class)) {
-            if (block.getBegin().isPresent()
-                    && executedLines.contains(block.getBegin().get().line)) {
+    /**
+     * Injects a {@code // line: N} comment (N = declaration start line) into the first statement of
+     * every method and lambda body, mirroring the PHP/JS pruner so original lines can be recovered.
+     */
+    private static void injectLineComments(CompilationUnit cu) {
+        cu.findAll(MethodDeclaration.class).forEach(method ->
+                method.getBody().ifPresent(body -> injectIntoBlock(body, method.getBegin().map(p -> p.line).orElse(-1))));
+
+        cu.findAll(LambdaExpr.class).forEach(lambda -> {
+            int startLine = lambda.getBegin().map(p -> p.line).orElse(-1);
+            if (lambda.getBody() instanceof BlockStmt block) {
+                injectIntoBlock(block, startLine);
+            } else if (lambda.getExpressionBody().isPresent()) {
+                injectIntoNode(lambda.getExpressionBody().get(), startLine);
+            }
+        });
+    }
+
+    private static void injectIntoBlock(BlockStmt block, int startLine) {
+        if (startLine < 0) return;
+        if (block.getStatements().isEmpty()) {
+            // Empty body: the comment cannot anchor to a statement, attach it to the block itself.
+            injectIntoNode(block, startLine);
+        } else {
+            injectIntoNode(block.getStatement(0), startLine);
+        }
+    }
+
+    private static void injectIntoNode(Node node, int startLine) {
+        if (startLine < 0) return;
+        String expected = "line: " + startLine;
+        if (node.getComment().map(c -> c.getContent().trim().equals(expected)).orElse(false)) {
+            return;
+        }
+        node.setComment(new LineComment(" line: " + startLine + " "));
+    }
+
+    private static boolean hasExecutedDescendant(BlockStmt block, Set<Integer> unexecutedLines) {
+        for (BlockStmt sub : block.findAll(BlockStmt.class)) {
+            if (sub == block) continue;
+            int subStartLine = sub.getBegin().map(p -> p.line).orElse(-1);
+            if (subStartLine >= 0 && !unexecutedLines.contains(subStartLine)) {
                 return true;
             }
         }
