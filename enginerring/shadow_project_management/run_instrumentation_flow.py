@@ -13,7 +13,7 @@ except ImportError:
         YELLOW = '\033[93m'
         CYAN = '\033[96m'
         ENDC = '\033[0m'
-    
+
     def print_color(text, color_code):
         print(f"{color_code}{text}{Colors.ENDC}")
 
@@ -34,14 +34,13 @@ def write_merged_file(file_path, entries, file_desc, format_desc, sort_by_key=Fa
         "# Note: This mapping needs to be regenerated after source code modifications and re-instrumentation.\n"
     ]
 
-
     if sort_by_key:
         try:
             keys_to_write = sorted(entries.keys(), key=lambda x: int(x))
         except ValueError:
             keys_to_write = sorted(entries.keys())
     else:
-        keys_to_write = list(entries.keys()) 
+        keys_to_write = list(entries.keys())
 
     with open(file_path, 'w', encoding='utf-8') as f:
         f.write("\n".join(comments) + "\n")
@@ -49,7 +48,6 @@ def write_merged_file(file_path, entries, file_desc, format_desc, sort_by_key=Fa
             f.write(f"{key} = {entries[key]}\n")
 
 def perform_incremental_merge(mapping_file, range_file, signature_file):
-
     inc_mapping_file = mapping_file.replace(".txt", ".incremental.txt")
     inc_range_file = range_file.replace(".txt", ".incremental.txt")
     inc_signature_file = signature_file.replace(".txt", ".incremental.txt")
@@ -60,10 +58,9 @@ def perform_incremental_merge(mapping_file, range_file, signature_file):
 
     print_color("\n--- Starting Deep Incremental Data Merge ---", Colors.CYAN)
 
-
     modified_files = set()
-    inc_mappings = {}  # Block ID -> File:Line
-    
+    inc_mappings = {}
+
     with open(inc_mapping_file, 'r', encoding='utf-8') as f:
         for line in f:
             stripped = line.strip()
@@ -80,10 +77,9 @@ def perform_incremental_merge(mapping_file, range_file, signature_file):
     for f_path in modified_files:
         print(f"  - {f_path}")
 
-
     base_mappings = {}
     obsolete_block_ids = set()
-    
+
     if os.path.exists(mapping_file):
         with open(mapping_file, 'r', encoding='utf-8') as f:
             for line in f:
@@ -100,20 +96,18 @@ def perform_incremental_merge(mapping_file, range_file, signature_file):
 
     print(f"[Merge] Found {len(obsolete_block_ids)} obsolete Block ID(s) to be removed.")
 
-
     cleaned_mappings = {
-        bid: val for bid, val in base_mappings.items() 
+        bid: val for bid, val in base_mappings.items()
         if bid not in obsolete_block_ids
     }
     cleaned_mappings.update(inc_mappings)
     write_merged_file(
-        mapping_file, 
-        cleaned_mappings, 
+        mapping_file,
+        cleaned_mappings,
         "Instrumentation Comment -> Integer ID Mapping Table",
         "Integer ID = File Absolute Path:Code Block Start Line Number",
         sort_by_key=True
     )
-
 
     base_signatures = {}
     if os.path.exists(signature_file):
@@ -127,10 +121,10 @@ def perform_incremental_merge(mapping_file, range_file, signature_file):
                     base_signatures[block_id] = sig
 
     cleaned_signatures = {
-        bid: sig for bid, sig in base_signatures.items() 
+        bid: sig for bid, sig in base_signatures.items()
         if bid not in obsolete_block_ids
     }
-    
+
     with open(inc_signature_file, 'r', encoding='utf-8') as f:
         for line in f:
             stripped = line.strip()
@@ -141,16 +135,15 @@ def perform_incremental_merge(mapping_file, range_file, signature_file):
                 cleaned_signatures[block_id] = sig
 
     write_merged_file(
-        signature_file, 
-        cleaned_signatures, 
+        signature_file,
+        cleaned_signatures,
         "Block ID -> Method Signature Mapping Table",
         "Block ID = Method Signature",
         sort_by_key=True
     )
 
+    cleaned_ranges = {}
 
-    cleaned_ranges = {}  
-    
     if os.path.exists(range_file):
         with open(range_file, 'r', encoding='utf-8') as f:
             for line in f:
@@ -175,13 +168,12 @@ def perform_incremental_merge(mapping_file, range_file, signature_file):
                 cleaned_ranges[key] = val
 
     write_merged_file(
-        range_file, 
-        cleaned_ranges, 
+        range_file,
+        cleaned_ranges,
         "Method Line Range Mapping Table",
         "File Absolute Path | Method Name = Start Line-End Line",
-        sort_by_key=False  # 保持原有顺序
+        sort_by_key=False
     )
-
 
     for temp_file in [inc_mapping_file, inc_range_file, inc_signature_file]:
         try:
@@ -191,7 +183,6 @@ def perform_incremental_merge(mapping_file, range_file, signature_file):
 
     print_color("--- Incremental Data Merge Completed Successfully ---\n", Colors.GREEN)
     return True
-
 
 def _run_java_instrumentation(target_folders, incremental, mapping_file, range_file, signature_file):
     """Single JAR call, replaces previous multiple subprocesses"""
@@ -291,13 +282,39 @@ def _run_javascript_instrumentation(target_folders, work_dir):
 
     return True
 
-def _run_python_instrumentation(target_folders, incremental, mapping_file, range_file, signature_file):
-    """
-    Executes the Python-specific instrumentation logic.
-    (Placeholder for future implementation)
-    """
-    print("\nChecking Python environment and dependencies...")
-    print_color("[Info] Python instrumentation logic goes here.", Colors.CYAN)
+def _run_python_instrumentation(target_folders, incremental, mapping_file, range_file, signature_file, work_dir):
+    """Executes the Python-specific instrumentation logic."""
+    python_exe = sys.executable or shutil.which("python") or shutil.which("python3")
+    if not python_exe:
+        print_color("Error: python not found in PATH.", Colors.RED)
+        return False
+
+    pipeline_script = os.path.join(
+        work_dir, "multilingual", "python", "instrumentor", "InstrumentationPipeline.py")
+
+    if not os.path.exists(pipeline_script):
+        print_color(
+            f"Error: Python instrumentation script not found at {pipeline_script}", Colors.RED)
+        return False
+
+    python_cmd = [python_exe, pipeline_script]
+    if incremental:
+        python_cmd += [
+            "--incremental",
+            "--mapping", mapping_file,
+            "--range", range_file,
+            "--signature", signature_file
+        ]
+
+    python_cmd += target_folders
+
+    print(f"Running: {' '.join(python_cmd)}")
+    result = subprocess.run(python_cmd)
+
+    if result.returncode != 0:
+        print_color(
+            "Warning: Python Instrumentation pipeline returned non-zero exit code.", Colors.YELLOW)
+        return False
 
     return True
 
@@ -373,7 +390,6 @@ def run_instrumentation_flow(target_folders_file=None, target_folders_list=None,
     range_file = os.path.abspath(os.path.join(mapping_dir, "method-range.txt"))
     signature_file = os.path.abspath(os.path.join(mapping_dir, "block-signature.txt"))
 
-    
     should_merge = incremental
 
     if incremental:
@@ -412,14 +428,14 @@ def run_instrumentation_flow(target_folders_file=None, target_folders_list=None,
         work_dir = os.path.abspath(os.getcwd())
         success = _run_javascript_instrumentation(target_folders, work_dir)
     elif lang_lower == 'python':
+        work_dir = os.path.abspath(os.getcwd())
         success = _run_python_instrumentation(
-            target_folders, incremental, mapping_file, range_file, signature_file)
+            target_folders, incremental, mapping_file, range_file, signature_file, work_dir)
     else:
         print_color(
             f"Error: Unsupported language for instrumentation: {language}", Colors.RED)
         return False
 
-    
     if success:
         if should_merge:
             perform_incremental_merge(mapping_file, range_file, signature_file)

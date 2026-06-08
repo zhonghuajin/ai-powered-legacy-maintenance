@@ -355,7 +355,50 @@ def _process_python_logs(target_folders_list, log_file, block_line_mapping_file,
     """Specific logic for processing Python logs."""
     print("Executing Python log processing tools...")
 
-    print("[INFO] Python log processing is currently a stub and needs implementation.")
+    env = os.environ.copy()
+
+    print("Executing Python Block Pruner...")
+    python_pruner_script_path = str(
+        PROJECT_ROOT / "multilingual" / "python" / "block-pruner" / "BlockPruner.py")
+    source_dirs_arg = ";".join(target_folders_list)
+
+    python_pruner_cmd = [
+        "python",
+        python_pruner_script_path,
+        source_dirs_arg,
+        block_line_mapping_file,
+        log_file,
+        pruned_folder
+    ]
+    if base_reference_dir:
+        python_pruner_cmd.append(base_reference_dir)
+
+    print(f"Running command: {' '.join(python_pruner_cmd)}")
+    try:
+        subprocess.run(python_pruner_cmd, env=env, check=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Error executing Python Block Pruner: {e}")
+
+    print("Executing Python Data Structuring...")
+    python_structuring_script_path = str(
+        PROJECT_ROOT / "multilingual" / "python" / "data-structuring" / "DataStructuring.py")
+    
+
+    python_structuring_cmd = [
+        "python",
+        python_structuring_script_path,
+        pruned_folder,
+        block_line_mapping_file,
+        log_file,
+        events_file,
+        event_dictionary_file
+    ]
+
+    print(f"Running command: {' '.join(python_structuring_cmd)}")
+    try:
+        subprocess.run(python_structuring_cmd, env=env, check=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Error executing Python Data Structuring: {e}")
 
 def _process_php_logs(target_folders_list, log_file, block_line_mapping_file, events_file, pruned_folder, event_dictionary_file, base_reference_dir=None):
     """Specific logic for processing PHP logs."""

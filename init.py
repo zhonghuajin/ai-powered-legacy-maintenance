@@ -1,3 +1,5 @@
+# C:\TechLearning\ai-powered-legacy-maintenance\init.py
+
 import os
 import sys
 import argparse
@@ -216,6 +218,90 @@ def main():
             file=sys.stderr
         )
         print(f"{sys.executable} -m pip install --upgrade pip", file=sys.stderr)
+        sys.exit(1)
+
+    # =====================================================================
+    # 新增 Step 3.1: 本地安装 instrumentor-log-recorder 库
+    # =====================================================================
+    print("\nStep 3.1: Installing instrumentor-log-recorder package...")
+    recorder_dir = os.path.join(script_dir, "multilingual", "python", "instrumentor-log-recorder")
+
+    if not os.path.isdir(recorder_dir):
+        print(
+            f"Error: Directory not found: {recorder_dir}",
+            file=sys.stderr
+        )
+        sys.exit(1)
+
+    try:
+        result = run_without_proxy(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--no-build-isolation",
+                "-e",
+                "."
+            ],
+            cwd=recorder_dir,
+            check=False
+        )
+        if result.returncode != 0:
+            print(
+                "Warning: pip install instrumentor-log-recorder failed. "
+                "Proceeding with the build, but recorder may not be available.",
+                file=sys.stderr
+            )
+        else:
+            print("instrumentor-log-recorder installed successfully.")
+    except Exception as e:
+        print(
+            f"Error: Could not run pip to install recorder: {e}",
+            file=sys.stderr
+        )
+        sys.exit(1)
+
+    # =====================================================================
+    # 新增 Step 3.2: 本地安装 instrumentor-log-monitor 库
+    # =====================================================================
+    print("\nStep 3.2: Installing instrumentor-log-monitor package...")
+    monitor_dir = os.path.join(script_dir, "multilingual", "python", "instrumentor-log-monitor")
+
+    if not os.path.isdir(monitor_dir):
+        print(
+            f"Error: Directory not found: {monitor_dir}",
+            file=sys.stderr
+        )
+        sys.exit(1)
+
+    try:
+        result = run_without_proxy(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--no-build-isolation",
+                "-e",
+                "."
+            ],
+            cwd=monitor_dir,
+            check=False
+        )
+        if result.returncode != 0:
+            print(
+                "Warning: pip install instrumentor-log-monitor failed. "
+                "Proceeding with the build, but monitor may not be available.",
+                file=sys.stderr
+            )
+        else:
+            print("instrumentor-log-monitor installed successfully.")
+    except Exception as e:
+        print(
+            f"Error: Could not run pip to install monitor: {e}",
+            file=sys.stderr
+        )
         sys.exit(1)
 
     print("\nChecking Java environment variables...")
