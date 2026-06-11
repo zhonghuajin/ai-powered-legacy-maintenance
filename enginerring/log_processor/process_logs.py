@@ -54,7 +54,8 @@ def _sort_calltree_markdown(calltree_path, log_file, block_line_mapping_file, bl
             line = line.strip()
             if not line or line.startswith('#') or line.startswith('['):
                 continue
-            parts = [int(x.strip()) for x in line.split('->') if x.strip().isdigit()]
+            parts = [int(x.strip())
+                     for x in line.split('->') if x.strip().isdigit()]
             block_sequence.extend(parts)
 
     abs_file_order = {}
@@ -76,70 +77,89 @@ def _sort_calltree_markdown(calltree_path, log_file, block_line_mapping_file, bl
     with open(calltree_path, 'r', encoding='utf-8') as f:
         content = f.read()
 
-    thread_match = re.search(r'^(# Thread:.*)$', content, re.MULTILINE)
-    if not thread_match:
-        print("[WARNING] Could not find '# Thread:' in calltree markdown. Skipping sorting.")
+    # Split the document into per-thread segments so each "# Thread:" block is
+    # sorted independently. Without this, same-named files across threads would
+    # collapse into one entry and most thread headings would be lost.
+    thread_split = re.split(r'^(# Thread:.*)$', content, flags=re.MULTILINE)
+    if len(thread_split) < 3:
+        print(
+            "[WARNING] Could not find '# Thread:' in calltree markdown. Skipping sorting.")
         return
 
-    header = content[:thread_match.start()]
-    thread_body = content[thread_match.start():]
-
-    file_sections = re.split(r'^(## File:\s*`([^`]+)`.*)$', thread_body, flags=re.MULTILINE)
-    thread_header = file_sections[0].strip() + "\n\n"
-
-    files_data = {}
-    for i in range(1, len(file_sections), 3):
-        file_title_line = file_sections[i]
-        file_path = file_sections[i+1].strip()
-        file_content = file_sections[i+2]
-
-        method_sections = re.split(r'^(- \*\*Method:\*\* `([^`]+)`.*)$', file_content, flags=re.MULTILINE)
-        methods_data = {}
-        for j in range(1, len(method_sections), 3):
-            m_title = method_sections[j]
-            m_sig = method_sections[j+1].strip()
-            m_body = method_sections[j+2]
-            methods_data[m_sig] = m_title + m_body
-
-        files_data[file_path] = {
-            "file_header": file_title_line + "\n",
-            "methods": methods_data
-        }
-
+    header = thread_split[0]
     DEFAULT_WEIGHT = 999999
-    file_order = {}
-    for rel_path in files_data.keys():
-        weight = DEFAULT_WEIGHT
-        normalized_rel = rel_path.replace('\\', '/')
-        for abs_path, order_val in abs_file_order.items():
-            if abs_path.endswith(normalized_rel):
-                weight = order_val
-                break
-        file_order[rel_path] = weight
 
-    sorted_files = sorted(files_data.keys(), key=lambda f: file_order.get(f, DEFAULT_WEIGHT))
+    def _sort_thread_body(thread_body):
+        file_sections = re.split(
+            r'^(## File:\s*`([^`]+)`.*)$', thread_body, flags=re.MULTILINE)
+        thread_intro = file_sections[0].strip()
 
-    output_md = []
-    output_md.append(header.strip())
-    output_md.append("\n\n" + thread_header.strip() + "\n\n")
+        files_data = {}
+        for i in range(1, len(file_sections), 3):
+            file_title_line = file_sections[i]
+            file_path = file_sections[i + 1].strip()
+            file_content = file_sections[i + 2]
 
-    for file_path in sorted_files:
-        file_info = files_data[file_path]
-        output_md.append(file_info["file_header"])
+            method_sections = re.split(
+                r'^(- \*\*Method:\*\* `([^`]+)`.*)$', file_content, flags=re.MULTILINE)
+            methods_data = {}
+            for j in range(1, len(method_sections), 3):
+                m_title = method_sections[j]
+                m_sig = method_sections[j + 1].strip()
+                m_body = method_sections[j + 2]
+                methods_data[m_sig] = m_title + m_body
 
-        sorted_methods = sorted(file_info["methods"].keys(), key=lambda m: method_order.get(m, DEFAULT_WEIGHT))
-        for method_sig in sorted_methods:
-            output_md.append(file_info["methods"][method_sig].rstrip() + "\n")
+            files_data[file_path] = {
+                "file_header": file_title_line + "\n",
+                "methods": methods_data
+            }
 
-        output_md.append("\n---\n\n")
+        file_order = {}
+        for rel_path in files_data.keys():
+            weight = DEFAULT_WEIGHT
+            normalized_rel = rel_path.replace('\\', '/')
+            for abs_path, order_val in abs_file_order.items():
+                if abs_path.endswith(normalized_rel):
+                    weight = order_val
+                    break
+            file_order[rel_path] = weight
 
-    final_content = "".join(output_md)
-    if final_content.endswith("\n---\n\n"):
-        final_content = final_content[:-7] + "\n"
+        sorted_files = sorted(
+            files_data.keys(), key=lambda f: file_order.get(f, DEFAULT_WEIGHT))
+
+        parts = []
+        if thread_intro:
+            parts.append(thread_intro + "\n\n")
+        for file_path in sorted_files:
+            file_info = files_data[file_path]
+            parts.append(file_info["file_header"])
+
+            sorted_methods = sorted(file_info["methods"].keys(),
+                                    key=lambda m: method_order.get(m, DEFAULT_WEIGHT))
+            for method_sig in sorted_methods:
+                parts.append(file_info["methods"][method_sig].rstrip() + "\n")
+
+            parts.append("\n---\n\n")
+
+        body = "".join(parts)
+        if body.endswith("\n---\n\n"):
+            body = body[:-7] + "\n"
+        return body
+
+    output_md = [header.strip(), "\n\n"]
+    for i in range(1, len(thread_split), 2):
+        thread_title = thread_split[i].strip()
+        thread_body = thread_split[i + 1]
+        output_md.append(thread_title + "\n\n")
+        output_md.append(_sort_thread_body(thread_body))
+        output_md.append("\n")
+
+    final_content = "".join(output_md).rstrip() + "\n"
 
     with open(calltree_path, 'w', encoding='utf-8') as f:
         f.write(final_content)
     print(f"[INFO] Successfully sorted and updated calltree: {calltree_path}")
+
 
 def process_logs(
     language="java",
@@ -241,7 +261,8 @@ def process_logs(
     if block_signature_file and os.path.isfile(block_signature_file):
 
         possible_paths = [
-            os.path.join(os.path.dirname(events_file) or ".", "final-output-calltree.md"),
+            os.path.join(os.path.dirname(events_file)
+                         or ".", "final-output-calltree.md"),
             os.path.join(pruned_folder, "final-output-calltree.md"),
             "final-output-calltree.md"
         ]
@@ -253,15 +274,18 @@ def process_logs(
 
         if found_calltree:
             try:
-                _sort_calltree_markdown(found_calltree, log_file, block_line_mapping_file, block_signature_file)
-                
-                print("[INFO] Calltree sorted. Starting signature order analysis and flow report generation...")
+                _sort_calltree_markdown(
+                    found_calltree, log_file, block_line_mapping_file, block_signature_file)
+
+                print(
+                    "[INFO] Calltree sorted. Starting signature order analysis and flow report generation...")
                 try:
                     try:
                         from .parser_signature_order import analyze_thread_flow
                         from .present_execution_flow_with_code import generate_flow_report
                     except (ImportError, ValueError):
-                        current_dir = os.path.dirname(os.path.abspath(__file__))
+                        current_dir = os.path.dirname(
+                            os.path.abspath(__file__))
                         if current_dir not in sys.path:
                             sys.path.append(current_dir)
                         from parser_signature_order import analyze_thread_flow
@@ -274,10 +298,12 @@ def process_logs(
                         block_line_mapping_file=block_line_mapping_file
                     )
 
-
-                    sig_file_cwd = os.path.join(os.getcwd(), "signature_order.txt")
-                    calltree_file_cwd = os.path.join(os.getcwd(), "final-output-calltree.md")
-                    output_file_cwd = os.path.join(os.getcwd(), "execution_flow_with_code.md")
+                    sig_file_cwd = os.path.join(
+                        os.getcwd(), "signature_order.txt")
+                    calltree_file_cwd = os.path.join(
+                        os.getcwd(), "final-output-calltree.md")
+                    output_file_cwd = os.path.join(
+                        os.getcwd(), "execution_flow_with_code.md")
 
                     print("[INFO] Running generate_flow_report...")
                     generate_flow_report(
@@ -287,15 +313,18 @@ def process_logs(
                     )
 
                 except Exception as flow_err:
-                    print(f"[WARNING] Failed to generate execution flow report: {flow_err}", file=sys.stderr)
+                    print(
+                        f"[WARNING] Failed to generate execution flow report: {flow_err}", file=sys.stderr)
                 # ------------------------------------------------------------------
 
             except Exception as e:
-                print(f"[WARNING] Failed to sort calltree markdown: {e}", file=sys.stderr)
+                print(
+                    f"[WARNING] Failed to sort calltree markdown: {e}", file=sys.stderr)
         else:
             print("[INFO] block_signature_file was provided, but 'final-output-calltree.md' was not found in expected paths.")
 
     print("Log processing, data structuring, and source code restoration completed successfully!")
+
 
 def _process_java_logs(target_folders_list, log_file, block_line_mapping_file, events_file, pruned_folder, event_dictionary_file, block_pruner_jar, data_structuring_jar, base_reference_dir=None):
     """Specific logic for processing Java logs using JAR files."""
@@ -351,6 +380,7 @@ def _process_java_logs(target_folders_list, log_file, block_line_mapping_file, e
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Error executing Data Structuring: {e}")
 
+
 def _process_python_logs(target_folders_list, log_file, block_line_mapping_file, events_file, pruned_folder, event_dictionary_file, base_reference_dir=None):
     """Specific logic for processing Python logs."""
     print("Executing Python log processing tools...")
@@ -382,7 +412,6 @@ def _process_python_logs(target_folders_list, log_file, block_line_mapping_file,
     print("Executing Python Data Structuring...")
     python_structuring_script_path = str(
         PROJECT_ROOT / "multilingual" / "python" / "data-structuring" / "DataStructuring.py")
-    
 
     python_structuring_cmd = [
         "python",
@@ -399,6 +428,7 @@ def _process_python_logs(target_folders_list, log_file, block_line_mapping_file,
         subprocess.run(python_structuring_cmd, env=env, check=True)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Error executing Python Data Structuring: {e}")
+
 
 def _process_php_logs(target_folders_list, log_file, block_line_mapping_file, events_file, pruned_folder, event_dictionary_file, base_reference_dir=None):
     """Specific logic for processing PHP logs."""
@@ -446,6 +476,7 @@ def _process_php_logs(target_folders_list, log_file, block_line_mapping_file, ev
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Error executing PHP Data Structuring: {e}")
 
+
 def _process_javascript_logs(target_folders_list, log_file, block_line_mapping_file, events_file, pruned_folder, event_dictionary_file, base_reference_dir=None):
     """Specific logic for processing JavaScript logs."""
     print("Executing JavaScript log processing tools...")
@@ -489,6 +520,7 @@ def _process_javascript_logs(target_folders_list, log_file, block_line_mapping_f
         subprocess.run(js_structuring_cmd, env=env, check=True)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Error executing JavaScript Data Structuring: {e}")
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -575,6 +607,7 @@ def main():
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
